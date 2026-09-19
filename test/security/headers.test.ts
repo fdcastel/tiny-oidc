@@ -12,6 +12,8 @@ import { op } from "../support/op.ts";
 const h = harness();
 const OTHER_ORIGIN = "https://evil.example.net";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+/** The §2.7 measurements every response exposes (TIO-OBS-004). */
+const SERVER_TIMING = /^app;dur=\d+, do;desc="\d+", d1r;desc="\d+", d1w;desc="\d+"$/;
 const SECURITY_CSP = "default-src 'none'; frame-ancestors 'none'";
 const ASSETS_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -45,6 +47,7 @@ function expectSecurityHeaders(res: Response, route: Route, label: string): void
     "max-age=31536000; includeSubDomains",
   );
   expect(res.headers.get("X-Request-Id"), label).toMatch(UUID);
+  expect(res.headers.get("Server-Timing"), label).toMatch(SERVER_TIMING);
   expect(res.headers.get("Permissions-Policy"), label).toBe(route.navigation ? PERMISSIONS : null);
   const cache = res.headers.get("Cache-Control");
   if (route.cacheable && res.ok) expect(cache, label).toMatch(/^public, max-age=\d+$/);
@@ -61,7 +64,7 @@ const corsHeaders = (res: Response) => ({
 });
 
 describe("headers and CORS matrix", () => {
-  it("[TIO-TEST-020] [TIO-HTTP-002] [TIO-HTTP-003] every route in the table carries the security headers for its class, reflects only login origins on the Interaction API, answers public routes with a star and gives navigation endpoints no CORS at all", async () => {
+  it("[TIO-TEST-020] [TIO-HTTP-002] [TIO-HTTP-003] [TIO-OBS-004] every route in the table carries the security headers for its class, reflects only login origins on the Interaction API, answers public routes with a star and gives navigation endpoints no CORS at all", async () => {
     await adminSettings(h);
     expect(ROUTES.length).toBeGreaterThan(60);
     for (const route of ROUTES) {

@@ -15,10 +15,20 @@ const h = harness();
 const { clock } = h;
 const db = Db.from(env.DB);
 
-/** The body with its per-request id removed. */
-async function shape(res: Response): Promise<{ status: number; body: Record<string, unknown> }> {
+/** The Durable Object and D1 counts of the Server-Timing header (TIO-OBS-004). */
+function work(res: Response): Record<string, string> {
+  const header = res.headers.get("Server-Timing") ?? "";
+  return Object.fromEntries(
+    [...header.matchAll(/(do|d1r|d1w);desc="(\d+)"/g)].map((m) => [m[1], m[2]]),
+  );
+}
+
+/** The body with its per-request id removed, and the work the answer took. */
+async function shape(
+  res: Response,
+): Promise<{ status: number; body: Record<string, unknown>; work: Record<string, string> }> {
   const { request_id: _id, ...body } = (await res.json()) as Record<string, unknown>;
-  return { status: res.status, body };
+  return { status: res.status, body, work: work(res) };
 }
 
 const form = (params: Record<string, string>) =>
@@ -30,7 +40,7 @@ const form = (params: Record<string, string>) =>
   });
 
 describe("enumeration equality", () => {
-  it("[TIO-TEST-020] [TIO-TOKEN-010] a code that never existed, a garbled one, one of another user and a spent one all fail the exchange identically", async () => {
+  it("[TIO-TEST-020] [TIO-TOKEN-010] [TIO-OBS-004] a code that never existed, a garbled one, one of another user and a spent one all fail the exchange identically", async () => {
     await adminSettings(h);
     const web = (
       await createTestClient(db, clock, { redirect_uris: [RP_REDIRECT], skip_consent: true })
@@ -50,6 +60,8 @@ describe("enumeration equality", () => {
     );
     for (const answer of answers) expect(answer).toEqual(answers[0]);
     expect(answers[0]).toMatchObject({ status: 400, body: { error: "invalid_grant" } });
+    // Equal answers include equal work: the counts are real, not an empty match (TIO-OBS-004).
+    expect(Object.keys(answers[0]?.work ?? {}).sort()).toEqual(["d1r", "d1w", "do"]);
     const refreshes = await Promise.all(
       ["tio_rt_" + "A".repeat(80), "garbage"].map((token) =>
         form({ grant_type: "refresh_token", client_id: web.client_id, refresh_token: token }).then(

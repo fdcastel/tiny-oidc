@@ -90,7 +90,14 @@ import { logoutHandler } from "../logout/rp-logout.ts";
 import { requireAccount } from "../me/auth.ts";
 import * as me from "../me/handlers.ts";
 import { healthHandler } from "../obs/health.ts";
-import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
+import {
+  consoleSink,
+  Logger,
+  type LogLevel,
+  type LogSink,
+  type RequestLog,
+  serverTiming,
+} from "../obs/log.ts";
 import { sessionMetadata } from "../obs/request-meta.ts";
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
 import { ClientCache } from "../oidc/client-cache.ts";
@@ -235,6 +242,7 @@ export function createApp(deps: AppDeps) {
       });
     }
     c.res.headers.set("X-Request-Id", requestId);
+    c.res.headers.set("Server-Timing", serverTiming(line));
   });
 
   app.use("*", cors);

@@ -1930,6 +1930,8 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-003]** `GET /api/v1/health` SHALL return `{ "status": "ok" | "degraded", "version": "<git sha>", "active_kid": "…", "d1": "ok" | "error", "time": <now> }` with status 200 for `ok` and 503 for `degraded`; it SHALL touch no Durable Object.
 
+**[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
+
 ### 11.5 Privacy
 
 **[TIO-PRIV-001]** The OP SHALL store about a user only: id, email, verified flag, display name, groups, passkey public material and metadata, federated identifiers and the attributes the upstream provided, sessions with pseudonymized network metadata, and consent grants. No profile pictures, no addresses, no phone numbers, no free-form attributes.

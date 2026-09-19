@@ -32,6 +32,16 @@ export class Logger {
   }
 }
 
+/**
+ * The request's server-side measurements as a `Server-Timing` header
+ * (TIO-OBS-004): the duration the log line carries, and the Durable Object
+ * and D1 counts the §2.7 budgets are stated in, so an external load tool can
+ * enforce those budgets without reading logs. Counts travel as `desc` values.
+ */
+export function serverTiming(line: RequestLog): string {
+  return `app;dur=${line.duration_ms}, do;desc="${line.do_calls}", d1r;desc="${line.d1_reads}", d1w;desc="${line.d1_writes}"`;
+}
+
 /** Fields of the per-request line. No query strings, bodies or headers other than content-length. */
 export interface RequestLog {
   request_id: string;

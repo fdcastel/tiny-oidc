@@ -36,3 +36,6 @@ wrangler.generated.jsonc
 # Stryker (nightly mutation baseline, P7-07)
 .stryker-tmp/
 reports/
+
+# Load-test population, tokens and reports (perf/seed.ts, k6)
+perf/data/

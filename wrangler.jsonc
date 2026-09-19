@@ -84,7 +84,9 @@
         ]
       },
       "ratelimits": [
-        { "name": "RL_IP", "namespace_id": "1101", "simple": { "limit": 120, "period": 60 } },
+        // Staging takes the nightly load runs from a handful of runner addresses (§13.10), so the
+        // per-address limit is not the production one; the per-client limit below is.
+        { "name": "RL_IP", "namespace_id": "1101", "simple": { "limit": 100000, "period": 60 } },
         { "name": "RL_CLIENT", "namespace_id": "1102", "simple": { "limit": 2000, "period": 10 } }
       ],
       "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc_staging" }]
