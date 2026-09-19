@@ -1,0 +1,12 @@
+{
+  "alias": "{ALIAS}",
+  "description": "Tiny OIDC staging: basic OP, {CLIENT_ID}",
+  "server": { "discoveryUrl": "{ISSUER}/.well-known/openid-configuration" },
+  "client": {
+    "client_id": "{CLIENT_ID}",
+    "client_secret": "{CLIENT_SECRET}",
+    "scope": "openid email profile"
+  },
+  "client2": { "client_id": "{CLIENT2_ID}", "client_secret": "{CLIENT2_SECRET}" },
+  "browser": "{BROWSER}"
+}

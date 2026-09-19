@@ -1,6 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
+    "conformance/run.ts",
+    "perf/seed.ts",
     "test/**/*.test.ts",
     "test/e2e/**/*.spec.ts",
     "scripts/*.ts",

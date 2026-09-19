@@ -1,0 +1,8 @@
+{
+  "alias": "{ALIAS}",
+  "description": "Tiny OIDC staging: RP-initiated logout, {CLIENT_ID}",
+  "server": { "discoveryUrl": "{ISSUER}/.well-known/openid-configuration" },
+  "client": { "client_id": "{CLIENT_ID}", "client_secret": "{CLIENT_SECRET}", "scope": "openid" },
+  "client2": { "client_id": "{CLIENT2_ID}", "client_secret": "{CLIENT2_SECRET}" },
+  "browser": "{BROWSER}"
+}

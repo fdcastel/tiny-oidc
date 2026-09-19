@@ -1,0 +1,37 @@
+# The OpenID Foundation conformance suite from its prebuilt images (spec §13.9,
+# TIO-TEST-040): the server, its TLS front end and MongoDB. BASE_URL is the
+# public URL the suite advertises to the OP — in the nightly job a cloudflared
+# quick tunnel to nginx, so that the OP on Cloudflare can reach the suite's
+# back-channel logout endpoint. IMAGE_TAG pins the suite version.
+services:
+  mongodb:
+    image: ${MONGODB_IMAGE:-mongo:6.0.13}
+    volumes:
+      - ./results/mongo:/data/db
+    logging:
+      driver: json-file
+      options: { max-size: "500k", max-file: "5" }
+  nginx:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:${IMAGE_TAG:-latest}
+    ports:
+      - "8443:8443"
+      - "8444:8444"
+    networks:
+      default:
+        aliases: [localhost.emobix.co.uk]
+    depends_on: [server]
+    logging:
+      driver: json-file
+      options: { max-size: "500k", max-file: "5" }
+  server:
+    image: registry.gitlab.com/openid/conformance-suite:${IMAGE_TAG:-latest}
+    environment:
+      BASE_URL: ${BASE_URL:-https://localhost.emobix.co.uk:8443}
+      BASE_MTLS_URL: ${BASE_MTLS_URL:-https://localhost.emobix.co.uk:8444}
+      MONGODB_HOST: mongodb
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      JAVA_EXTRA_ARGS: ${JAVA_EXTRA_ARGS:---fintechlabs.devmode=true --fintechlabs.startredir=true}
+    depends_on: [mongodb]
+    logging:
+      driver: json-file
+      options: { max-size: "500k", max-file: "5" }

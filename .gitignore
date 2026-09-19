@@ -39,3 +39,8 @@ reports/
 
 # Load-test population, tokens and reports (perf/seed.ts, k6)
 perf/data/
+
+# Conformance suite checkout, results and exports (conformance/run.ts)
+conformance/suite/
+conformance/results/
+conformance/results-tunnel.log

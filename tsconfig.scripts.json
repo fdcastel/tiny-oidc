@@ -7,6 +7,7 @@
   "include": [
     "scripts/**/*.ts",
     "perf/**/*.ts",
+    "conformance/**/*.ts",
     "test/e2e/**/*.ts",
     "test/scripts/**/*.ts",
     "examples/rp-node/**/*.ts",

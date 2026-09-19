@@ -1,0 +1,49 @@
+[
+  {
+    "match": "{ISSUER}/authorize*",
+    "tasks": [
+      {
+        "task": "Sign in through the login app with the auto-approving upstream",
+        "match": "{LOGIN_ORIGIN}/*",
+        "optional": true,
+        "commands": [
+          ["wait", "css", "#app h1", 10],
+          ["click", "id", "upstream-{UPSTREAM_ALIAS}", "optional"],
+          ["wait", "match", "(/test/a/{ALIAS}/callback|[?&]error=)", 30]
+        ]
+      },
+      {
+        "task": "Back at the suite",
+        "match": "{SUITE}/test/a/{ALIAS}/callback*",
+        "optional": true,
+        "commands": [["wait", "id", "submission_complete", 10]]
+      }
+    ]
+  },
+  {
+    "match": "{ISSUER}/logout*",
+    "tasks": [
+      {
+        "task": "Confirm the logout in the login app",
+        "match": "{LOGIN_ORIGIN}/*",
+        "optional": true,
+        "commands": [
+          ["wait", "css", "#app h1", 10],
+          ["click", "id", "logout-confirm", "optional"],
+          [
+            "wait",
+            "match",
+            "(/test/a/{ALIAS}/post_logout_redirect|[?&]error=|event=logged_out)",
+            30
+          ]
+        ]
+      },
+      {
+        "task": "Back at the suite after logout",
+        "match": "{SUITE}/test/a/{ALIAS}/post_logout_redirect*",
+        "optional": true,
+        "commands": [["wait", "id", "submission_complete", 10]]
+      }
+    ]
+  }
+]

@@ -280,8 +280,8 @@ Current phase: 7. Requirements: 284 (ci: 19, conformance: 2, covered: 241, load:
 | TIO-TEST-031 | §13.8 | test | 4 | covered | test/component/fake-upstream-worker.test.ts<br>test/scripts/deploy.test.ts |
 | TIO-TEST-032 | §13.8 | test | 2 | covered | test/scripts/lint-rules.test.ts |
 | TIO-TEST-033 | §13.8 | test | 2 | covered | test/scripts/lint-rules.test.ts |
-| TIO-TEST-040 | §13.9 | conformance | — | conformance |  |
-| TIO-TEST-041 | §13.9 | conformance | — | conformance |  |
+| TIO-TEST-040 | §13.9 | conformance | — | conformance | test/scripts/conformance.test.ts |
+| TIO-TEST-041 | §13.9 | conformance | — | conformance | test/scripts/conformance.test.ts |
 | TIO-TEST-050 | §13.10 | load | — | load |  |
 | TIO-TEST-051 | §13.10 | load | — | load |  |
 | TIO-TEST-052 | §13.10 | load | — | load |  |

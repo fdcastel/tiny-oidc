@@ -2,6 +2,9 @@
 // interaction document, drives the passkey ceremonies and the consent and
 // logout decisions against the Interaction API, then sends the browser to
 // the completion URL the OP hands back. Every security decision is the OP's.
+// Every control carries a stable id (signin-passkey, upstream-<alias>, register,
+// consent-grant, consent-deny, logout-confirm, logout-decline, abort, return) so
+// browser automation, the conformance suite's included, can drive it.
 
 (() => {
   const params = new URLSearchParams(location.search);
@@ -224,14 +227,22 @@
     const hint = doc.request?.login_hint;
     const canRegister =
       doc.methods.registration !== "closed" || sessionStorage.getItem(INVITATION_KEY);
-    const signInButton = el("button", { class: "primary" }, "Sign in with a passkey");
+    const signInButton = el(
+      "button",
+      { class: "primary", id: "signin-passkey" },
+      "Sign in with a passkey",
+    );
     signInButton.addEventListener(
       "click",
       busy(() => signIn(id)),
     );
     const actions = el("div", { class: "actions" }, signInButton);
     for (const upstream of doc.methods.upstreams || []) {
-      const b = el("button", {}, `Continue with ${upstream.display_name}`);
+      const b = el(
+        "button",
+        { id: `upstream-${upstream.alias}` },
+        `Continue with ${upstream.display_name}`,
+      );
       b.addEventListener(
         "click",
         busy(async () => {
@@ -246,11 +257,11 @@
       actions.append(b);
     }
     if (canRegister) {
-      const b = el("button", { class: "linkish" }, "Create an account");
+      const b = el("button", { class: "linkish", id: "register" }, "Create an account");
       b.addEventListener("click", () => registerScreen(id, doc));
       actions.append(b);
     }
-    const abort = el("button", { class: "linkish" }, "Cancel");
+    const abort = el("button", { class: "linkish", id: "abort" }, "Cancel");
     abort.addEventListener(
       "click",
       busy(async () => step(id, await api(`${id}/abort`, "POST", {}))),
@@ -282,7 +293,7 @@
       autocomplete: "off",
     });
     let confirmed = false;
-    const submit = el("button", { class: "primary" }, "Create a passkey");
+    const submit = el("button", { class: "primary", id: "register-passkey" }, "Create a passkey");
     submit.addEventListener(
       "click",
       busy(async () => {
@@ -327,7 +338,7 @@
       if (scope.name === "openid") box.disabled = true;
       return el("li", {}, el("label", {}, box, ` ${scope.description}`));
     });
-    const allow = el("button", { class: "primary" }, "Allow");
+    const allow = el("button", { class: "primary", id: "consent-grant" }, "Allow");
     allow.addEventListener(
       "click",
       busy(async () => {
@@ -337,7 +348,7 @@
         await step(id, await api(`${id}/consent`, "POST", { decision: "grant", scopes }));
       }),
     );
-    const deny = el("button", {}, "Deny");
+    const deny = el("button", { id: "consent-deny" }, "Deny");
     deny.addEventListener(
       "click",
       busy(async () => step(id, await api(`${id}/consent`, "POST", { decision: "deny" }))),
@@ -359,7 +370,11 @@
   }
 
   function linkScreen(id, doc) {
-    const signInButton = el("button", { class: "primary" }, "Sign in with your passkey to link");
+    const signInButton = el(
+      "button",
+      { class: "primary", id: "link-passkey" },
+      "Sign in with your passkey to link",
+    );
     signInButton.addEventListener(
       "click",
       busy(() => signIn(id)),
@@ -381,9 +396,9 @@
         const { redirect_to: redirectTo } = await api(`${id}/logout`, "POST", { confirm });
         location.assign(redirectTo);
       });
-    const yes = el("button", { class: "primary" }, "Sign out");
+    const yes = el("button", { class: "primary", id: "logout-confirm" }, "Sign out");
     yes.addEventListener("click", decide(true));
-    const no = el("button", {}, "Stay signed in");
+    const no = el("button", { id: "logout-decline" }, "Stay signed in");
     no.addEventListener("click", decide(false));
     const client = doc.logout?.client;
     render(
@@ -409,7 +424,7 @@
       render(el("h1", {}, "Done"), el("p", {}, "You can close this page."));
       return;
     }
-    const back = el("button", { class: "primary" }, "Return to the application");
+    const back = el("button", { class: "primary", id: "return" }, "Return to the application");
     back.addEventListener("click", () => location.assign(completion));
     render(
       el("h1", {}, "Sign-in failed"),

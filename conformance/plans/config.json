@@ -1,0 +1,5 @@
+{
+  "alias": "{ALIAS}",
+  "description": "Tiny OIDC staging: discovery",
+  "server": { "discoveryUrl": "{ISSUER}/.well-known/openid-configuration" }
+}
