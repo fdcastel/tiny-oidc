@@ -22,3 +22,32 @@ describe("startInteraction", () => {
     );
   });
 });
+
+describe("InteractionDO claims", () => {
+  it("[TIO-IX-061] claimCompletion on an unknown or expired interaction reports it as not found; a second claim on the same document is refused", async () => {
+    const id = newInteractionId();
+    const stub = interactionStub(env, id);
+    expect(await stub.claimCompletion(1_800_000_000)).toEqual({
+      ok: false,
+      error: "interaction_not_found",
+    });
+    await startInteraction(
+      env,
+      testKeys(),
+      id,
+      { kind: "authorize", status: "ready", client_id: "web" },
+      1_800_000_000,
+      600,
+    );
+    const first = await stub.claimCompletion(1_800_000_001);
+    expect(first.ok && first.doc.completing).toBe(true);
+    expect(await stub.claimCompletion(1_800_000_002)).toEqual({
+      ok: false,
+      error: "interaction_invalid_state",
+    });
+    expect(await stub.claimCompletion(1_800_000_700)).toEqual({
+      ok: false,
+      error: "interaction_not_found",
+    });
+  });
+});

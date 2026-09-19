@@ -71,11 +71,14 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
     if (doc.binding_hash !== encodeBase64Url(binding.secret_hash)) {
       return toLoginApp("interaction_binding_failed");
     }
-    // TIO-IX-061: not there yet, or already done.
+    // TIO-IX-061: not there yet, or already done. Ready and failed are taken exactly once.
     if (doc.status === "completed") return toLoginApp("interaction_already_completed");
     if (doc.status !== "ready" && doc.status !== "failed") {
       return c.redirect(withQuery(loginUrl, { interaction: id }), 303);
     }
+    c.get("metrics").doCalls += 1;
+    const claimed = await stub.claimCompletion(now);
+    if (!claimed.ok) return toLoginApp("interaction_already_completed");
     const request = doc.request as AuthorizeRequest;
     const finish = async (params: Record<string, string>, sessionCookie?: string) => {
       c.get("metrics").doCalls += 1;
@@ -144,7 +147,7 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
         await stub.apply(
           "restart",
           "login_required",
-          { existing_session: null, consent: null },
+          { existing_session: null, consent: null, completing: false },
           now,
         );
         c.header("Set-Cookie", clearCookie(SESSION_COOKIE), { append: true });

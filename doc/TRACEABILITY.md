@@ -86,7 +86,7 @@ Current phase: 1. Requirements: 283 (ci: 19, conformance: 2, covered: 181, defer
 | TIO-AUTHZ-024 | §5.4.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/authorize.test.ts<br>test/http/complete.test.ts |
 | TIO-PAR-001 | §5.5 | test | 2 | covered | test/http/par.test.ts |
 | TIO-PAR-002 | §5.5 | test | 2 | covered | test/http/par.test.ts |
-| TIO-PAR-003 | §5.5 | test | 2 | covered | test/http/par.test.ts |
+| TIO-PAR-003 | §5.5 | test | 2 | covered | test/concurrency/http.test.ts<br>test/http/par.test.ts |
 | TIO-PAR-004 | §5.5 | test | 2 | covered | test/http/par.test.ts |
 | TIO-TOKEN-001 | §5.6.1 | test | 2 | covered | test/http/token.test.ts<br>test/unit/form.test.ts |
 | TIO-TOKEN-002 | §5.6.1 | test | 2 | covered | test/component/client-auth.test.ts<br>test/http/token.test.ts |
@@ -96,12 +96,12 @@ Current phase: 1. Requirements: 283 (ci: 19, conformance: 2, covered: 181, defer
 | TIO-TOKEN-006 | §5.6.1 | withdrawn | — | withdrawn |  |
 | TIO-TOKEN-010 | §5.6.2 | test | 2 | covered | test/http/token.test.ts |
 | TIO-TOKEN-011 | §5.6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
-| TIO-TOKEN-012 | §5.6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/concurrency/user-do.test.ts<br>test/http/token.test.ts |
+| TIO-TOKEN-012 | §5.6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/concurrency/http.test.ts<br>test/concurrency/user-do.test.ts<br>test/http/token.test.ts |
 | TIO-TOKEN-013 | §5.6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
 | TIO-TOKEN-014 | §5.6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
 | TIO-RT-001 | §5.6.3 | test | 2 | covered | test/http/token.test.ts |
 | TIO-RT-002 | §5.6.3 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
-| TIO-RT-003 | §5.6.3 | test | 2 | covered | test/concurrency/user-do.test.ts<br>test/http/token.test.ts |
+| TIO-RT-003 | §5.6.3 | test | 2 | covered | test/concurrency/http.test.ts<br>test/concurrency/user-do.test.ts<br>test/http/token.test.ts |
 | TIO-RT-004 | §5.6.3 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
 | TIO-RT-005 | §5.6.3 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
 | TIO-RT-006 | §5.6.3 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/token.test.ts |
@@ -165,7 +165,7 @@ Current phase: 1. Requirements: 283 (ci: 19, conformance: 2, covered: 181, defer
 | TIO-SESS-005 | §6.2 | test | 2 | covered | test/http/complete.test.ts |
 | TIO-SESS-006 | §6.2 | test | 2 | covered | test/component/user-do.test.ts |
 | TIO-REG-001 | §6.3 | test | 2 | covered | test/http/register.test.ts |
-| TIO-REG-002 | §6.3 | test | 2 | covered | test/http/register.test.ts |
+| TIO-REG-002 | §6.3 | test | 2 | covered | test/concurrency/http.test.ts<br>test/http/register.test.ts |
 | TIO-REG-003 | §6.3 | test | 2 | covered | test/http/register.test.ts |
 | TIO-REG-004 | §6.3 | test | 2 | covered | test/http/register.test.ts |
 | TIO-REG-005 | §6.3 | test | 2 | covered | test/http/register.test.ts |
@@ -201,7 +201,7 @@ Current phase: 1. Requirements: 283 (ci: 19, conformance: 2, covered: 181, defer
 | TIO-IX-011 | §7.2 | test | 2 | covered | test/http/passkey-interaction.test.ts |
 | TIO-IX-020 | §7.3 | test | 2 | covered | test/http/interactions.test.ts |
 | TIO-IX-021 | §7.3 | test | 2 | covered | test/http/interactions.test.ts |
-| TIO-IX-030 | §7.4 | test | 2 | covered | test/http/interactions.test.ts<br>test/http/passkey-interaction.test.ts |
+| TIO-IX-030 | §7.4 | test | 2 | covered | test/concurrency/http.test.ts<br>test/http/interactions.test.ts<br>test/http/passkey-interaction.test.ts |
 | TIO-IX-031 | §7.4 | test | 4 | deferred |  |
 | TIO-IX-032 | §7.4 | test | 2 | covered | test/http/register.test.ts |
 | TIO-IX-033 | §7.4 | test | 2 | covered | test/http/passkey-interaction.test.ts |
@@ -209,7 +209,7 @@ Current phase: 1. Requirements: 283 (ci: 19, conformance: 2, covered: 181, defer
 | TIO-IX-041 | §7.5 | test | 2 | covered | test/http/interactions.test.ts |
 | TIO-IX-050 | §7.6 | test | 5 | deferred |  |
 | TIO-IX-060 | §7.7 | test | 2 | covered | test/http/complete.test.ts |
-| TIO-IX-061 | §7.7 | test | 2 | covered | test/http/complete.test.ts |
+| TIO-IX-061 | §7.7 | test | 2 | covered | test/component/interactions.test.ts<br>test/concurrency/http.test.ts<br>test/http/complete.test.ts |
 | TIO-IX-062 | §7.7 | test | 2 | covered | test/http/complete.test.ts |
 | TIO-IX-070 | §7.8 | test | 2 | covered | test/http/passkey-interaction.test.ts |
 | TIO-IX-080 | §7.9 | ci | — | ci |  |
@@ -273,7 +273,7 @@ Current phase: 1. Requirements: 283 (ci: 19, conformance: 2, covered: 181, defer
 | TIO-TEST-006 | §13.4 | ci | — | ci |  |
 | TIO-TEST-007 | §13.4 | ci | — | ci |  |
 | TIO-TEST-008 | §13.5 | ci | — | ci |  |
-| TIO-TEST-010 | §13.6 | test | 2 | covered | test/concurrency/user-do.test.ts |
+| TIO-TEST-010 | §13.6 | test | 2 | covered | test/concurrency/http.test.ts<br>test/concurrency/user-do.test.ts |
 | TIO-TEST-020 | §13.7 | test | 7 | deferred |  |
 | TIO-TEST-030 | §13.8 | test | 2 | covered | test/unit/passkey.test.ts |
 | TIO-TEST-031 | §13.8 | test | 4 | covered | test/scripts/deploy.test.ts |

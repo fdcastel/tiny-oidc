@@ -12,7 +12,10 @@ import { type DoResult, fail } from "./errors.ts";
 // One object per authorization, logout or PAR interaction (spec §4.3): a single
 // JSON document in key-value storage plus an alarm that deletes everything at
 // expiry (TIO-DATA-022). Every transition is validated against §7.2 and an
-// invalid one leaves the document unchanged (TIO-DATA-023).
+// invalid one leaves the document unchanged (TIO-DATA-023). Every write runs
+// under blockConcurrencyWhile so that a read-check-write is exactly-once even
+// where input gates are not in force (the test runtime), which is what the
+// single-use claims (PAR, completion) and the attempt counter rely on.
 
 export type InteractionKind = "authorize" | "logout" | "par";
 
@@ -100,6 +103,8 @@ export interface InteractionDocument {
   attempts: number;
   /** Set when `/authorize` has taken a pushed request; a second taker fails (TIO-PAR-003). */
   par_consumed: boolean;
+  /** Set when `/complete` has taken the interaction; a second taker is told it is done (TIO-IX-061). */
+  completing: boolean;
 }
 
 export type CreateInteraction = Pick<
@@ -122,17 +127,33 @@ export type InteractionPatch = Partial<
   >
 >;
 
+/** What a transition may change besides the status. */
+export type TransitionPatch = Partial<
+  Omit<InteractionDocument, "id" | "kind" | "status" | "created_at" | "expires_at" | "binding_hash">
+>;
+
 const DOC_KEY = "doc";
 /** Completed and failed interactions stay readable for 60 s, then are deleted (TIO-IX-003). */
 const TERMINAL_RETENTION_SECONDS = 60;
 
+type Outcome<T = { doc: InteractionDocument }> = DoResult<T, InteractionDoError>;
+
 export class InteractionDO extends DurableObject<Env> {
+  /** Runs a read-check-write with every other event held back. */
+  private exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    return this.ctx.blockConcurrencyWhile(operation);
+  }
+
   /** Creates the document with `expires_at = now + ttl` and arms the expiry alarm. */
-  async create(
+  create(input: CreateInteraction, now: number, ttlSeconds: number): Promise<Outcome> {
+    return this.exclusive(() => this.createUnlocked(input, now, ttlSeconds));
+  }
+
+  private async createUnlocked(
     input: CreateInteraction,
     now: number,
     ttlSeconds: number,
-  ): Promise<DoResult<{ doc: InteractionDocument }, InteractionDoError>> {
+  ): Promise<Outcome> {
     const existing = await this.ctx.storage.get<InteractionDocument>(DOC_KEY);
     if (existing) return fail("interaction_exists");
     const doc: InteractionDocument = {
@@ -155,6 +176,7 @@ export class InteractionDO extends DurableObject<Env> {
       error: null,
       attempts: 0,
       par_consumed: false,
+      completing: false,
     };
     await this.ctx.storage.put(DOC_KEY, doc);
     await this.ctx.storage.setAlarm(doc.expires_at * 1000);
@@ -175,12 +197,21 @@ export class InteractionDO extends DurableObject<Env> {
    * interaction living `ttlSeconds` from now, whose status
    * `apply("consume_par", …)` then settles.
    */
-  async claimPushed(
+  claimPushed(
     clientId: string,
     bindingHash: string,
     now: number,
     ttlSeconds: number,
-  ): Promise<DoResult<{ doc: InteractionDocument }, InteractionDoError>> {
+  ): Promise<Outcome> {
+    return this.exclusive(() => this.claimPushedUnlocked(clientId, bindingHash, now, ttlSeconds));
+  }
+
+  private async claimPushedUnlocked(
+    clientId: string,
+    bindingHash: string,
+    now: number,
+    ttlSeconds: number,
+  ): Promise<Outcome> {
     const current = await this.get(now);
     if (!current.ok) return current;
     if (
@@ -208,17 +239,21 @@ export class InteractionDO extends DurableObject<Env> {
    * otherwise nothing changes. Terminal states re-arm the alarm to delete the
    * document 60 s later.
    */
-  async apply(
+  apply(
     operation: InteractionOperation,
     to: InteractionStatus,
-    patch: Partial<
-      Omit<
-        InteractionDocument,
-        "id" | "kind" | "status" | "created_at" | "expires_at" | "binding_hash"
-      >
-    >,
+    patch: TransitionPatch,
     now: number,
-  ): Promise<DoResult<{ doc: InteractionDocument }, InteractionDoError>> {
+  ): Promise<Outcome> {
+    return this.exclusive(() => this.applyUnlocked(operation, to, patch, now));
+  }
+
+  private async applyUnlocked(
+    operation: InteractionOperation,
+    to: InteractionStatus,
+    patch: TransitionPatch,
+    now: number,
+  ): Promise<Outcome> {
     const current = await this.get(now);
     if (!current.ok) return current;
     if (!canTransition(current.doc.status, operation, to)) return fail("interaction_invalid_state");
@@ -229,11 +264,33 @@ export class InteractionDO extends DurableObject<Env> {
     return { ok: true, doc };
   }
 
+  /**
+   * Takes a ready or failed interaction for `/complete`: exactly one caller
+   * proceeds to issue the code or the error redirect; the others learn that
+   * completion is under way, which they report as already completed.
+   */
+  claimCompletion(now: number): Promise<Outcome> {
+    return this.exclusive(() => this.claimCompletionUnlocked(now));
+  }
+
+  private async claimCompletionUnlocked(now: number): Promise<Outcome> {
+    const current = await this.get(now);
+    if (!current.ok) return current;
+    const status = current.doc.status;
+    if ((status !== "ready" && status !== "failed") || current.doc.completing) {
+      return fail("interaction_invalid_state");
+    }
+    const doc: InteractionDocument = { ...current.doc, completing: true };
+    await this.ctx.storage.put(DOC_KEY, doc);
+    return { ok: true, doc };
+  }
+
   /** Updates working fields without a status change; the document must be live and non-terminal. */
-  async patch(
-    fields: InteractionPatch,
-    now: number,
-  ): Promise<DoResult<{ doc: InteractionDocument }, InteractionDoError>> {
+  patch(fields: InteractionPatch, now: number): Promise<Outcome> {
+    return this.exclusive(() => this.patchUnlocked(fields, now));
+  }
+
+  private async patchUnlocked(fields: InteractionPatch, now: number): Promise<Outcome> {
     const current = await this.get(now);
     if (!current.ok) return current;
     if (isTerminal(current.doc.status)) return fail("interaction_invalid_state");
@@ -247,16 +304,23 @@ export class InteractionDO extends DurableObject<Env> {
    * exceeds `limit` fails the interaction with `too_many_attempts`
    * (TIO-RL-002) and is refused.
    */
-  async attempt(
+  attempt(
     now: number,
     limit: number,
-  ): Promise<DoResult<{ doc: InteractionDocument; remaining: number }, InteractionDoError>> {
+  ): Promise<Outcome<{ doc: InteractionDocument; remaining: number }>> {
+    return this.exclusive(() => this.attemptUnlocked(now, limit));
+  }
+
+  private async attemptUnlocked(
+    now: number,
+    limit: number,
+  ): Promise<Outcome<{ doc: InteractionDocument; remaining: number }>> {
     const current = await this.get(now);
     if (!current.ok) return current;
     if (isTerminal(current.doc.status)) return fail("interaction_invalid_state");
     const attempts = current.doc.attempts + 1;
     if (attempts > limit) {
-      await this.apply(
+      await this.applyUnlocked(
         "fail",
         "failed",
         { attempts, error: { error: "too_many_attempts", error_description: "too many attempts" } },

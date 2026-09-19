@@ -198,7 +198,9 @@ export async function authenticateInteraction(
   };
   const status = (await consentNeeded(c, doc, client, profile.id)) ? "consent_required" : "ready";
   c.get("metrics").doCalls += 1;
-  await stub.apply("authenticate", status, { auth }, now);
+  const applied = await stub.apply("authenticate", status, { auth }, now);
+  // A concurrent request may have failed the interaction meanwhile (attempt limit).
+  if (!applied.ok) return { status: "failed", redirect_to: redirectTo(c, id) };
   return { status, redirect_to: status === "ready" ? redirectTo(c, id) : null };
 }
 
