@@ -154,9 +154,14 @@ function effective(settings: Settings): Effective {
   );
 }
 
+/** Reads D1, never the isolate cache (TIO-ARCH-013); stored settings that no longer validate are reported. */
 export const getSettingsHandler: Handler<AppEnv> = async (c) => {
   try {
-    return c.json(effective(await c.get("settingsLoader").get(c.get("db"), c.get("config"))));
+    const resolved = resolveSettings(await readAllSettings(c.get("db")), c.get("config"));
+    if (!resolved.ok) {
+      return errorResponse(c, 500, "invalid_settings", resolved.violations.join("; "));
+    }
+    return c.json(effective(resolved.settings));
   } catch {
     return unavailable(c);
   }

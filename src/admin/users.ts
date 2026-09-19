@@ -8,6 +8,7 @@ import {
   RestoreBodySchema,
 } from "../api/definitions.ts";
 import { isUuid, UuidV7 } from "../crypto/uuid.ts";
+import { getClient } from "../db/clients.ts";
 import { getGroupByName } from "../db/groups.ts";
 import { releaseIdentity } from "../db/identities.ts";
 import { getUser, listUsers, type UserFilters, type UserRow } from "../db/users.ts";
@@ -473,7 +474,7 @@ export const listFamiliesHandler = (clock: Clock) =>
     return listed.ok ? { ok: true, items: listed.families } : { ok: false };
   });
 
-/** Grants are listed against the current client records so stale ones are dropped (TIO-CLIENT-005). */
+/** Grants are listed against the current client records, read from D1 (TIO-ARCH-013), so stale ones are dropped (TIO-CLIENT-005). */
 export function listGrantsHandler(): Handler<AppEnv> {
   return async (c) => {
     const user = await loadUser(c);
@@ -483,7 +484,7 @@ export function listGrantsHandler(): Handler<AppEnv> {
       if (!ids.ok) return notFound(c);
       const refs: ClientRef[] = [];
       for (const clientId of ids.client_ids) {
-        const client = await c.get("clients").get(c.get("db"), clientId);
+        const client = await getClient(c.get("db"), clientId);
         if (client === null) continue;
         refs.push({
           client_id: client.client_id,

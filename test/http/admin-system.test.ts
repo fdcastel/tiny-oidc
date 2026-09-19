@@ -567,3 +567,55 @@ describe("stats and maintenance", () => {
     ).toBe(503);
   });
 });
+
+describe("administrative reads", () => {
+  it("[TIO-ARCH-013] GET /admin/settings and /admin/clients/{id} read D1 directly while the protocol endpoints keep their isolate caches; stored settings that no longer validate are reported", async () => {
+    await relogin();
+    // A setting written behind the cache shows at once on the admin read.
+    await writeSettings(db, { "registration.mode": "closed" }, "test", clock.now());
+    const shown = (await (await call("GET", "settings")).json()) as Effective;
+    expect(shown["registration.mode"]).toEqual({ value: "closed", source: "setting" });
+    // A client disabled behind the cache shows at once, while the token endpoint still serves the cached record.
+    const created = (await (
+      await call("POST", "clients", {
+        client_id: "cached-app",
+        client_name: "Cached",
+        redirect_uris: [],
+        grant_types: ["client_credentials"],
+        token_endpoint_auth_method: "client_secret_basic",
+        scopes_allowed: ["admin"],
+      })
+    ).json()) as { client_secret: string };
+    const basic = `Basic ${btoa(`cached-app:${created.client_secret}`)}`;
+    const mint = () =>
+      h.send("/token", {
+        method: "POST",
+        origin: null,
+        headers: { "content-type": "application/x-www-form-urlencoded", authorization: basic },
+        body: "grant_type=client_credentials&scope=admin",
+      });
+    expect((await mint()).status).toBe(200);
+    await db
+      .prepare("UPDATE clients SET disabled_at = ? WHERE client_id = 'cached-app'")
+      .bind(clock.now())
+      .run();
+    expect(
+      ((await (await call("GET", "clients/cached-app")).json()) as Key & { disabled_at: number })
+        .disabled_at,
+    ).toBe(clock.now());
+    expect((await mint()).status).toBe(200);
+    clock.advance(60);
+    expect((await mint()).status).toBe(401);
+    // Settings that no longer validate as stored.
+    await writeSettings(db, { "tokens.access_ttl": 5 }, "test", clock.now());
+    const broken = await call("GET", "settings");
+    expect(broken.status).toBe(500);
+    expect(await broken.json()).toMatchObject({ error: "invalid_settings" });
+    await writeSettings(
+      db,
+      { "tokens.access_ttl": null, "registration.mode": null },
+      "test",
+      clock.now(),
+    );
+  });
+});
