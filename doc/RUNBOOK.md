@@ -77,7 +77,16 @@ curl -s $ISSUER/token -u "$CLIENT_ID:$CLIENT_SECRET" -d grant_type=client_creden
 Runs once per deployment, while `admins` is empty and `bootstrapped_at` is
 unset (TIO-ADMIN-010). It needs the `ADMIN_BOOTSTRAP_TOKEN` secret and a login
 app: either `BUNDLED_LOGIN_APP=true` or the `login_url` and `login_origins`
-settings (§12.2).
+settings (§12.2). No administrator exists yet to store those two through the
+API, so a hosted login app is registered straight into D1 first:
+
+```sh
+wrangler d1 execute tiny-oidc-production --remote --command "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('login_url', '\"https://login.example.com/\"', 0, 'operator'), ('login_origins', '[\"https://login.example.com\"]', 0, 'operator')"
+```
+
+`scripts/bootstrap-staging.ts` runs the whole of this section unattended for
+staging (a bot administrator with a virtual passkey, the nightly automation
+client, an invitation for the owner's own account).
 
 ```sh
 curl -s -X POST $ISSUER/api/v1/admin/bootstrap \
