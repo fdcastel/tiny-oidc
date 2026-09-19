@@ -5,7 +5,7 @@ import { countMembers } from "../db/groups.ts";
 import { writeSettings } from "../db/settings.ts";
 import type { Clock, Settings } from "../env.ts";
 import { CAPABILITIES } from "../oidc/capabilities.ts";
-import { type Client, createClient } from "../oidc/clients.ts";
+import { type Client, createClient, publicClient } from "../oidc/clients.ts";
 import { withQuery } from "../oidc/interactions.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
@@ -28,12 +28,6 @@ const BootstrapBody = z.object({
   email: z.string().min(1).max(254),
   display_name: z.string().min(1).max(128).optional(),
 });
-
-/** The client record as an API shows it: everything but the secret hash. */
-export function publicClient(client: Client): Omit<Client, "client_secret_hash"> {
-  const { client_secret_hash: _hash, ...rest } = client;
-  return rest;
-}
 
 export function bootstrapHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {

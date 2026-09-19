@@ -4,6 +4,15 @@ import { bodyLimit } from "hono/body-limit";
 import { requireAdmin } from "../admin/auth.ts";
 import { bootstrapHandler } from "../admin/bootstrap.ts";
 import {
+  createClientHandler,
+  deleteClientHandler,
+  getClientHandler,
+  listClientsHandler,
+  patchClientHandler,
+  rotateSecretHandler,
+  setClientDisabledHandler,
+} from "../admin/clients.ts";
+import {
   createGroupHandler,
   deleteGroupHandler,
   getGroupHandler,
@@ -272,6 +281,15 @@ export function createApp(deps: AppDeps) {
   app.get(`${groups}/:id/members`, listMembersHandler(deps.clock));
   app.put(`${groups}/:id/members/:user_id`, membershipHandler(deps.clock, true));
   app.delete(`${groups}/:id/members/:user_id`, membershipHandler(deps.clock, false));
+  const clientsPath = "/api/v1/admin/clients";
+  app.get(clientsPath, listClientsHandler(deps.clock));
+  app.post(clientsPath, createClientHandler(deps.clock));
+  app.get(`${clientsPath}/:id`, getClientHandler);
+  app.patch(`${clientsPath}/:id`, patchClientHandler(deps.clock));
+  app.delete(`${clientsPath}/:id`, deleteClientHandler);
+  app.post(`${clientsPath}/:id/rotate-secret`, rotateSecretHandler(deps.clock));
+  app.post(`${clientsPath}/:id/disable`, setClientDisabledHandler(deps.clock, true));
+  app.post(`${clientsPath}/:id/enable`, setClientDisabledHandler(deps.clock, false));
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

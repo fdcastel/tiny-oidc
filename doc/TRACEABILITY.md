@@ -128,11 +128,11 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 197, defer
 | TIO-LOGOUT-011 | §5.10.2 | test | 5 | deferred |  |
 | TIO-LOGOUT-012 | §5.10.2 | test | 5 | deferred |  |
 | TIO-LOGOUT-013 | §5.10.2 | test | 5 | deferred |  |
-| TIO-CLIENT-001 | §5.11.1 | test | 2 | covered | test/component/clients.test.ts |
-| TIO-CLIENT-002 | §5.11.1 | test | 2 | covered | test/unit/clients.test.ts |
-| TIO-CLIENT-003 | §5.11.1 | test | 3 | covered | test/component/clients.test.ts<br>test/unit/clients.test.ts |
-| TIO-CLIENT-004 | §5.11.1 | test | 2 | covered | test/component/clients.test.ts<br>test/http/admin-auth.test.ts<br>test/http/token.test.ts |
-| TIO-CLIENT-005 | §5.11.1 | test | 3 | covered | test/component/user-do.test.ts |
+| TIO-CLIENT-001 | §5.11.1 | test | 2 | covered | test/component/clients.test.ts<br>test/http/admin-clients.test.ts |
+| TIO-CLIENT-002 | §5.11.1 | test | 2 | covered | test/component/clients.test.ts<br>test/http/admin-clients.test.ts<br>test/unit/clients.test.ts |
+| TIO-CLIENT-003 | §5.11.1 | test | 3 | covered | test/component/clients.test.ts<br>test/http/admin-clients.test.ts<br>test/unit/clients.test.ts |
+| TIO-CLIENT-004 | §5.11.1 | test | 2 | covered | test/component/clients.test.ts<br>test/http/admin-auth.test.ts<br>test/http/admin-clients.test.ts<br>test/http/token.test.ts |
+| TIO-CLIENT-005 | §5.11.1 | test | 3 | covered | test/component/user-do.test.ts<br>test/http/admin-clients.test.ts |
 | TIO-CLIENT-010 | §5.11.3 | test | 2 | covered | test/unit/clients.test.ts |
 | TIO-CLIENT-011 | §5.11.3 | test | 2 | covered | test/unit/clients.test.ts |
 | TIO-SCOPE-001 | §5.12 | test | 2 | covered | test/http/authorize.test.ts |
@@ -219,8 +219,8 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 197, defer
 | TIO-ME-003 | §8 | test | 5 | deferred |  |
 | TIO-ADMIN-001 | §9.1 | test | 3 | covered | test/http/admin-auth.test.ts |
 | TIO-ADMIN-002 | §9.1 | test | 3 | covered | test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
-| TIO-ADMIN-003 | §9.1 | test | 3 | covered | test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
-| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-users-list.test.ts |
+| TIO-ADMIN-003 | §9.1 | test | 3 | covered | test/http/admin-clients.test.ts<br>test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
+| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-clients.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-users-list.test.ts |
 | TIO-ADMIN-010 | §9.3 | test | 2 | covered | test/http/bootstrap.test.ts |
 | TIO-ADMIN-011 | §9.3 | test | 2 | covered | test/http/admin-auth.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-020 | §9.4 | test | 3 | deferred |  |

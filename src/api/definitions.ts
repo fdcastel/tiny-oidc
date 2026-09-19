@@ -1164,6 +1164,200 @@ export const ADMIN_GROUP_ROUTES = [
   adminGroupMemberRemoveRoute,
 ] as const;
 
+// Admin clients (§9.4 Clients, §5.11)
+
+export const ClientIdParams = z.object({
+  id: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9._-]{2,63}$/)
+    .openapi({ description: "Client id" }),
+});
+
+export const AdminClientSchema = z
+  .looseObject({
+    client_id: z.string(),
+    client_name: z.string(),
+    token_endpoint_auth_method: z.string(),
+    grant_types: z.array(z.string()),
+    scopes_allowed: z.array(z.string()),
+    disabled_at: z.int().nullable(),
+    created_at: z.int(),
+    updated_at: z.int(),
+  })
+  .openapi("AdminClient", {
+    description:
+      "The client record without its secret hash (TIO-ADMIN-003); see §5.11 for every field",
+  });
+
+export const AdminClientCreatedSchema = AdminClientSchema.extend({
+  client_secret: z
+    .string()
+    .nullable()
+    .openapi({ description: "Returned exactly once, for client_secret_basic/post clients" }),
+}).openapi("AdminClientCreated");
+
+export const AdminClientInputSchema = z
+  .looseObject({
+    client_id: z.string().optional(),
+    client_name: z.string(),
+    grant_types: z.array(z.string()),
+    token_endpoint_auth_method: z.string(),
+    scopes_allowed: z.array(z.string()),
+  })
+  .openapi("AdminClientInput", {
+    description: "The create body; every field of §5.11 is accepted",
+  });
+
+export const AdminClientPatchInputSchema = z
+  .looseObject({})
+  .openapi("AdminClientPatch", { description: "Any subset of the create body except client_id" });
+
+export const RotatedSecretSchema = z
+  .object({ client_id: z.string(), client_secret: z.string(), rotated_at: z.int() })
+  .openapi("RotatedSecret");
+
+const CLIENT_PATH = "/api/v1/admin/clients/{id}";
+
+export const adminClientsListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/clients",
+  tags: ["admin"],
+  summary: "List clients (keyset-paginated)",
+  security: adminSecurity,
+  request: { query: AdminListQuerySchema },
+  responses: {
+    200: {
+      description: "A page of clients",
+      content: { "application/json": { schema: pageSchema(AdminClientSchema, "AdminClientPage") } },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminClientCreateRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/clients",
+  tags: ["admin"],
+  summary:
+    "Create a client; the secret, when the method uses one, is returned once (TIO-CLIENT-003)",
+  security: adminSecurity,
+  request: { body: jsonBody(AdminClientInputSchema) },
+  responses: {
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: AdminClientCreatedSchema } },
+    },
+    400: errorResponse("invalid_client with the violations in error_description"),
+    409: errorResponse("client_exists"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminClientGetRoute = createRoute({
+  method: "get",
+  path: CLIENT_PATH,
+  tags: ["admin"],
+  summary: "A client record",
+  security: adminSecurity,
+  request: { params: ClientIdParams },
+  responses: {
+    200: {
+      description: "The client",
+      content: { "application/json": { schema: AdminClientSchema } },
+    },
+    404: errorResponse("client_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminClientPatchRoute = createRoute({
+  method: "patch",
+  path: CLIENT_PATH,
+  tags: ["admin"],
+  summary:
+    "Update a client; the merged record is validated as a whole. A switch to a secret method returns a new secret once",
+  security: adminSecurity,
+  request: { params: ClientIdParams, body: jsonBody(AdminClientPatchInputSchema) },
+  responses: {
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: AdminClientCreatedSchema } },
+    },
+    400: errorResponse("invalid_request or invalid_client"),
+    404: errorResponse("client_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminClientDeleteRoute = createRoute({
+  method: "delete",
+  path: CLIENT_PATH,
+  tags: ["admin"],
+  summary:
+    "Delete a client; consent grants and refresh families are cleaned up lazily (TIO-CLIENT-005)",
+  security: adminSecurity,
+  request: { params: ClientIdParams },
+  responses: {
+    204: { description: "Deleted" },
+    404: errorResponse("client_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminClientRotateRoute = createRoute({
+  method: "post",
+  path: `${CLIENT_PATH}/rotate-secret`,
+  tags: ["admin"],
+  summary: "Replace the secret immediately (TIO-CLIENT-003)",
+  security: adminSecurity,
+  request: { params: ClientIdParams },
+  responses: {
+    200: {
+      description: "The new secret, returned once",
+      content: { "application/json": { schema: RotatedSecretSchema } },
+    },
+    404: errorResponse("client_not_found"),
+    409: errorResponse("no_secret: the client's method uses no shared secret"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+const clientStatusRoute = (op: "disable" | "enable") =>
+  createRoute({
+    method: "post",
+    path: `${CLIENT_PATH}/${op}`,
+    tags: ["admin"],
+    summary:
+      op === "disable"
+        ? "Disable a client: every grant, PAR, token and refresh operation fails within the cache window (TIO-CLIENT-004)"
+        : "Enable a disabled client",
+    security: adminSecurity,
+    request: { params: ClientIdParams },
+    responses: {
+      200: {
+        description: "The client",
+        content: { "application/json": { schema: AdminClientSchema } },
+      },
+      404: errorResponse("client_not_found"),
+      ...ADMIN_ERRORS,
+    },
+  });
+
+export const adminClientDisableRoute = clientStatusRoute("disable");
+export const adminClientEnableRoute = clientStatusRoute("enable");
+
+export const ADMIN_CLIENT_ROUTES = [
+  adminClientsListRoute,
+  adminClientCreateRoute,
+  adminClientGetRoute,
+  adminClientPatchRoute,
+  adminClientDeleteRoute,
+  adminClientRotateRoute,
+  adminClientDisableRoute,
+  adminClientEnableRoute,
+] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -1177,6 +1371,7 @@ export const API_ROUTES = [
   adminBootstrapRoute,
   ...ADMIN_USER_ROUTES,
   ...ADMIN_GROUP_ROUTES,
+  ...ADMIN_CLIENT_ROUTES,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */

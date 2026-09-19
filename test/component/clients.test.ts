@@ -16,7 +16,7 @@ import {
   ClientCache,
   ClientsUnavailableError,
 } from "../../src/oidc/client-cache.ts";
-import { createClient } from "../../src/oidc/clients.ts";
+import { createClient, updateClientRecord } from "../../src/oidc/clients.ts";
 import { FakeClock } from "../support/clock.ts";
 import { createTestClient } from "../support/factories.ts";
 import { env } from "../support/op.ts";
@@ -267,5 +267,34 @@ describe("client cache", () => {
     await cache.get(db, "c1");
     await cache.get(db, "extra");
     expect(cache.size).toBe(CLIENT_CACHE_CAPACITY);
+  });
+});
+
+describe("updateClientRecord", () => {
+  beforeEach(resetStorage);
+
+  it("[TIO-CLIENT-002] refuses a patch that is not an object before anything else", async () => {
+    const clock = new FakeClock();
+    const db = Db.from(env.DB);
+    const created = await createClient(
+      db,
+      {
+        client_name: "Patched",
+        redirect_uris: ["https://rp.example.com/cb"],
+        grant_types: ["authorization_code"],
+        token_endpoint_auth_method: "none",
+        scopes_allowed: ["openid"],
+      },
+      context,
+      clock.now(),
+    );
+    if (!created.ok) throw new Error(created.error);
+    for (const raw of [[1], null, "text", 5]) {
+      expect(await updateClientRecord(db, created.client, raw, context, clock.now())).toEqual({
+        ok: false,
+        error: "invalid_client",
+        violations: ["$: expected an object"],
+      });
+    }
   });
 });

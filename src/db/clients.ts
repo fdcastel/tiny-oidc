@@ -173,3 +173,73 @@ export async function deleteClient(db: Db, clientId: string): Promise<boolean> {
   const result = await db.prepare("DELETE FROM clients WHERE client_id = ?").bind(clientId).run();
   return result.meta.changes === 1;
 }
+
+/** Rewrites every mutable column of a client (PATCH); the id, secret hash and timestamps of creation stay. */
+export async function updateClient(db: Db, client: Client, now: number): Promise<boolean> {
+  const result = await db
+    .prepare(
+      "UPDATE clients SET client_name = ?, client_uri = ?, logo_uri = ?, redirect_uris = ?, post_logout_redirect_uris = ?, backchannel_logout_uri = ?, grant_types = ?, token_endpoint_auth_method = ?, client_secret_hash = ?, jwks = ?, jwks_uri = ?, scopes_allowed = ?, audiences = ?, allowed_groups = ?, skip_consent = ?, require_par = ?, offline_access = ?, access_token_ttl = ?, id_token_ttl = ?, refresh_token_ttl = ?, refresh_idle_ttl = ?, updated_at = ? WHERE client_id = ?",
+    )
+    .bind(
+      client.client_name,
+      client.client_uri,
+      client.logo_uri,
+      JSON.stringify(client.redirect_uris),
+      JSON.stringify(client.post_logout_redirect_uris),
+      client.backchannel_logout_uri,
+      JSON.stringify(client.grant_types),
+      client.token_endpoint_auth_method,
+      client.client_secret_hash,
+      client.jwks === null ? null : JSON.stringify(client.jwks),
+      client.jwks_uri,
+      JSON.stringify(client.scopes_allowed),
+      JSON.stringify(client.audiences),
+      client.allowed_groups === null ? null : JSON.stringify(client.allowed_groups),
+      client.skip_consent ? 1 : 0,
+      client.require_par ? 1 : 0,
+      client.offline_access ? 1 : 0,
+      client.access_token_ttl,
+      client.id_token_ttl,
+      client.refresh_token_ttl,
+      client.refresh_idle_ttl,
+      now,
+      client.client_id,
+    )
+    .run();
+  return result.meta.changes === 1;
+}
+
+export interface ClientKeyset {
+  created_at: number;
+  id: string;
+}
+
+const CLIENT_COLUMNS =
+  "client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at";
+
+export interface ListedClient {
+  keyset: ClientKeyset;
+  /** Null for a row that no longer decodes; it still counts for paging. */
+  client: Client | null;
+}
+
+/** The keyset query behind `GET /admin/clients`, walking `clients_created`. */
+export async function listClientsPage(
+  db: Db,
+  after: ClientKeyset | null,
+  limit: number,
+): Promise<ListedClient[]> {
+  const base = ["SELECT", CLIENT_COLUMNS, "FROM clients"].join(" ");
+  const order = " ORDER BY created_at, client_id LIMIT ?";
+  const statement =
+    after === null
+      ? db.prepare(base + order).bind(limit)
+      : db
+          .prepare(`${base} WHERE (created_at, client_id) > (?, ?)${order}`)
+          .bind(after.created_at, after.id, limit);
+  const rows = await statement.all<RawClientRow>();
+  return rows.results.map((row) => ({
+    keyset: { created_at: row.created_at, id: row.client_id },
+    client: decodeClientRow(row),
+  }));
+}

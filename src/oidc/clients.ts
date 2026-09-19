@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sha256 } from "../crypto/hash.ts";
 import { newSecret, randomBytes } from "../crypto/random.ts";
-import { insertClient } from "../db/clients.ts";
+import { insertClient, updateClient } from "../db/clients.ts";
 import type { Db } from "../db/db.ts";
 import { encodeBase64Url } from "../util/base64url.ts";
 import { CAPABILITIES, type Scope, type TokenEndpointAuthMethod } from "./capabilities.ts";
@@ -267,6 +267,10 @@ export function clientFromInput(
   };
 }
 
+/** A schema issue as a violation line: the field path (or `$` at the root) and the message. */
+const issueText = (issue: { path: PropertyKey[]; message: string }): string =>
+  `${issue.path.join(".") || "$"}: ${issue.message}`;
+
 export type CreateClientResult =
   | { ok: true; client: Client; secret: string | null }
   | { ok: false; error: "invalid_client"; violations: string[] }
@@ -288,7 +292,7 @@ export async function createClient(
     return {
       ok: false,
       error: "invalid_client",
-      violations: parsed.error.issues.map((i) => `${i.path.join(".") || "$"}: ${i.message}`),
+      violations: parsed.error.issues.map(issueText),
     };
   }
   const violations = validateClientInput(parsed.data, context);
@@ -301,4 +305,73 @@ export async function createClient(
   const inserted = await insertClient(db, client);
   if (inserted === "client_exists") return { ok: false, error: "client_exists" };
   return { ok: true, client, secret: generated?.secret ?? null };
+}
+
+/** The client record as the APIs show it: everything but the secret hash (TIO-ADMIN-003). */
+export function publicClient(client: Client): Omit<Client, "client_secret_hash"> {
+  const { client_secret_hash: _hash, ...rest } = client;
+  return rest;
+}
+
+/** The stored record turned back into an input, for merging a patch over it. */
+function inputOf(client: Client): ClientInput {
+  const {
+    client_secret_hash: _hash,
+    disabled_at: _d,
+    created_at: _c,
+    updated_at: _u,
+    ...rest
+  } = client;
+  return rest;
+}
+
+export type UpdateClientResult =
+  | { ok: true; client: Client; secret: string | null }
+  | { ok: false; error: "invalid_client"; violations: string[] }
+  | { ok: false; error: "client_not_found" };
+
+/**
+ * Applies a patch: the merged record is validated as a whole (TIO-CLIENT-002),
+ * a switch to a secret-based method mints a secret returned exactly once, a
+ * switch away drops the hash.
+ */
+export async function updateClientRecord(
+  db: Db,
+  current: Client,
+  raw: unknown,
+  context: ValidationContext,
+  now: number,
+): Promise<UpdateClientResult> {
+  const invalid = (violations: string[]): UpdateClientResult => ({
+    ok: false,
+    error: "invalid_client",
+    violations,
+  });
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return invalid(["$: expected an object"]);
+  }
+  if ("client_id" in raw) return invalid(["client_id: cannot be changed"]);
+  // The patch is laid over the stored record and the whole is validated, so the
+  // schema defaults never replace a stored value the patch does not name.
+  const parsed = ClientInputSchema.safeParse({ ...inputOf(current), ...raw });
+  if (!parsed.success) return invalid(parsed.error.issues.map(issueText));
+  const merged = parsed.data;
+  const violations = validateClientInput(merged, context);
+  if (violations.length > 0) return { ok: false, error: "invalid_client", violations };
+  let secretHash = current.client_secret_hash;
+  let secret: string | null = null;
+  if (!usesSecret(merged.token_endpoint_auth_method)) {
+    secretHash = null;
+  } else if (secretHash === null) {
+    const generated = await generateClientSecret();
+    secretHash = generated.hash;
+    secret = generated.secret;
+  }
+  const client: Client = {
+    ...clientFromInput(merged, current.client_id, secretHash, current.created_at),
+    disabled_at: current.disabled_at,
+    updated_at: now,
+  };
+  if (!(await updateClient(db, client, now))) return { ok: false, error: "client_not_found" };
+  return { ok: true, client, secret };
 }
