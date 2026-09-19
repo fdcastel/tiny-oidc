@@ -218,7 +218,6 @@ describe("WebAuthn related origins", () => {
 describe("protocol endpoints before Phase 2", () => {
   it("answer 501 not_implemented on every route of the table that has no handler yet, with the right header class", async () => {
     const cases: [string, string, boolean][] = [
-      ["POST", "/par", false],
       ["POST", "/token", false],
       ["GET", "/userinfo", false],
       ["POST", "/userinfo", false],

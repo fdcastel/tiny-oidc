@@ -11,6 +11,7 @@ import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } fro
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
 import { ClientCache } from "../oidc/client-cache.ts";
 import { RemoteJwksCache } from "../oidc/jwks-cache.ts";
+import { parHandler } from "../oidc/par-endpoint.ts";
 import { discoveryHandler, jwksHandler, webauthnHandler } from "../oidc/wellknown.ts";
 import type { AppEnv } from "./context.ts";
 import { errorBody, errorResponse } from "./errors.ts";
@@ -159,7 +160,7 @@ export function createApp(deps: AppDeps) {
   const notImplemented: Handler<AppEnv> = (c) =>
     errorResponse(c, 501, "not_implemented", "this endpoint arrives with a later phase");
   app.get("/authorize", authorizeHandler(deps.clock));
-  app.post("/par", notImplemented);
+  app.post("/par", parHandler(deps.clock));
   app.post("/token", notImplemented);
   app.on(["GET", "POST"], "/userinfo", notImplemented);
   app.post("/revoke", notImplemented);
