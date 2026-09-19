@@ -128,6 +128,25 @@ const CAPABILITY_LITERALS = [
   "select_account",
 ];
 
+/** Tokens that identify a capability list on their own, even as a one-element array. */
+const UNAMBIGUOUS_LITERALS = new Set([
+  "openid",
+  "offline_access",
+  "authorization_code",
+  "refresh_token",
+  "client_credentials",
+  "client_secret_basic",
+  "client_secret_post",
+  "private_key_jwt",
+  "ES256",
+  "ES384",
+  "EdDSA",
+  "PS256",
+  "RS256",
+  "S256",
+  "select_account",
+]);
+
 const CRYPTO_PACKAGE =
   /^(node:)?crypto$|crypto-js|@noble\/|tweetnacl|elliptic|bcrypt|argon2|scrypt|sha\.js|hash\.js|jsrsasign|node-forge|sjcl|aes-js|js-sha|md5|@peculiar\/webcrypto|@stablelib\//;
 const CRYPTO_ALLOWLIST = new Set(["jose", "@simplewebauthn/server"]);
@@ -217,7 +236,14 @@ export const RULES: Rule[] = [
       const arrays = /\[\s*(?:"[^"\n]*"\s*,?\s*)+\]/g;
       for (const match of source.matchAll(arrays)) {
         const members = [...match[0].matchAll(/"([^"\n]*)"/g)].map((m) => m[1] as string);
-        const hit = members.find((m) => CAPABILITY_LITERALS.includes(m));
+        // A list of two or more members that are all capability tokens, or a
+        // single unambiguous token, is a capability list living outside capabilities.ts.
+        const allTokens = members.every((m) => CAPABILITY_LITERALS.includes(m));
+        const hit =
+          (members.length >= 2 && allTokens) ||
+          (members.length === 1 && UNAMBIGUOUS_LITERALS.has(members[0] as string))
+            ? members[0]
+            : undefined;
         if (hit !== undefined) {
           violations.push({
             rule: "capabilities-single-source",

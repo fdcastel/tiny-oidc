@@ -102,13 +102,22 @@ describe("lint rules (TIO-TEST-060)", () => {
     expect(
       rulesHit({ "src/oidc/token.ts": 'const g = ["authorization_code", "refresh_token"];' }),
     ).toEqual(["src/oidc/token.ts:1:capabilities-single-source"]);
-    expect(rulesHit({ "src/oidc/token.ts": 'const r = [\n  "code",\n];' })).toEqual([
+    expect(rulesHit({ "src/oidc/token.ts": 'const r = [\n  "code",\n  "query",\n];' })).toEqual([
       "src/oidc/token.ts:1:capabilities-single-source",
     ]);
     expect(
       rulesHit({ "src/oidc/capabilities.ts": 'export const SCOPES = ["openid", "email"];' }),
     ).toEqual([]);
     expect(rulesHit({ "src/oidc/token.ts": 'const names = ["admins", "users"];' })).toEqual([]);
+    // Mixed lists and lone ambiguous words are not capability lists.
+    expect(rulesHit({ "src/x.ts": 'const ops = ["consent", "abort", "fail"];' })).toEqual([]);
+    expect(rulesHit({ "src/x.ts": 'const one = ["login"];' })).toEqual([]);
+    expect(rulesHit({ "src/x.ts": 'const p = ["login", "consent"];' })).toEqual([
+      "src/x.ts:1:capabilities-single-source",
+    ]);
+    expect(rulesHit({ "src/x.ts": 'const a = ["S256"];' })).toEqual([
+      "src/x.ts:1:capabilities-single-source",
+    ]);
   });
 
   it("[TIO-TEST-033] forbids src/ and cloudflare:test imports from examples/ and test/e2e/", () => {
