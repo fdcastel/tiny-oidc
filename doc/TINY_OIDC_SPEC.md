@@ -832,6 +832,7 @@ CREATE TABLE refresh_families (
   id                  TEXT PRIMARY KEY,
   client_id           TEXT NOT NULL,
   client_created_at   INTEGER NOT NULL,             -- the client's created_at when the family was created (TIO-CLIENT-005)
+  code_secret_hash    BLOB,                         -- the authorization code that created the family, for replay revocation (TIO-TOKEN-012)
   kind                TEXT NOT NULL CHECK (kind IN ('session','offline')),
   sid                 TEXT,                         -- session-bound families
   scope               TEXT NOT NULL,
@@ -847,6 +848,7 @@ CREATE TABLE refresh_families (
 );
 CREATE INDEX refresh_families_client ON refresh_families(client_id);
 CREATE INDEX refresh_families_sid    ON refresh_families(sid);
+CREATE INDEX refresh_families_code   ON refresh_families(code_secret_hash);
 
 CREATE TABLE refresh_tokens (
   secret_hash  BLOB PRIMARY KEY,

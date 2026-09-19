@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS refresh_families (
   id                  TEXT PRIMARY KEY,
   client_id           TEXT NOT NULL,
   client_created_at   INTEGER NOT NULL,
+  code_secret_hash    BLOB,
   kind                TEXT NOT NULL CHECK (kind IN ('session','offline')),
   sid                 TEXT,
   scope               TEXT NOT NULL,
@@ -104,6 +105,7 @@ CREATE TABLE IF NOT EXISTS refresh_families (
 );
 CREATE INDEX IF NOT EXISTS refresh_families_client ON refresh_families(client_id);
 CREATE INDEX IF NOT EXISTS refresh_families_sid    ON refresh_families(sid);
+CREATE INDEX IF NOT EXISTS refresh_families_code   ON refresh_families(code_secret_hash);
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   secret_hash  BLOB PRIMARY KEY,
   family_id    TEXT NOT NULL REFERENCES refresh_families(id) ON DELETE CASCADE,
