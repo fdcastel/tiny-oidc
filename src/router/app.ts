@@ -8,6 +8,9 @@ import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } from "../env.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
+import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
+import { ClientCache } from "../oidc/client-cache.ts";
+import { RemoteJwksCache } from "../oidc/jwks-cache.ts";
 import { discoveryHandler, jwksHandler, webauthnHandler } from "../oidc/wellknown.ts";
 import type { AppEnv } from "./context.ts";
 import { errorBody, errorResponse } from "./errors.ts";
@@ -32,6 +35,8 @@ export function createApp(deps: AppDeps) {
   const uuids = new UuidV7(deps.clock);
   const settingsLoader = new SettingsLoader(deps.clock);
   const keyStore = new KeyStore(deps.clock);
+  const clients = new ClientCache(deps.clock);
+  const jwks = new RemoteJwksCache();
   // Startup validation happens at the first request and is remembered for the
   // isolate's lifetime (TIO-CRYPTO-010, TIO-CFG-002).
   let startup: { fingerprint: string; result: ConfigResult } | undefined;
@@ -82,6 +87,8 @@ export function createApp(deps: AppDeps) {
     c.set("db", db);
     c.set("settingsLoader", settingsLoader);
     c.set("keyStore", keyStore);
+    c.set("clients", clients);
+    c.set("jwks", jwks);
     if (!config.ok) {
       // Fail every request closed until the configuration is fixed (TIO-ARCH-014).
       logger.log("error", "fatal: invalid configuration", {
@@ -151,7 +158,7 @@ export function createApp(deps: AppDeps) {
   // route table, discovery and the header matrix already agree (TIO-DISC-002).
   const notImplemented: Handler<AppEnv> = (c) =>
     errorResponse(c, 501, "not_implemented", "this endpoint arrives with a later phase");
-  app.get("/authorize", notImplemented);
+  app.get("/authorize", authorizeHandler(deps.clock));
   app.post("/par", notImplemented);
   app.post("/token", notImplemented);
   app.on(["GET", "POST"], "/userinfo", notImplemented);

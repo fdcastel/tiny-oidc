@@ -2,6 +2,8 @@ import type { KeyStore } from "../crypto/keystore.ts";
 import type { Db } from "../db/db.ts";
 import type { Config, Env, Settings, SettingsLoader } from "../env.ts";
 import type { Logger } from "../obs/log.ts";
+import type { ClientCache } from "../oidc/client-cache.ts";
+import type { RemoteJwksCache } from "../oidc/jwks-cache.ts";
 
 /** Per-request counters reported in the log line (TIO-OBS-001, TIO-ARCH-005). */
 export interface RequestMetrics {
@@ -20,6 +22,8 @@ export interface Variables {
   settings?: Settings;
   settingsLoader: SettingsLoader;
   keyStore: KeyStore;
+  clients: ClientCache;
+  jwks: RemoteJwksCache;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Variables };

@@ -279,14 +279,23 @@ describe("InteractionDO", () => {
     const unchanged = await stub.get(now);
     expect(docOf(unchanged).status).toBe("login_required");
     expect(docOf(unchanged).consent).toBeNull();
+    const authenticated = {
+      uid: "u1",
+      method: "passkey" as const,
+      amr: ["hwk", "user"],
+      acr: "urn:tinyoidc:acr:passkey",
+      upstream: null,
+      auth_time: now + 1,
+      new_session: true,
+    };
     const auth = await stub.apply(
       "authenticate",
       "consent_required",
-      { auth: { uid: "u1" } },
+      { auth: authenticated },
       now + 1,
     );
     expect(docOf(auth).status).toBe("consent_required");
-    expect(docOf(auth).auth).toEqual({ uid: "u1" });
+    expect(docOf(auth).auth).toEqual(authenticated);
     // A permitted operation to a status not listed for it is refused as well.
     expect(await stub.apply("consent", "completed", {}, now + 2)).toEqual({
       ok: false,
