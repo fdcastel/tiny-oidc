@@ -11,7 +11,7 @@ test("the OP answers the health endpoint from a browser", async ({ page, baseURL
   expect(body).toMatchObject({ status: "ok", d1: "ok" });
   expect(body["active_kid"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(body["issuer_mismatch"]).toBeUndefined();
-  expect(baseURL).toContain("127.0.0.1");
+  expect(baseURL).toContain("localhost");
 });
 
 test("unknown paths are JSON 404s, never HTML", async ({ page }) => {

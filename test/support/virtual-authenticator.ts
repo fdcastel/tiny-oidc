@@ -14,6 +14,15 @@ import { decodeBase64Url, encodeBase64Url, utf8 } from "../../src/util/base64url
 
 export type CoseAlgorithm = -8 | -7 | -257;
 
+// Web Crypto types spelled through the global, so this file compiles under
+// both the Workers and the Node type sets (the e2e suite reuses it).
+type Key = Parameters<typeof crypto.subtle.sign>[1];
+type KeyPair = { privateKey: Key; publicKey: Key };
+/** Algorithm dictionaries, loosely typed so that both type sets accept the same literals. */
+type GenerateAlgorithm = { name: string } & Record<string, unknown>;
+type SignAlgorithm = { name: string } & Record<string, unknown>;
+type Jwk = { x?: string; y?: string; n?: string; e?: string };
+
 export interface AuthenticatorFaults {
   /** Override the origin written into clientDataJSON. */
   origin?: string;
@@ -46,8 +55,8 @@ export interface AuthenticatorFaults {
 interface Credential {
   id: Uint8Array;
   algorithm: CoseAlgorithm;
-  privateKey: CryptoKey;
-  publicKey: CryptoKey;
+  privateKey: Key;
+  publicKey: Key;
   rpId: string;
   userHandle: Uint8Array;
   counter: number;
@@ -103,10 +112,7 @@ export function cborEncode(value: CborValue): Uint8Array {
 // Keys and signatures
 // ---------------------------------------------------------------------------
 
-const KEY_PARAMS: Record<
-  CoseAlgorithm,
-  { gen: SubtleCryptoGenerateKeyAlgorithm; sign: SubtleCryptoSignAlgorithm }
-> = {
+const KEY_PARAMS: Record<CoseAlgorithm, { gen: GenerateAlgorithm; sign: SignAlgorithm }> = {
   "-7": { gen: { name: "ECDSA", namedCurve: "P-256" }, sign: { name: "ECDSA", hash: "SHA-256" } },
   "-8": { gen: { name: "Ed25519" }, sign: { name: "Ed25519" } },
   "-257": {
@@ -120,15 +126,16 @@ const KEY_PARAMS: Record<
   },
 };
 
-async function generate(algorithm: CoseAlgorithm): Promise<CryptoKeyPair> {
-  return (await crypto.subtle.generateKey(KEY_PARAMS[algorithm].gen, true, [
-    "sign",
-    "verify",
-  ])) as CryptoKeyPair;
+async function generate(algorithm: CoseAlgorithm): Promise<KeyPair> {
+  return (await crypto.subtle.generateKey(
+    KEY_PARAMS[algorithm].gen as Parameters<typeof crypto.subtle.generateKey>[0],
+    true,
+    ["sign", "verify"],
+  )) as KeyPair;
 }
 
-async function coseKey(publicKey: CryptoKey, algorithm: CoseAlgorithm): Promise<Uint8Array> {
-  const jwk = (await crypto.subtle.exportKey("jwk", publicKey)) as JsonWebKey;
+async function coseKey(publicKey: Key, algorithm: CoseAlgorithm): Promise<Uint8Array> {
+  const jwk = (await crypto.subtle.exportKey("jwk", publicKey)) as Jwk;
   const b64 = (s: string | undefined) => decodeBase64Url(s ?? "") as Uint8Array;
   const map = new Map<number, CborValue>();
   if (algorithm === -7) {
@@ -156,12 +163,14 @@ function ecdsaToDer(raw: Uint8Array): Uint8Array {
   return concat([new Uint8Array([0x30, r.length + s.length]), r, s]);
 }
 
-async function sign(
-  key: CryptoKey,
-  algorithm: CoseAlgorithm,
-  data: Uint8Array,
-): Promise<Uint8Array> {
-  const raw = new Uint8Array(await crypto.subtle.sign(KEY_PARAMS[algorithm].sign, key, data));
+async function sign(key: Key, algorithm: CoseAlgorithm, data: Uint8Array): Promise<Uint8Array> {
+  const raw = new Uint8Array(
+    await crypto.subtle.sign(
+      KEY_PARAMS[algorithm].sign as Parameters<typeof crypto.subtle.sign>[0],
+      key,
+      data,
+    ),
+  );
   return algorithm === -7 ? ecdsaToDer(raw) : raw;
 }
 
