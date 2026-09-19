@@ -25,6 +25,11 @@ export interface RefreshRef {
   secret_hash: Uint8Array;
 }
 
+export interface InvitationRef {
+  invitation_id: string;
+  secret_hash: Uint8Array;
+}
+
 export interface BindingRef {
   interaction_id: string;
   secret_hash: Uint8Array;
@@ -95,6 +100,24 @@ export async function openRefreshHandle(
     family_id: bytesToUuid(fields.family),
     secret_hash: await sha256(fields.secret),
   };
+}
+
+/** `tio_iv`: invitation id and secret (TIO-REG-002). */
+export async function sealInvitationHandle(
+  keys: DerivedKeys,
+  invitationId: string,
+  secret: Uint8Array,
+): Promise<string> {
+  return sealHandle(keys, "invitation", { invid: uuidBytes(invitationId), secret });
+}
+
+export async function openInvitationHandle(
+  keys: DerivedKeys,
+  handle: string,
+): Promise<InvitationRef | null> {
+  const fields = await openHandle(keys, "invitation", handle);
+  if (!fields) return null;
+  return { invitation_id: bytesToUuid(fields.invid), secret_hash: await sha256(fields.secret) };
 }
 
 /** `tio_ix`: the 32 raw bytes of the interaction id and the binding secret. */

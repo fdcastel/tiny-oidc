@@ -9,6 +9,7 @@ import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } 
 import { abortHandler, consentHandler, getInteractionHandler } from "../interaction/api.ts";
 import { completeHandler } from "../interaction/complete.ts";
 import { passkeyOptionsHandler, passkeyVerifyHandler } from "../interaction/passkey.ts";
+import { registerOptionsHandler, registerVerifyHandler } from "../interaction/register.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
@@ -179,7 +180,9 @@ export function createApp(deps: AppDeps) {
   app.post("/api/v1/interactions/:id/abort", abortHandler(deps.clock));
   app.post("/api/v1/interactions/:id/passkey/options", passkeyOptionsHandler(deps.clock));
   app.post("/api/v1/interactions/:id/passkey/verify", passkeyVerifyHandler(deps.clock));
-  for (const op of ["register/options", "register/verify", "upstream/:alias", "logout"]) {
+  app.post("/api/v1/interactions/:id/register/options", registerOptionsHandler(deps.clock));
+  app.post("/api/v1/interactions/:id/register/verify", registerVerifyHandler(deps.clock));
+  for (const op of ["upstream/:alias", "logout"]) {
     app.post(`/api/v1/interactions/:id/${op}`, notImplemented);
   }
   for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);

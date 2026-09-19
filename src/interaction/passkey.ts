@@ -146,7 +146,10 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
     }
     const client = await interactionClient(c, doc);
     if (!client) return errorResponse(c, 503, "temporarily_unavailable", "client unavailable");
-    return c.json(await authenticated(c, guarded, client, verified.profile, verified.passkey), 200);
+    return c.json(
+      await authenticateInteraction(c, guarded, client, verified.profile, verified.passkey),
+      200,
+    );
   };
 }
 
@@ -156,12 +159,12 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
  * (TIO-PK-023, TIO-AUTHZ-017); otherwise consent is evaluated
  * (TIO-CONSENT-001) and the interaction becomes ready or consent_required.
  */
-async function authenticated(
+export async function authenticateInteraction(
   c: AppContext,
   guarded: Guarded,
   client: Client,
   profile: UserProfile,
-  passkey: PasskeyRecord,
+  passkey: Pick<PasskeyRecord, "backup_eligible">,
 ): Promise<InteractionStep> {
   const { doc, stub, now, id } = guarded;
   const fail = async (description: string): Promise<InteractionStep> => {

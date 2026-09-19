@@ -32,6 +32,15 @@ export interface PasskeyChallenge {
   invitation_id: string | null;
 }
 
+/** What a passkey registration in progress will create or extend (§6.3). */
+export interface RegistrationDraft {
+  kind: "register" | "recover";
+  email: string | null;
+  email_verified: boolean;
+  display_name: string | null;
+  groups: string[];
+}
+
 export interface FederationLeg {
   alias: string;
   state_hash: string;
@@ -81,6 +90,7 @@ export interface InteractionDocument {
   request: AuthorizeRequest | null;
   existing_session: ExistingSession | null;
   passkey_challenge: PasskeyChallenge | null;
+  registration: RegistrationDraft | null;
   federation: FederationLeg | null;
   link: LinkCandidate | null;
   auth: InteractionAuth | null;
@@ -106,7 +116,10 @@ export type InteractionDoError =
 
 /** Fields a non-transition update may change (challenges, legs, counters). */
 export type InteractionPatch = Partial<
-  Pick<InteractionDocument, "passkey_challenge" | "federation" | "link" | "attempts">
+  Pick<
+    InteractionDocument,
+    "passkey_challenge" | "registration" | "federation" | "link" | "attempts"
+  >
 >;
 
 const DOC_KEY = "doc";
@@ -133,6 +146,7 @@ export class InteractionDO extends DurableObject<Env> {
       request: input.request ?? null,
       existing_session: input.existing_session ?? null,
       passkey_challenge: null,
+      registration: null,
       federation: null,
       link: null,
       auth: null,

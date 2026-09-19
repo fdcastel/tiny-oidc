@@ -253,12 +253,81 @@ export const interactionPasskeyVerifyRoute = createRoute({
   },
 });
 
+export const RegisterOptionsBodySchema = z
+  .object({
+    invitation: z.string().optional().openapi({ description: "A tio_iv invitation token" }),
+    email: z
+      .string()
+      .optional()
+      .openapi({ description: "Only when the invitation has none, or in open mode" }),
+    display_name: z.string().optional(),
+  })
+  .openapi("RegisterOptionsBody");
+
+export const RegisterOptionsResponseSchema = z
+  .object({
+    publicKey: z.looseObject({}).openapi({
+      description: "PublicKeyCredentialCreationOptionsJSON for navigator.credentials.create()",
+    }),
+    email_in_use: z.boolean(),
+  })
+  .openapi("RegisterOptions");
+
+export const RegisterVerifyBodySchema = z
+  .object({
+    response: z
+      .looseObject({})
+      .openapi({ description: "RegistrationResponseJSON from the browser" }),
+    name: z.string().optional().openapi({ description: "Passkey name, 1-64 characters" }),
+  })
+  .openapi("RegisterVerify");
+
+export const interactionRegisterOptionsRoute = createRoute({
+  method: "post",
+  path: "/api/v1/interactions/{id}/register/options",
+  tags: ["interactions"],
+  summary: "Registration options under the registration policy (§7.4, §6.3)",
+  request: { params: InteractionIdParams, body: jsonBody(RegisterOptionsBodySchema) },
+  responses: {
+    200: {
+      description: "Options",
+      content: { "application/json": { schema: RegisterOptionsResponseSchema } },
+    },
+    400: errorResponse(
+      "invalid_request, invitation_invalid, invitation_expired, invitation_used, email_invalid",
+    ),
+    ...INTERACTION_ERRORS,
+    409: errorResponse("account_exists or interaction_invalid_state"),
+  },
+});
+
+export const interactionRegisterVerifyRoute = createRoute({
+  method: "post",
+  path: "/api/v1/interactions/{id}/register/verify",
+  tags: ["interactions"],
+  summary:
+    "Verify the registration, create or recover the user and authenticate the interaction (§7.4)",
+  request: { params: InteractionIdParams, body: jsonBody(RegisterVerifyBodySchema) },
+  responses: {
+    200: {
+      description: "ready, consent_required or failed",
+      content: { "application/json": { schema: InteractionStepSchema } },
+    },
+    400: errorResponse("invalid_request, passkey_not_discoverable, invitation_*"),
+    401: errorResponse("passkey_verification_failed"),
+    ...INTERACTION_ERRORS,
+    409: errorResponse("account_exists or interaction_invalid_state"),
+  },
+});
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
   interactionGetRoute,
   interactionPasskeyOptionsRoute,
   interactionPasskeyVerifyRoute,
+  interactionRegisterOptionsRoute,
+  interactionRegisterVerifyRoute,
   interactionConsentRoute,
   interactionAbortRoute,
 ] as const;

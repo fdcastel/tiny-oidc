@@ -415,6 +415,58 @@
           "response"
         ]
       },
+      "RegisterOptions": {
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "PublicKeyCredentialCreationOptionsJSON for navigator.credentials.create()"
+          },
+          "email_in_use": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "publicKey",
+          "email_in_use"
+        ]
+      },
+      "RegisterOptionsBody": {
+        "type": "object",
+        "properties": {
+          "invitation": {
+            "type": "string",
+            "description": "A tio_iv invitation token"
+          },
+          "email": {
+            "type": "string",
+            "description": "Only when the invitation has none, or in open mode"
+          },
+          "display_name": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterVerify": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "RegistrationResponseJSON from the browser"
+          },
+          "name": {
+            "type": "string",
+            "description": "Passkey name, 1-64 characters"
+          }
+        },
+        "required": [
+          "response"
+        ]
+      },
       "ConsentDecision": {
         "oneOf": [
           {
@@ -720,6 +772,204 @@
           },
           "409": {
             "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/register/options": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Registration options under the registration policy (§7.4, §6.3)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterOptionsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterOptions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, invitation_invalid, invitation_expired, invitation_used, email_invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "account_exists or interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/register/verify": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Verify the registration, create or recover the user and authenticate the interaction (§7.4)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterVerify"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ready, consent_required or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionStep"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, passkey_not_discoverable, invitation_*",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "passkey_verification_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "account_exists or interaction_invalid_state",
             "content": {
               "application/json": {
                 "schema": {

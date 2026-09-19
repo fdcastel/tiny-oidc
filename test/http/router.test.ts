@@ -346,6 +346,8 @@ describe("OpenAPI", () => {
       "/api/v1/interactions/{id}",
       "/api/v1/interactions/{id}/passkey/options",
       "/api/v1/interactions/{id}/passkey/verify",
+      "/api/v1/interactions/{id}/register/options",
+      "/api/v1/interactions/{id}/register/verify",
       "/api/v1/interactions/{id}/consent",
       "/api/v1/interactions/{id}/abort",
     ]);
