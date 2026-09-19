@@ -1,0 +1,9 @@
+// Worker code and the tests that run inside workerd or import src/ directly.
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/vitest-plugin/types"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "migrations/**/*.sql"],
+  "exclude": ["test/e2e/**"]
+}

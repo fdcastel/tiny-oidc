@@ -1,0 +1,8 @@
+// Node-side code: repository scripts, tool configs, the e2e suite and the example RP.
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts", "test/e2e/**/*.ts", "examples/rp-node/**/*.ts", "*.config.ts"]
+}

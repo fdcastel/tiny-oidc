@@ -1,0 +1,100 @@
+// Host-neutral configuration (spec §12.1). The top-level profile serves the
+// Deploy-to-Cloudflare button and local development. `env.staging` and
+// `env.production` receive ISSUER, RP_ID and RP_NAME from the deploy
+// environment (scripts/deploy.ts), never from this file. The environment
+// sections omit `database_id` on purpose: deploy.ts resolves it by name.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tiny-oidc",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": [],
+  "keep_vars": true,
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "limits": { "cpu_ms": 30000 },
+  "assets": { "directory": "examples/login-app", "binding": "ASSETS", "run_worker_first": true },
+  "vars": {
+    "ISSUER": "https://tiny-oidc.example.workers.dev", // button and dev: set to your Worker URL
+    "RP_ID": "tiny-oidc.example.workers.dev",
+    "RP_NAME": "Tiny OIDC",
+    "BUNDLED_LOGIN_APP": "true",
+    "LOG_LEVEL": "info",
+    "DO_JURISDICTION": ""
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tiny-oidc",
+      "database_id": "00000000-0000-4000-8000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_DO", "class_name": "UserDO" },
+      { "name": "INTERACTION_DO", "class_name": "InteractionDO" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserDO", "InteractionDO"] }],
+  "queues": {
+    "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-tasks" }],
+    "consumers": [
+      {
+        "queue": "tiny-oidc-tasks",
+        "max_batch_size": 100,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "tiny-oidc-dlq"
+      }
+    ]
+  },
+  "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-audit" }],
+  "ratelimits": [
+    { "name": "RL_IP", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RL_CLIENT", "namespace_id": "1002", "simple": { "limit": 2000, "period": 10 } }
+  ],
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc" }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "env": {
+    "staging": {
+      "name": "tiny-oidc-staging",
+      "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "tiny-oidc-staging", "migrations_dir": "migrations" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-staging-tasks" }],
+        "consumers": [
+          {
+            "queue": "tiny-oidc-staging-tasks",
+            "max_batch_size": 100,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "tiny-oidc-staging-dlq"
+          }
+        ]
+      },
+      "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-staging-audit" }]
+    },
+    "production": {
+      "name": "tiny-oidc",
+      "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "tiny-oidc-production", "migrations_dir": "migrations" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-production-tasks" }],
+        "consumers": [
+          {
+            "queue": "tiny-oidc-production-tasks",
+            "max_batch_size": 100,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "tiny-oidc-production-dlq"
+          }
+        ]
+      },
+      "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-production-audit" }]
+    }
+  }
+}

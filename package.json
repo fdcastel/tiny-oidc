@@ -1,0 +1,51 @@
+{
+  "name": "tiny-oidc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A headless, passkey-first OpenID Provider that runs entirely on Cloudflare.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "pnpm typecheck",
+    "typecheck": "pnpm gen:types && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json",
+    "gen:types": "wrangler types src/generated/worker-configuration.d.ts --include-env=false",
+    "gen:openapi": "node scripts/gen-openapi.ts",
+    "gen:config": "node scripts/gen-config-docs.ts",
+    "gen:secrets": "node scripts/gen-secrets.ts",
+    "test": "vitest run --coverage",
+    "test:unit": "vitest run --project unit",
+    "test:workers": "vitest run --project workers",
+    "test:e2e": "playwright test",
+    "trace": "node scripts/trace.ts",
+    "lint": "biome check . && node scripts/lint-rules.ts && node scripts/check-ignores.ts",
+    "format": "biome format --write .",
+    "check": "node scripts/config-check.ts && node scripts/neutrality-check.ts",
+    "check:bundle": "node scripts/bundle-check.ts",
+    "deploy": "node scripts/deploy.ts",
+    "smoke": "node scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "1.6.3",
+    "hono": "4.13.8",
+    "uuidv7": "1.2.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@cloudflare/vitest-plugin": "1.1.13",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.6",
+    "@vitest/coverage-istanbul": "4.1.11",
+    "fast-check": "4.10.1",
+    "jsonc-parser": "3.3.1",
+    "knip": "6.37.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.135.0"
+  }
+}

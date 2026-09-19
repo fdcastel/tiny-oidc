@@ -1,0 +1,5 @@
+# pnpm 10 runs dependency build scripts only for packages listed here.
+# esbuild and workerd download their platform binaries in postinstall.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
