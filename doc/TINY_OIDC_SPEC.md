@@ -63,9 +63,9 @@ Tiny OIDC is a headless, passkey-first OpenID Provider that runs entirely on Clo
 
 It is "tiny" in surface, not in capacity. The design target is one million users on one deployment with no servers, containers, or external databases.
 
-**[TIO-GEN-001]** (V: review) The OP SHALL NOT serve HTML, CSS or client-side JavaScript on any endpoint. Every response body is `application/json`, a redirect, or empty.
+**[TIO-GEN-001]** (V: review) OP code SHALL NOT generate or template HTML, CSS or client-side JavaScript on any endpoint. Every response the OP produces is `application/json`, a redirect, or empty. The single exception is the optional bundled reference login app (§7.9): a set of static files served unmodified by the Workers Assets binding under `/login/` when `BUNDLED_LOGIN_APP` is `true`. OP code never renders, templates or injects anything into those files.
 
-**[TIO-GEN-002]** (V: ci) The production bundle SHALL contain no template engine, no HTML sanitizer, and no UI framework. The CI bundle-content check fails on any of them.
+**[TIO-GEN-002]** (V: ci) The Worker script bundle SHALL contain no template engine, no HTML sanitizer, and no UI framework. The reference login app is dependency-free static files outside the script bundle. The CI bundle-content check fails on any of them.
 
 ### 1.2 Personas
 
@@ -121,6 +121,7 @@ Each principle is a decision filter. When a proposal conflicts with one, the pro
 - Interaction API for the login app; Self-service API for end users; Admin API with bootstrap, bulk NDJSON import, settings, key rotation, audit query.
 - Audit pipeline (per-user recent events, 30-day hot table, R2 archive), structured logs, optional metrics.
 - Rate limiting, cron maintenance, D1 and Durable Object schema migrations, OpenAPI 3.1 document.
+- Deploy-to-Cloudflare button for one-click evaluation, with an optional bundled reference login app served as static assets on the OP origin (§7.9, §12.3).
 
 **Explicitly excluded (will not be added)**
 
@@ -202,6 +203,7 @@ authentik is the feature reference. Appendix A maps every authentik capability t
 | `AUDIT_BUCKET` | R2 | Audit archive, D1 exports | NDJSON, gzip. |
 | `RL_IP`, `RL_CLIENT`, `RL_INTERACTION` | Rate Limiting | Per-colo permissive limits | GA since 2025-09. Periods 10 s or 60 s only. |
 | `METRICS` | Analytics Engine (optional) | Request and event counters | Absent binding disables metrics. |
+| `ASSETS` | Workers Assets | Static files of the reference login app, served under `/login/` only when `BUNDLED_LOGIN_APP=true` | Bundled in every environment; inert unless enabled. |
 | Cron `*/5 * * * *` | Cron Trigger | Maintenance | One trigger. |
 | Secrets | Worker secrets | `MASTER_KEYS`, `ADMIN_BOOTSTRAP_TOKEN` | §12.2 |
 
@@ -1328,7 +1330,7 @@ OAuth error codes used: `invalid_request`, `invalid_client`, `invalid_grant`, `i
 
 **[TIO-HTTP-005]** Every request SHALL be assigned a UUID v7 request id, returned in `X-Request-Id`, included in every log line and error body.
 
-**[TIO-HTTP-006]** The OP SHALL reject any request whose `Host` does not match the `ISSUER` host with 421, and SHALL never build a URL from the request `Host` header.
+**[TIO-HTTP-006]** The OP SHALL reject any request whose `Host` does not match the `ISSUER` host with 421, and SHALL never build a URL from the request `Host` header. The only exception is `GET /api/v1/health`, which answers on any host and reports `"issuer_mismatch": "<observed host>"` when the host differs, so that a fresh deployment with a wrong `ISSUER` is diagnosable.
 
 ---
 ## 6. Authentication
@@ -1648,7 +1650,9 @@ Response (fields are `null` when not applicable):
 
 ### 7.9 Reference login app
 
-**[TIO-IX-080]** (V: ci) The repository SHALL contain `examples/login-app/`, a static HTML+JS page with no build step that implements every interaction state, used by the end-to-end suite. It is a test fixture and documentation, not a product component, and is excluded from the production bundle.
+**[TIO-IX-080]** (V: ci) The repository SHALL contain `examples/login-app/`, a static HTML+JS application with no build step and no dependencies that implements every interaction state (sign-in, sign-up, account linking, consent, logout confirmation, errors). It is used by the end-to-end suite and is the reference for `doc/LOGIN_APP_GUIDE.md`. It is never part of the Worker script bundle.
+
+**[TIO-IX-081]** The same files SHALL be published through the `ASSETS` binding under `/login/` when the var `BUNDLED_LOGIN_APP` is `true`. When enabled and no `login_url` setting is stored, the effective `login_url` is `${ISSUER}/login/` and `login_origins` is `[origin of ISSUER]`, so a fresh deployment can complete a passkey login with no further configuration. When disabled, requests under `/login/` return 404 and the assets are never served. Tests cover both states, and a header test asserts the served files carry the same security headers as every other response except that `Content-Security-Policy` permits same-origin scripts and styles.
 
 ---
 ## 8. Self-service API (`/api/v1/me`)
@@ -1949,6 +1953,8 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
 
 ### 12.1 `wrangler.jsonc`
 
+The configuration is host-neutral: it names no hostname, zone or account. The top-level profile is what the Deploy-to-Cloudflare button and local development use; `env.staging` and `env.production` are used by the operator's own deployments and receive their deployment-specific values (`ISSUER`, `RP_ID`, `RP_NAME`) from the deploy environment, never from the repository.
+
 ```jsonc
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -1956,18 +1962,19 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": [],
-  "workers_dev": false,
-  "routes": [{ "pattern": "auth.example.com", "custom_domain": true }],
+  "keep_vars": true,
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   "limits": { "cpu_ms": 30000 },
+  "assets": { "directory": "examples/login-app", "binding": "ASSETS", "run_worker_first": true },
   "vars": {
-    "ISSUER": "https://auth.example.com",
-    "RP_ID": "example.com",
-    "RP_NAME": "Example",
+    "ISSUER": "https://tiny-oidc.example.workers.dev",   // button and dev: set to your Worker URL
+    "RP_ID": "tiny-oidc.example.workers.dev",
+    "RP_NAME": "Tiny OIDC",
+    "BUNDLED_LOGIN_APP": "true",
     "LOG_LEVEL": "info",
     "DO_JURISDICTION": ""
   },
-  "d1_databases": [{ "binding": "DB", "database_name": "tiny-oidc", "database_id": "…", "migrations_dir": "migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "tiny-oidc", "database_id": "00000000-0000-4000-8000-000000000000", "migrations_dir": "migrations" }],
   "durable_objects": { "bindings": [
     { "name": "USER_DO", "class_name": "UserDO" },
     { "name": "INTERACTION_DO", "class_name": "InteractionDO" },
@@ -1983,9 +1990,22 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
     { "name": "RL_INTERACTION", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } } ],
   "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc" }],
   "triggers": { "crons": ["*/5 * * * *"] },
-  "env": { "staging": { "...": "overrides" } }
+  "env": {
+    "staging":    { "name": "tiny-oidc-staging", "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
+                    "d1_databases": [{ "binding": "DB", "database_name": "tiny-oidc-staging", "migrations_dir": "migrations" }],
+                    "queues": { "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-staging-tasks" }],
+                                "consumers": [{ "queue": "tiny-oidc-staging-tasks", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "tiny-oidc-staging-dlq" }] },
+                    "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-staging-audit" }] },
+    "production": { "name": "tiny-oidc", "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
+                    "d1_databases": [{ "binding": "DB", "database_name": "tiny-oidc-production", "migrations_dir": "migrations" }],
+                    "queues": { "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-production-tasks" }],
+                                "consumers": [{ "queue": "tiny-oidc-production-tasks", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "tiny-oidc-production-dlq" }] },
+                    "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-production-audit" }] }
+  }
 }
 ```
+
+Durable Object bindings, the rate-limit bindings, the Analytics Engine dataset, the assets binding and the cron trigger are inherited by every environment. The environment sections omit `database_id`: the deploy script resolves it by `database_name` at deploy time (§12.3), so no account-specific identifier lives in the repository. `keep_vars` preserves vars set outside the repository across deploys.
 
 **[TIO-CFG-001]** (V: ci) `compatibility_flags` SHALL be empty; `nodejs_compat` is not used. A dependency that requires it is rejected at review. CI fails if the flag appears.
 
@@ -1998,13 +2018,15 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
 | `MASTER_KEYS` | secret | §10.2 |
 | `MASTER_KEY_ACTIVE` | secret | Active version |
 | `ADMIN_BOOTSTRAP_TOKEN` | secret | §9.3; may be deleted after bootstrap |
+| `ISSUER`, `RP_ID`, `RP_NAME` | var | Deployment identity; supplied by the deploy environment for staging and production, by the form for button deployments |
+| `BUNDLED_LOGIN_APP` | var | `true` serves the reference login app under `/login/` (§7.9); `false` in the operator's staging and production |
 
 Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 | Key | Default | Notes |
 |---|---|---|
-| `login_url` | required | Absolute `https` URL, same-site with `ISSUER` |
-| `login_origins` | required | Array of origins, same-site with `ISSUER` |
+| `login_url` | required, or `${ISSUER}/login/` when `BUNDLED_LOGIN_APP=true` | Absolute `https` URL, same-site with `ISSUER` |
+| `login_origins` | required, or `[origin of ISSUER]` when `BUNDLED_LOGIN_APP=true` | Array of origins, same-site with `ISSUER` |
 | `webauthn_origins` | `login_origins` | Array; ≤ 5 registrable labels |
 | `logout_landing_url` | `login_url` | |
 | `registration.mode` | `invite` | `closed` \| `invite` \| `open` |
@@ -2023,13 +2045,25 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-CFG-003]** Settings SHALL be validated as a whole on every `PATCH`; a violated cross-field rule (for example `retire_after_seconds` ≤ max token lifetime) rejects the entire patch with `invalid_settings` and a list of violations.
 
-**[TIO-CFG-004]** The OP SHALL refuse to serve `/authorize` (503 `not_configured` rendered as JSON, since no `login_url` exists to redirect to) until `login_url` and `login_origins` are set.
+**[TIO-CFG-004]** The OP SHALL refuse to serve `/authorize` (503 `not_configured` rendered as JSON, since no `login_url` exists to redirect to) until `login_url` and `login_origins` are effective, either stored as settings or defaulted by `BUNDLED_LOGIN_APP=true`.
 
-### 12.3 Environments and releases
+### 12.3 Environments, deployment and releases
 
-**[TIO-DEPLOY-001]** (V: review) Three environments SHALL exist: `dev` (local `wrangler dev` with local D1/DO), `staging` (real Cloudflare, seeded with synthetic users, target of conformance and load tests), `production`. No credential, key or database is shared between environments.
+**[TIO-DEPLOY-001]** (V: review) Four deployment profiles SHALL exist: `dev` (local `wrangler dev` with local D1, Durable Objects, Queues and R2), `button` (the top-level configuration profile used by the Deploy-to-Cloudflare button: workers.dev hostname, bundled login app on), `staging` (the operator's Cloudflare account, seeded with synthetic users, target of conformance and load tests, with a staging-only auto-approving fake upstream deployed as a separate Worker), and `production`. No credential, key, database, queue or bucket is shared between profiles.
 
-**[TIO-DEPLOY-002]** (V: ci) Releases SHALL run: migrations apply (D1) → `wrangler versions upload` → smoke tests against the preview URL → gradual deployment 10% → 100% after health and error-rate checks. A failed smoke test aborts before any traffic shift.
+**[TIO-DEPLOY-005]** (V: ci) The public repository SHALL be host- and account-neutral: no hostname of any real deployment, no zone name, no Cloudflare account id, no D1 database id of a real database, and no credential may appear in any committed file, including this document, workflows and examples. Deployment-specific values live in the operator's private infrastructure repository and in the Cloudflare dashboard. A CI grep with an operator-maintained deny-list (kept outside the public repo and run only in the operator's environment) plus a public generic check (no 32-hex account ids, no `database_id` other than the placeholder) enforce this.
+
+**[TIO-DEPLOY-006]** (V: review) Staging and production SHALL be deployed by Cloudflare Workers Builds connected to the GitHub repository, not by GitHub Actions: one connected Worker per environment, `staging` building the default branch `main` and `production` building the protected `production` branch. Build variables set in the Cloudflare dashboard per Worker supply `TIO_ENV`, `TIO_ISSUER`, `TIO_RP_ID` and `TIO_RP_NAME`. No Cloudflare API token is stored in GitHub. GitHub Actions runs tests and gates only.
+
+**[TIO-DEPLOY-007]** The deploy command for every profile SHALL be `pnpm run deploy`, which runs `scripts/deploy.ts`: read `TIO_ENV` (default: top-level profile); apply D1 migrations with `wrangler d1 migrations apply DB --remote [--env]`; for `staging` and `production`, resolve the D1 `database_id` by `database_name` through `wrangler d1 list --json` and write a generated configuration file (never committed) that adds it; pass `--var ISSUER:$TIO_ISSUER --var RP_ID:$TIO_RP_ID --var RP_NAME:$TIO_RP_NAME`; for `production`, `wrangler versions upload`, run the smoke test (`scripts/smoke.ts`: discovery, JWKS, health) against the version's preview URL, then `wrangler versions deploy` to 100%; for other profiles, `wrangler deploy`. Any failing step aborts before traffic changes. The script is unit-tested with a fake `wrangler` and run for real in the nightly job against staging.
+
+**[TIO-DEPLOY-008]** (V: ci) `README.md` SHALL carry the Deploy-to-Cloudflare button (`https://deploy.workers.cloudflare.com/?url=<repository URL>`) near the top, followed by numbered steps: click, set `ISSUER` and `RP_ID` to the Worker's URL and host in the form, fill `ADMIN_BOOTSTRAP_TOKEN` and `MASTER_KEYS` from the generator command shown in the README, create and deploy, then call bootstrap. `.dev.vars.example` SHALL list every secret with a one-line description so the form renders the fields, and `package.json` SHALL declare `build` (typecheck) and `deploy` scripts because the button pre-fills its commands from them. A CI check validates that `wrangler.jsonc` top-level profile carries default names and ids for every provisionable resource (D1, Queues, R2, Durable Objects) as the button requires.
+
+**[TIO-DEPLOY-009]** (V: review) Custom hostnames for staging and production SHALL be attached outside this repository, in the operator's infrastructure-as-code (Cloudflare Workers custom domains), after the Worker exists. Workers custom domains provision their certificates automatically, including multi-level names, and cannot coexist with an existing DNS record on the same name. The repository's `wrangler.jsonc` SHALL contain no `routes`.
+
+**[TIO-DEPLOY-010]** (V: review) Promotion to production SHALL be a fast-forward of the `production` branch to a `main` commit whose nightly conformance and load gates passed, done through a pull request; rollback is a revert on `production`. Both branches are protected: required status checks, no force-push, linear history.
+
+**[TIO-DEPLOY-011]** (V: ci) Pull requests SHALL be the only way changes reach `main`; the full gate set (§13.1) is a required status check. The repository owner merges or delegates merging to the implementing agent once checks are green.
 
 **[TIO-DEPLOY-003]** (V: review) D1 SHALL be backed up weekly by `wrangler d1 export` to `AUDIT_BUCKET/backups/`, and D1 Time Travel (30 days) is the point-in-time recovery mechanism. Durable Object point-in-time recovery is per object via the bookmark API and is exposed through `POST /api/v1/admin/users/{id}/restore` `{ "bookmark_time": … }` for individual-user recovery.
 
@@ -2205,10 +2239,11 @@ tiny-oidc/
 │   └── rp-node/                     Node RP with openid-client (e2e fixture)
 ├── perf/                            k6 scenarios, seed script
 ├── conformance/                     docker compose, plan configs, waivers.json, runner
-├── scripts/                         trace.ts, check-ignores.ts, lint-rules.ts, gen-openapi.ts, bundle-check.ts, config-check.ts
+├── scripts/                         trace.ts, check-ignores.ts, lint-rules.ts, gen-openapi.ts, bundle-check.ts, config-check.ts, deploy.ts, smoke.ts, neutrality-check.ts, gen-secrets.ts
+├── README.md  LICENSE (MIT)  .dev.vars.example  .nvmrc
 ├── wrangler.jsonc  package.json  pnpm-lock.yaml  tsconfig.json  biome.json
 ├── vitest.unit.config.ts  vitest.workers.config.ts  playwright.config.ts
-└── .github/workflows/               pr.yml, nightly.yml, release.yml
+└── .github/workflows/               pr.yml (gates), nightly.yml (conformance, load, mutation); deploys are Workers Builds, not Actions
 ```
 
 Dependencies (runtime): `hono`, `@hono/zod-openapi`, `zod`, `jose`, `@simplewebauthn/server`, `uuidv7`. Nothing else at runtime. Dev: `wrangler`, `vitest`, `@cloudflare/vitest-plugin`, `@vitest/coverage-istanbul`, `@playwright/test`, `fast-check`, `oauth4webapi`, `openid-client`, `biome`, `knip`, `typescript`.
@@ -2329,6 +2364,11 @@ Each entry: what the draft said → what this spec does → why.
 21. **Groups, self-service API, bulk import, config-as-code** → added. *Why:* authentik benchmark; 1,000,000-user migration is impossible without import.
 22. **Dynamic client registration "OPTIONAL, admin-protected"** → no RFC 7591 endpoint; Admin API and config-as-code only. *Why:* one fewer public surface.
 23. **`nodejs_compat`** → forbidden. *Why:* every runtime dependency is Web-standard; keeping the flag off keeps the bundle small and the runtime surface known.
+
+24. **Deployment pipeline unspecified** → Cloudflare Workers Builds per environment (`main` → staging, `production` branch → production), GitHub Actions for gates only, public repository host- and account-neutral, hostnames attached from the operator's infrastructure repository. *Why:* the operator's standing rule for public repositories is that no credential, hostname, zone or account id may land in them; Workers Builds needs no token in GitHub and is the same path the Deploy button exercises.
+25. **Deploy-to-Cloudflare button on workers.dev** → optional bundled reference login app served as static assets on the OP origin. *Why:* `workers.dev` is on the Public Suffix List, so two workers.dev names are different sites and the interaction binding cookie would not flow; same-origin static files give a working one-click evaluation while OP code still never generates HTML.
+26. **Staging isolation** → staging under its own subdomain with its own RP ID, so staging passkeys never appear in the production picker. *Why:* operator decision; Workers custom domains provision certificates for multi-level names automatically.
+27. **License** → MIT. **Git flow** → feature branches and pull requests; the implementing agent merges after the required checks pass.
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 
