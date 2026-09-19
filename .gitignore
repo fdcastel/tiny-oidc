@@ -1,0 +1,28 @@
+# Scratch and superseded drafts (never committed)
+/tmp/
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Wrangler / local Cloudflare state
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Test artifacts
+test-results/
+playwright-report/
+blob-report/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
