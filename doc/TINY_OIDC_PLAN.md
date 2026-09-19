@@ -225,7 +225,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 
 | ID | Task | When | Status | Commit | Notes |
 |---|---|---|---|---|---|
-| OP-01 | Connect the repository to Cloudflare Workers Builds for staging: Worker `tiny-oidc-staging`, branch `main`, build `pnpm run build`, deploy `pnpm run deploy`, build variables `TIO_ENV`, `TIO_ISSUER`, `TIO_RP_ID`, `TIO_RP_NAME` | After P0-14 | ❌ OPEN | — | Values are in the private notes, never in this repo |
+| OP-01 | Connect the repository to Cloudflare Workers Builds for staging: Worker `tiny-oidc-staging`, branch `main`, build `pnpm run build`, deploy `pnpm run deploy`, build variables `TIO_ENV`, `TIO_ISSUER`, `TIO_RP_ID`, `TIO_RP_NAME` | After P0-14 | 🔧 IN PROGRESS | — | Values are in the private notes, never in this repo. Requested from the owner on 2026-09-19 (mobile notification) after Phase 0 went green; not blocking Phase 1 |
 | OP-02 | Connect Workers Builds for production: Worker `tiny-oidc`, branch `production`, same commands, production build variables | Before P7-06 | ❌ OPEN | — | |
 | OP-03 | Review and merge the infrastructure-repository change attaching the five custom hostnames to the staging and production Workers | After OP-01 and the staging fixtures exist (P4-07) | ❌ OPEN | — | PR opened by the implementing agent in the private infra repo |
 | OP-04 | Create a Google OAuth client and a Microsoft Entra app registration for staging with the staging callback URL; hand over ids and secrets outside the repo | Before P4-08 | ❌ OPEN | — | |
@@ -261,3 +261,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | P0-11 (generated `doc/CONFIG.md`, `.dev.vars.example`, `doc/openapi.json`, `gen-secrets`) implemented with tests. |
 | 2026-09-19 | P0-12 (deploy and smoke scripts with a fake wrangler) and P0-13 (clock, keys, factories, outbound guard) implemented. Spec draft.2: `fetchMock` replaced by `@msw/cloudflare` in TIO-ARCH-016, TIO-TEST-031 and §13.1; dev dependency list in §14.1 extended. |
 | 2026-09-19 | Phase 0 complete: P0-01..P0-14 done; e2e smoke suite with Playwright `webServer` starting `wrangler dev`; README status updated. Chromium for Playwright had to be installed by hand on the workstation (Node's downloader times out against the CDN; curl works). |
+| 2026-09-19 | First CI run green on `main` (e561660). OP-01 requested from the owner. |
