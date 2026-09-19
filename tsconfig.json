@@ -5,5 +5,5 @@
     "types": ["@cloudflare/vitest-plugin/types"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "migrations/**/*.sql"],
-  "exclude": ["test/e2e/**"]
+  "exclude": ["test/e2e/**", "test/scripts/**"]
 }

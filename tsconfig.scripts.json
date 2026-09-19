@@ -4,5 +4,11 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts", "test/e2e/**/*.ts", "examples/rp-node/**/*.ts", "*.config.ts"]
+  "include": [
+    "scripts/**/*.ts",
+    "test/e2e/**/*.ts",
+    "test/scripts/**/*.ts",
+    "examples/rp-node/**/*.ts",
+    "*.config.ts"
+  ]
 }

@@ -5,6 +5,6 @@ export default defineConfig({
   test: {
     name: "unit",
     environment: "node",
-    include: ["test/unit/**/*.test.ts", "test/property/**/*.test.ts"],
+    include: ["test/unit/**/*.test.ts", "test/property/**/*.test.ts", "test/scripts/**/*.test.ts"],
   },
 });

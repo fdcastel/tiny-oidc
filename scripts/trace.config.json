@@ -1,0 +1,113 @@
+{
+  "$comment": "Traceability gate configuration (TIO-TEST-006, TIO-TEST-007). `phase` is the phase being implemented; a default-tag requirement mapped to a later phase may be uncovered. Sections map to phases per spec §14.2 and doc/TINY_OIDC_PLAN.md; `overrides` pin individual identifiers whose task lives in another phase than their section.",
+  "phase": 0,
+  "phases": {
+    "0": [
+      "2.4",
+      "2.8",
+      "3.2",
+      "4.1",
+      "4.2",
+      "4.3",
+      "5.1",
+      "5.13",
+      "5.14",
+      "10.1",
+      "10.2",
+      "10.4",
+      "11.4",
+      "12.1",
+      "12.3",
+      "13.3"
+    ],
+    "1": ["5.2", "5.3", "5.7.1", "5.7.2", "5.7.5", "10.3"],
+    "2": [
+      "2.1",
+      "2.3",
+      "2.6",
+      "2.9",
+      "5.4",
+      "5.5",
+      "5.6",
+      "5.7.3",
+      "5.8",
+      "5.9",
+      "5.11",
+      "5.12",
+      "6.1",
+      "6.2",
+      "6.3",
+      "6.5",
+      "6.6",
+      "7",
+      "13.6",
+      "13.8"
+    ],
+    "3": ["3.3", "3.4", "3.5", "3.7", "4.6", "9", "11.5", "12.2", "12.4"],
+    "4": ["6.4"],
+    "5": ["5.10", "8"],
+    "6": ["4.5", "6.7", "11.2", "11.3"],
+    "7": ["13.7"]
+  },
+  "overrides": {
+    "TIO-ARCH-007": 2,
+    "TIO-ARCH-009": 2,
+    "TIO-ARCH-013": 3,
+    "TIO-ARCH-016": 4,
+    "TIO-DATA-003": 2,
+    "TIO-DATA-011": 2,
+    "TIO-DATA-012": 2,
+    "TIO-DATA-016": 3,
+    "TIO-DATA-020": 2,
+    "TIO-CLIENT-003": 3,
+    "TIO-CLIENT-005": 3,
+    "TIO-ERR-002": 2,
+    "TIO-PK-001": 1,
+    "TIO-PK-040": 5,
+    "TIO-FED-001": 3,
+    "TIO-FED-002": 3,
+    "TIO-CONSENT-004": 3,
+    "TIO-RL-002": 2,
+    "TIO-IX-031": 4,
+    "TIO-IX-040": 4,
+    "TIO-IX-050": 5,
+    "TIO-ADMIN-010": 2,
+    "TIO-ADMIN-011": 2,
+    "TIO-CRYPTO-011": 1,
+    "TIO-OBS-002": 6,
+    "TIO-CFG-004": 2,
+    "TIO-TEST-031": 4
+  },
+  "load_thresholds": {
+    "TIO-PERF-001": [
+      "discovery",
+      "sso_authorize",
+      "login_federated",
+      "token_code_exchange",
+      "token_refresh",
+      "userinfo",
+      "admin_list"
+    ],
+    "TIO-ADMIN-021": ["import_benchmark"],
+    "TIO-TEST-050": ["seed_import", "seed_harvest"],
+    "TIO-TEST-051": [
+      "discovery",
+      "sso_authorize",
+      "login_federated",
+      "token_code_exchange",
+      "token_refresh",
+      "userinfo",
+      "admin_list"
+    ],
+    "TIO-TEST-052": ["soak_refresh"]
+  },
+  "conformance_plans": {
+    "TIO-TEST-040": [
+      "oidcc-config-certification-test-plan",
+      "oidcc-basic-certification-test-plan",
+      "oidcc-rp-initiated-logout-certification-test-plan",
+      "oidcc-backchannel-rp-initiated-logout-certification-test-plan"
+    ],
+    "TIO-TEST-041": ["oidcc-basic-certification-test-plan"]
+  }
+}

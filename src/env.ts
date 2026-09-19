@@ -30,19 +30,6 @@ export interface Env {
   ADMIN_BOOTSTRAP_TOKEN?: string;
 }
 
-/** Names of every binding in §2.2, in declaration order. Used by tests and config checks. */
-export const BINDING_NAMES = [
-  "DB",
-  "USER_DO",
-  "INTERACTION_DO",
-  "TASKS",
-  "AUDIT_BUCKET",
-  "RL_IP",
-  "RL_CLIENT",
-  "METRICS",
-  "ASSETS",
-] as const;
-
 /**
  * Injected clock (TIO-TEST-005). Every time comparison in the OP flows through
  * this interface; `systemClock` below is the only place `Date.now()` is allowed.
