@@ -4,7 +4,6 @@ import type { LoadedKeys } from "../crypto/keystore.ts";
 import type { Clock } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
-import { ipKey, limited, rateLimited } from "../router/rate-limit.ts";
 import { userStub } from "../users/create.ts";
 import { verifyAccessToken } from "./bearer.ts";
 import { openRefreshHandle } from "./handles.ts";
@@ -17,7 +16,6 @@ import { authenticateFormClient, protocolForm } from "./token-common.ts";
 
 export function revokeHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c, "ip_token");
     const form = await protocolForm(c);
     if (!form.ok) return form.response;
     const auth = await authenticateFormClient(c, form.params, clock);

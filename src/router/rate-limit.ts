@@ -17,8 +17,12 @@ export type LimitClass = keyof typeof LIMIT_CLASSES;
 export const LIMIT_CLASSES = {
   /** `/authorize`, `/par`, `/logout`, `/federation/callback` per IP. */
   ip_navigation: { binding: "RL_IP", prefix: "nav" },
-  /** `/token`, `/revoke` per IP. */
-  ip_token: { binding: "RL_IP", prefix: "tok" },
+  /**
+   * Failed client authentication at `/token`, `/par`, `/revoke` per IP (TIO-TOKEN-004).
+   * Successful token traffic is not limited per address: server-side relying parties
+   * share one (ADR 0012), the per-client class below bounds them.
+   */
+  ip_auth_failed: { binding: "RL_IP", prefix: "tokfail" },
   /** `/api/v1/interactions/*` per IP. */
   ip_interactions: { binding: "RL_IP", prefix: "ix" },
   /** `/api/v1/me/*` per IP. */

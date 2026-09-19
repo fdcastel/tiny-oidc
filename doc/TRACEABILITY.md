@@ -91,7 +91,7 @@ Current phase: 7. Requirements: 284 (ci: 19, conformance: 2, covered: 241, load:
 | TIO-TOKEN-001 | §5.6.1 | test | 2 | covered | test/http/token.test.ts<br>test/unit/form.test.ts |
 | TIO-TOKEN-002 | §5.6.1 | test | 2 | covered | test/component/client-auth.test.ts<br>test/http/token.test.ts |
 | TIO-TOKEN-003 | §5.6.1 | test | 2 | covered | test/component/client-auth.test.ts |
-| TIO-TOKEN-004 | §5.6.1 | test | 2 | covered | test/component/client-auth.test.ts<br>test/http/par.test.ts |
+| TIO-TOKEN-004 | §5.6.1 | test | 2 | covered | test/component/client-auth.test.ts<br>test/http/par.test.ts<br>test/http/token.test.ts |
 | TIO-TOKEN-005 | §5.6.1 | test | 2 | covered | test/http/token.test.ts |
 | TIO-TOKEN-006 | §5.6.1 | withdrawn | — | withdrawn |  |
 | TIO-TOKEN-010 | §5.6.2 | test | 2 | covered | test/http/token.test.ts<br>test/security/enumeration.test.ts |

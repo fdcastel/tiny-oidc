@@ -23,3 +23,4 @@ the old one.
 | [0009](0009-in-flight-claims-are-not-stale-rows.md) | In-flight creation claims are not stale index rows; single-use steps claim in D1 | Accepted |
 | [0010](0010-toolchain.md) | Toolchain: Node 24 native TypeScript, Vitest 4 with the Workers plugin, MSW for outbound traffic, Playwright against `wrangler dev` | Accepted |
 | [0011](0011-threat-model-review-phase-7.md) | Threat-model review at the end of Phase 7 (TIO-SEC-001) | Proposed — awaiting the owner's sign-off |
+| [0012](0012-no-per-address-limit-on-successful-token-traffic.md) | No per-address limit on successful `/token` traffic; the address class counts failed client authentication | Accepted |

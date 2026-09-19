@@ -3,7 +3,7 @@ import type { Clock } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
 import { readForm } from "../router/form.ts";
-import { limited, rateLimited } from "../router/rate-limit.ts";
+import { ipKey, limited, rateLimited } from "../router/rate-limit.ts";
 import { authenticateClient, BASIC_CHALLENGE } from "./client-auth.ts";
 import type { Client } from "./clients.ts";
 
@@ -69,10 +69,19 @@ export async function authenticateFormClient(
     client_id: result.client_id,
     reason: result.reason,
   });
+  // Per client id and per address (TIO-TOKEN-004): the address class counts only failures, so
+  // a relying party's successful traffic is never throttled by its address (ADR 0012).
   if (result.client_id !== null && (await limited(c.env, "client_auth_failed", result.client_id))) {
     return {
       ok: false,
       response: rateLimited(c, "client_auth_failed"),
+      disabled_client_id: disabledClientId,
+    };
+  }
+  if (await limited(c.env, "ip_auth_failed", ipKey(c.req.raw))) {
+    return {
+      ok: false,
+      response: rateLimited(c, "ip_auth_failed"),
       disabled_client_id: disabledClientId,
     };
   }

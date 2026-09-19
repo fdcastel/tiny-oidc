@@ -506,7 +506,7 @@ describe("POST /token: client_credentials and common rules", () => {
     expect(unknown.status).toBe(401);
   });
 
-  it("[TIO-ARCH-015] [TIO-RL-001] answers 503 when storage is unavailable and 429 when the IP or the client exceeds its limit", async () => {
+  it("[TIO-ARCH-015] [TIO-RL-001] [TIO-TOKEN-004] answers 503 when storage is unavailable and 429 when the client exceeds its limit or an address fails client authentication too often, while its successful traffic is untouched", async () => {
     const user = await userWithPasskey(clock);
     const { code } = await login(web, user, { scope: "openid" });
     const brokenDo = {
@@ -572,11 +572,28 @@ describe("POST /token: client_credentials and common rules", () => {
       error: "temporarily_unavailable",
       error_description: "keys or settings unavailable",
     });
-    while ((await env.RL_IP.limit({ key: limitKey("ip_token", "198.51.100.44") })).success) {
+    // The address class counts failed client authentication only (TIO-TOKEN-004, ADR 0012): once
+    // exhausted, a wrong credential from that address is 429, a right one still gets a token.
+    while ((await env.RL_IP.limit({ key: limitKey("ip_auth_failed", "198.51.100.44") })).success) {
       // exhaust
     }
-    const limitedIp = await token({ grant_type: "client_credentials" }, { ip: "198.51.100.44" });
+    const limitedIp = await token(
+      { grant_type: "client_credentials", client_id: web.client_id, client_secret: "wrong" },
+      { ip: "198.51.100.44" },
+    );
     expect(limitedIp.status).toBe(429);
+    const stillServed = await token(
+      {
+        grant_type: "authorization_code",
+        client_id: web.client_id,
+        code: "tio_ac_x",
+        redirect_uri: RP_REDIRECT,
+        code_verifier: VERIFIER,
+      },
+      { ip: "198.51.100.44" },
+    );
+    expect(stillServed.status).toBe(400);
+    expect(await stillServed.json()).toMatchObject({ error: "invalid_grant" });
     while ((await env.RL_CLIENT.limit({ key: limitKey("client_token", web.client_id) })).success) {
       // exhaust
     }

@@ -1481,7 +1481,7 @@ Limits use the Rate Limiting binding (per-colo, permissive) for coarse protectio
 | Key | Scope | Limit | Binding / store |
 |---|---|---|---|
 | IP | `/authorize`, `/par`, `/logout`, `/federation/callback` | 60 per 60 s | `RL_IP` |
-| IP | `/token`, `/revoke` | 120 per 60 s | `RL_IP` |
+| IP | `/token`, `/par`, `/revoke` (failed client auth) | 120 per 60 s | `RL_IP` |
 | IP | `/api/v1/interactions/*` | 120 per 60 s | `RL_IP` |
 | IP | `/api/v1/me/*` | 120 per 60 s | `RL_IP` |
 | client id | `/token`, `/par`, `/revoke` (failed client auth) | 20 per 60 s | `RL_CLIENT` |

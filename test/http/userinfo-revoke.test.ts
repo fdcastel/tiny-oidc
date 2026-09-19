@@ -375,20 +375,24 @@ describe("POST /revoke", () => {
       await instance.destroy();
     });
     expect((await revoke(web, { token: ghostTokens.access_token })).status).toBe(200);
-    // Per-IP limit.
-    while ((await env.RL_IP.limit({ key: limitKey("ip_token", "198.51.100.77") })).success) {
+    // Per-address limit on failed client authentication only (TIO-TOKEN-004): a public client's
+    // well-formed revocation from that address still answers 200.
+    while ((await env.RL_IP.limit({ key: limitKey("ip_auth_failed", "198.51.100.77") })).success) {
       // exhaust
     }
-    const limitedRes = await h.send("/revoke", {
-      method: "POST",
-      origin: null,
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-        "cf-connecting-ip": "198.51.100.77",
-      },
-      body: `client_id=${web.client_id}&token=x`,
-    });
+    const fromAddress = (body: string) =>
+      h.send("/revoke", {
+        method: "POST",
+        origin: null,
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "cf-connecting-ip": "198.51.100.77",
+        },
+        body,
+      });
+    const limitedRes = await fromAddress(`client_id=${web.client_id}&client_secret=wrong&token=x`);
     expect(limitedRes.status).toBe(429);
+    expect((await fromAddress(`client_id=${web.client_id}&token=x`)).status).toBe(200);
     // Keys unavailable while checking a JWT.
     const brokenD1 = {
       prepare() {

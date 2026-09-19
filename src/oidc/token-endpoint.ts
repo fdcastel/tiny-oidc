@@ -8,7 +8,7 @@ import type { ClientRef, GrantContext } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
-import { ipKey, limited, rateLimited } from "../router/rate-limit.ts";
+import { limited, rateLimited } from "../router/rate-limit.ts";
 import { userStub } from "../users/create.ts";
 import { CAPABILITIES, isScope, type Scope } from "./capabilities.ts";
 import type { Client } from "./clients.ts";
@@ -148,7 +148,6 @@ async function disabledClientRefresh(
 
 export function tokenHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c, "ip_token");
     const form = await protocolForm(c);
     if (!form.ok) return form.response;
     const params = form.params;
