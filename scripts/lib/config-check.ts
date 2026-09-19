@@ -61,7 +61,13 @@ function sameSet(actual: string[], expected: readonly string[]): boolean {
   return actual.length === expected.length && expected.every((e) => actual.includes(e));
 }
 
-/** Checks one profile (top-level or an env section). `env` profiles inherit bindings, so only overridable fields are checked there. */
+/**
+ * Checks one profile (top-level or an env section). Bindings are not inherited by
+ * environments (wrangler's config schema says so for d1_databases, queues, r2_buckets,
+ * durable_objects, ratelimits and analytics_engine_datasets), so every profile must
+ * declare all of them; migrations, assets, triggers and the button-only vars are
+ * top-level facts.
+ */
 function checkProfile(profile: Json, label: string, errors: string[], topLevel: boolean): void {
   const d1 = asArray(profile["d1_databases"]);
   if (!sameSet(names(d1, "binding"), EXPECTED_BINDINGS.d1))
@@ -98,16 +104,29 @@ function checkProfile(profile: Json, label: string, errors: string[], topLevel: 
       errors.push(
         `${label}: "${key}" is not part of the spec's binding set (TIO-ARCH-003, TIO-DEPLOY-009)`,
       );
+  const dos = asArray(asObject(profile["durable_objects"])["bindings"]);
+  const actual = Object.fromEntries(dos.map((d) => [String(d["name"]), String(d["class_name"])]));
+  if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_BINDINGS.durableObjects))
+    errors.push(
+      `${label}: durable_objects.bindings must be exactly ${JSON.stringify(EXPECTED_BINDINGS.durableObjects)} (not inherited by environments)`,
+    );
+  if (!sameSet(names(asArray(profile["ratelimits"]), "name"), EXPECTED_BINDINGS.ratelimits))
+    errors.push(
+      `${label}: ratelimits must be exactly ${EXPECTED_BINDINGS.ratelimits.join(", ")} (not inherited by environments)`,
+    );
+  if (
+    !sameSet(
+      names(asArray(profile["analytics_engine_datasets"]), "binding"),
+      EXPECTED_BINDINGS.analytics,
+    )
+  )
+    errors.push(
+      `${label}: analytics_engine_datasets must bind exactly ${EXPECTED_BINDINGS.analytics.join(", ")} (not inherited by environments)`,
+    );
   if (topLevel) {
     const flags = asArray(profile["compatibility_flags"]);
     if (!Array.isArray(profile["compatibility_flags"]) || flags.length !== 0)
       errors.push(`${label}: compatibility_flags must be empty (TIO-CFG-001)`);
-    const dos = asArray(asObject(profile["durable_objects"])["bindings"]);
-    const actual = Object.fromEntries(dos.map((d) => [String(d["name"]), String(d["class_name"])]));
-    if (JSON.stringify(actual) !== JSON.stringify(EXPECTED_BINDINGS.durableObjects))
-      errors.push(
-        `${label}: durable_objects.bindings must be exactly ${JSON.stringify(EXPECTED_BINDINGS.durableObjects)}`,
-      );
     const migrations = asArray(profile["migrations"]);
     const classes = migrations.flatMap((m) =>
       Array.isArray(m["new_sqlite_classes"]) ? (m["new_sqlite_classes"] as string[]) : [],
@@ -115,19 +134,6 @@ function checkProfile(profile: Json, label: string, errors: string[], topLevel: 
     if (!sameSet(classes, Object.values(EXPECTED_BINDINGS.durableObjects)))
       errors.push(
         `${label}: migrations must declare new_sqlite_classes for both Durable Object classes`,
-      );
-    if (!sameSet(names(asArray(profile["ratelimits"]), "name"), EXPECTED_BINDINGS.ratelimits))
-      errors.push(
-        `${label}: ratelimits must be exactly ${EXPECTED_BINDINGS.ratelimits.join(", ")}`,
-      );
-    if (
-      !sameSet(
-        names(asArray(profile["analytics_engine_datasets"]), "binding"),
-        EXPECTED_BINDINGS.analytics,
-      )
-    )
-      errors.push(
-        `${label}: analytics_engine_datasets must bind exactly ${EXPECTED_BINDINGS.analytics.join(", ")}`,
       );
     const assets = asObject(profile["assets"]);
     if (assets["binding"] !== EXPECTED_BINDINGS.assets || assets["run_worker_first"] !== true)

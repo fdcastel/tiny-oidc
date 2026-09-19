@@ -61,10 +61,10 @@ describe("config-check (TIO-ARCH-003, TIO-CFG-001, TIO-GEN-003, TIO-DEPLOY-008)"
       "wrangler.jsonc: one queue consumer on the producer's queue is required",
       "wrangler.jsonc: queue consumer needs a dead_letter_queue",
       "wrangler.jsonc: r2 bucket needs bucket_name",
-      'wrangler.jsonc: durable_objects.bindings must be exactly {"USER_DO":"UserDO","INTERACTION_DO":"InteractionDO"}',
+      'wrangler.jsonc: durable_objects.bindings must be exactly {"USER_DO":"UserDO","INTERACTION_DO":"InteractionDO"} (not inherited by environments)',
+      "wrangler.jsonc: ratelimits must be exactly RL_IP, RL_CLIENT (not inherited by environments)",
+      "wrangler.jsonc: analytics_engine_datasets must bind exactly METRICS (not inherited by environments)",
       "wrangler.jsonc: migrations must declare new_sqlite_classes for both Durable Object classes",
-      "wrangler.jsonc: ratelimits must be exactly RL_IP, RL_CLIENT",
-      "wrangler.jsonc: analytics_engine_datasets must bind exactly METRICS",
       "wrangler.jsonc: assets must bind ASSETS with run_worker_first: true",
       'wrangler.jsonc: triggers.crons must be exactly ["*/5 * * * *"]',
       "wrangler.jsonc: vars.RP_ID must be set for the Deploy button profile",
@@ -89,6 +89,10 @@ describe("config-check (TIO-ARCH-003, TIO-CFG-001, TIO-GEN-003, TIO-DEPLOY-008)"
     (env["production"] as Json)["d1_databases"] = [{ binding: "DB", migrations_dir: "migrations" }];
     (env["production"] as Json)["queues"] = { producers: [] };
     (env["production"] as Json)["r2_buckets"] = [];
+    // The bindings wrangler does not inherit: an environment that leaves them out loses them.
+    delete (env["production"] as Json)["durable_objects"];
+    delete (env["production"] as Json)["ratelimits"];
+    delete (env["production"] as Json)["analytics_engine_datasets"];
     const errors = checkWranglerConfig(c);
     expect(errors).toEqual([
       `wrangler.jsonc: top-level database_id must be the placeholder ${D1_PLACEHOLDER_ID} (TIO-DEPLOY-005, TIO-DEPLOY-008)`,
@@ -97,6 +101,9 @@ describe("config-check (TIO-ARCH-003, TIO-CFG-001, TIO-GEN-003, TIO-DEPLOY-008)"
       "wrangler.jsonc env.production: queues.producers must bind exactly TASKS",
       "wrangler.jsonc env.production: one queue consumer on the producer's queue is required",
       "wrangler.jsonc env.production: r2_buckets must bind exactly AUDIT_BUCKET",
+      'wrangler.jsonc env.production: durable_objects.bindings must be exactly {"USER_DO":"UserDO","INTERACTION_DO":"InteractionDO"} (not inherited by environments)',
+      "wrangler.jsonc env.production: ratelimits must be exactly RL_IP, RL_CLIENT (not inherited by environments)",
+      "wrangler.jsonc env.production: analytics_engine_datasets must bind exactly METRICS (not inherited by environments)",
     ]);
   });
 

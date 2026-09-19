@@ -75,7 +75,19 @@
           }
         ]
       },
-      "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-staging-audit" }]
+      "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-staging-audit" }],
+      // Not inherited from the top level (wrangler config schema): every environment repeats them.
+      "durable_objects": {
+        "bindings": [
+          { "name": "USER_DO", "class_name": "UserDO" },
+          { "name": "INTERACTION_DO", "class_name": "InteractionDO" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "RL_IP", "namespace_id": "1101", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_CLIENT", "namespace_id": "1102", "simple": { "limit": 2000, "period": 10 } }
+      ],
+      "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc_staging" }]
     },
     "production": {
       "name": "tiny-oidc",
@@ -95,7 +107,19 @@
           }
         ]
       },
-      "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-production-audit" }]
+      "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-production-audit" }],
+      // Not inherited from the top level (wrangler config schema): every environment repeats them.
+      "durable_objects": {
+        "bindings": [
+          { "name": "USER_DO", "class_name": "UserDO" },
+          { "name": "INTERACTION_DO", "class_name": "InteractionDO" }
+        ]
+      },
+      "ratelimits": [
+        { "name": "RL_IP", "namespace_id": "1201", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_CLIENT", "namespace_id": "1202", "simple": { "limit": 2000, "period": 10 } }
+      ],
+      "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc_production" }]
     }
   }
 }
