@@ -1,5 +1,6 @@
-import { env, runInDurableObject } from "cloudflare:test";
+import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { env } from "../support/op.ts";
 import { resetStorage } from "../support/reset.ts";
 
 describe("resetStorage", () => {

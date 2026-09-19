@@ -1,14 +1,11 @@
-import {
-  env,
-  evictDurableObject,
-  runDurableObjectAlarm,
-  runInDurableObject,
-} from "cloudflare:test";
+import { evictDurableObject, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { InteractionDO, InteractionDocument } from "../../src/do/InteractionDO.ts";
 import { USER_SCHEMA_VERSION } from "../../src/do/schema.ts";
 import { PURGE_GRACE_SECONDS, PURGE_INTERVAL_SECONDS, type UserDO } from "../../src/do/UserDO.ts";
 import { FakeClock } from "../support/clock.ts";
+import { userProfile } from "../support/factories.ts";
+import { env } from "../support/op.ts";
 
 const docOf = (result: { ok: true; doc: InteractionDocument } | { ok: false; error: string }) => {
   if (!result.ok) throw new Error(result.error);
@@ -19,14 +16,15 @@ const userStub = (name: string) => env.USER_DO.get(env.USER_DO.idFromName(name))
 const interactionStub = (name: string) =>
   env.INTERACTION_DO.get(env.INTERACTION_DO.idFromName(name));
 
-const profile = (id: string) => ({
-  id,
-  email: "Alice@Example.com",
-  email_norm: "alice@example.com",
-  email_verified: true,
-  display_name: "Alice",
-  groups: ["staff", "admins"],
-});
+const profile = (id: string) =>
+  userProfile(new FakeClock(), {
+    id,
+    email: "Alice@Example.com",
+    email_norm: "alice@example.com",
+    email_verified: true,
+    display_name: "Alice",
+    groups: ["staff", "admins"],
+  });
 
 describe("UserDO", () => {
   it("[TIO-DATA-021] refuses every method except init() before initialization and except destroy() after destruction", async () => {

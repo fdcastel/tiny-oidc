@@ -1,4 +1,5 @@
-import { applyD1Migrations, env, reset } from "cloudflare:test";
+import { applyD1Migrations, reset } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 
 /**
  * Per-file storage isolation is the default (TIO-TEST-004); files that need a

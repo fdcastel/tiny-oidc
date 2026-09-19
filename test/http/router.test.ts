@@ -1,14 +1,11 @@
-import { createExecutionContext, env, SELF, waitOnExecutionContext } from "cloudflare:test";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../../src/env.ts";
 import type { LogLine } from "../../src/obs/log.ts";
 import { createApp } from "../../src/router/app.ts";
 import { ROUTES } from "../../src/router/routes.ts";
 import { FakeClock } from "../support/clock.ts";
-import { TEST_ENV } from "../support/keys.ts";
-
-const ISSUER = TEST_ENV.ISSUER;
-const url = (path: string) => `${ISSUER}${path}`;
+import { env, op, url } from "../support/op.ts";
 
 /** An app with a fake clock and a log collector, driven directly (not through SELF). */
 function harness(overrides: Partial<Env> = {}) {
@@ -29,17 +26,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 
 describe("HTTP conventions", () => {
   it("[TIO-HTTP-001] unknown paths are 404 and known paths with an unlisted method are 405 with Allow", async () => {
-    const missing = await SELF.fetch(url("/nope"));
+    const missing = await op(url("/nope"));
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({
       error: "not_found",
       error_description: "no such endpoint",
     });
-    const wrongMethod = await SELF.fetch(url("/api/v1/health"), { method: "POST" });
+    const wrongMethod = await op(url("/api/v1/health"), { method: "POST" });
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.get("Allow")).toBe("GET");
     expect(await wrongMethod.json()).toMatchObject({ error: "method_not_allowed" });
-    const del = await SELF.fetch(url("/api/v1/openapi.json"), { method: "DELETE" });
+    const del = await op(url("/api/v1/openapi.json"), { method: "DELETE" });
     expect(del.status).toBe(405);
   });
 
@@ -51,7 +48,7 @@ describe("HTTP conventions", () => {
       ["/api/v1/health", { method: "POST" }, 405],
     ];
     for (const [path, init, status] of cases) {
-      const res = await SELF.fetch(url(path), init);
+      const res = await op(url(path), init);
       expect(res.status, path).toBe(status);
       expect(res.headers.get("X-Content-Type-Options"), path).toBe("nosniff");
       expect(res.headers.get("Referrer-Policy"), path).toBe("no-referrer");
@@ -71,7 +68,7 @@ describe("HTTP conventions", () => {
   });
 
   it("[TIO-HTTP-003] public routes answer preflights with a star origin and no credentials; unknown paths get no CORS headers", async () => {
-    const preflight = await SELF.fetch(url("/api/v1/health"), {
+    const preflight = await op(url("/api/v1/health"), {
       method: "OPTIONS",
       headers: { Origin: "https://app.example.org", "Access-Control-Request-Method": "GET" },
     });
@@ -83,23 +80,23 @@ describe("HTTP conventions", () => {
     );
     expect(preflight.headers.get("Access-Control-Max-Age")).toBe("600");
     expect(preflight.headers.get("Access-Control-Allow-Credentials")).toBeNull();
-    const actual = await SELF.fetch(url("/api/v1/openapi.json"), {
+    const actual = await op(url("/api/v1/openapi.json"), {
       headers: { Origin: "https://app.example.org" },
     });
     expect(actual.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(actual.headers.get("Access-Control-Expose-Headers")).toBe("X-Request-Id");
-    const unknownPreflight = await SELF.fetch(url("/nope"), {
+    const unknownPreflight = await op(url("/nope"), {
       method: "OPTIONS",
       headers: { Origin: "https://app.example.org", "Access-Control-Request-Method": "POST" },
     });
     expect(unknownPreflight.status).toBe(204);
     expect(unknownPreflight.headers.get("Access-Control-Allow-Origin")).toBeNull();
-    const implicit = await SELF.fetch(url("/api/v1/health"), {
+    const implicit = await op(url("/api/v1/health"), {
       method: "OPTIONS",
       headers: { Origin: "https://x.example" },
     });
     expect(implicit.headers.get("Access-Control-Allow-Methods")).toBe("GET");
-    const unknownActual = await SELF.fetch(url("/nope"), {
+    const unknownActual = await op(url("/nope"), {
       headers: { Origin: "https://app.example.org" },
     });
     expect(unknownActual.headers.get("Access-Control-Allow-Origin")).toBeNull();
@@ -108,7 +105,7 @@ describe("HTTP conventions", () => {
   it("[TIO-HTTP-004] bodies over the class limit are 413: 16 KB on protocol endpoints, 64 KB on JSON APIs, 8 MB on import", async () => {
     const big = (bytes: number) => "x".repeat(bytes);
     const post = (path: string, size: number) =>
-      SELF.fetch(url(path), {
+      op(url(path), {
         method: "POST",
         body: big(size),
         headers: { "content-type": "text/plain" },
@@ -128,7 +125,7 @@ describe("HTTP conventions", () => {
         controller.close();
       },
     });
-    const chunked = await SELF.fetch(url("/token"), {
+    const chunked = await op(url("/token"), {
       method: "POST",
       body: stream,
       duplex: "half",
@@ -137,45 +134,43 @@ describe("HTTP conventions", () => {
   });
 
   it("[TIO-AUTHZ-001] a query string over 8 KB is 414 invalid_request", async () => {
-    const res = await SELF.fetch(url(`/api/v1/health?x=${"a".repeat(8 * 1024)}`));
+    const res = await op(url(`/api/v1/health?x=${"a".repeat(8 * 1024)}`));
     expect(res.status).toBe(414);
     expect(await res.json()).toMatchObject({ error: "invalid_request" });
-    expect((await SELF.fetch(url(`/api/v1/health?x=${"a".repeat(8 * 1024 - 3)}`))).status).toBe(
-      200,
-    );
+    expect((await op(url(`/api/v1/health?x=${"a".repeat(8 * 1024 - 3)}`))).status).toBe(200);
   });
 
   it("[TIO-HTTP-005] every request gets a UUID v7 request id in the header and in error bodies", async () => {
-    const a = await SELF.fetch(url("/nope"));
-    const b = await SELF.fetch(url("/nope"));
+    const a = await op(url("/nope"));
+    const b = await op(url("/nope"));
     const idA = a.headers.get("X-Request-Id") as string;
     const idB = b.headers.get("X-Request-Id") as string;
     expect(idA).toMatch(UUID);
     expect(idB).toMatch(UUID);
     expect(idA).not.toBe(idB);
     expect(((await a.json()) as { request_id: string }).request_id).toBe(idA);
-    const ok = await SELF.fetch(url("/api/v1/health"));
+    const ok = await op(url("/api/v1/health"));
     expect(ok.headers.get("X-Request-Id")).toMatch(UUID);
   });
 
   it("[TIO-HTTP-006] a Host that differs from the issuer is 421 everywhere except health, which reports the mismatch", async () => {
-    const other = await SELF.fetch("https://evil.example.net/api/v1/openapi.json");
+    const other = await op("https://evil.example.net/api/v1/openapi.json");
     expect(other.status).toBe(421);
     expect(await other.json()).toMatchObject({ error: "invalid_host" });
-    const missing = await SELF.fetch("https://evil.example.net/nope");
+    const missing = await op("https://evil.example.net/nope");
     expect(missing.status).toBe(421);
-    const health = await SELF.fetch("https://evil.example.net/api/v1/health");
+    const health = await op("https://evil.example.net/api/v1/health");
     expect(health.status).toBe(200);
     expect(await health.json()).toMatchObject({
       status: "ok",
       issuer_mismatch: "evil.example.net",
     });
-    const post = await SELF.fetch("https://evil.example.net/api/v1/health", { method: "POST" });
+    const post = await op("https://evil.example.net/api/v1/health", { method: "POST" });
     expect(post.status).toBe(421);
   });
 
   it("[TIO-ERR-001] JSON errors have exactly error, error_description (ASCII, ≤ 256) and request_id", async () => {
-    const res = await SELF.fetch(url("/nope"));
+    const res = await op(url("/nope"));
     const body = (await res.json()) as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(["error", "error_description", "request_id"]);
     expect(body["error_description"]).toMatch(/^[\x20-\x7e]{1,256}$/);
@@ -198,7 +193,7 @@ describe("health and observability", () => {
     const line = lines.find((l) => l.msg === "request") as LogLine;
     expect(line["do_calls"]).toBe(0);
     expect(line["d1_reads"]).toBe(1);
-    const dev = await SELF.fetch(url("/api/v1/health"));
+    const dev = await op(url("/api/v1/health"));
     expect(await dev.json()).toMatchObject({ version: "dev" });
   });
 
@@ -337,7 +332,7 @@ describe("startup configuration", () => {
 
 describe("OpenAPI", () => {
   it("serves an OpenAPI 3.1 document for the JSON APIs, cacheable for 5 minutes", async () => {
-    const res = await SELF.fetch(url("/api/v1/openapi.json"));
+    const res = await op(url("/api/v1/openapi.json"));
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=300");
     const doc = (await res.json()) as { openapi: string; paths: Record<string, unknown> };

@@ -1,4 +1,3 @@
-import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { hmacSha256, secretsEqual, sha256 } from "../../src/crypto/hash.ts";
 import { Db } from "../../src/db/db.ts";
@@ -15,6 +14,7 @@ import { utf8 } from "../../src/util/base64url.ts";
 import { hex } from "../support/bytes.ts";
 import { FakeClock } from "../support/clock.ts";
 import { TEST_MASTER_KEYS, testKeys } from "../support/keys.ts";
+import { env } from "../support/op.ts";
 import { resetStorage } from "../support/reset.ts";
 
 const config = (): Config => {

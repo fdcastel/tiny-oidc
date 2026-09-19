@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Version** | 1.0.0-draft.1 |
+| **Version** | 1.0.0-draft.2 |
 | **Date** | 2026-09-19 |
 | **Status** | Authoritative for the v1 build. Supersedes `tmp/INITIAL_TINY_OIDC_SPEC.md`. |
 | **Runtime** | TypeScript on Cloudflare Workers (workerd) |
@@ -473,7 +473,7 @@ The D1 directory is the first ceiling. Its size is dominated by `audit_hot` rete
 
 **[TIO-ARCH-015]** Storage errors SHALL map to HTTP 503 with `error: "temporarily_unavailable"` on the token endpoint and Interaction API, never to a 200 or to an OAuth `invalid_grant`. Tests assert the status and that no state transition was partially applied (the DO transaction rolled back).
 
-**[TIO-ARCH-016]** The OP SHALL make outbound HTTP requests only to: the configured upstreams' discovery, authorization, token, JWKS and userinfo endpoints; registered clients' `jwks_uri`; registered clients' `backchannel_logout_uri`. It SHALL send no telemetry, heartbeat, version check or crash report anywhere. A test runs every flow with `fetchMock` in disable-network mode and an allow-list of exactly those hosts, and fails on any other outbound request.
+**[TIO-ARCH-016]** The OP SHALL make outbound HTTP requests only to: the configured upstreams' discovery, authorization, token, JWKS and userinfo endpoints; registered clients' `jwks_uri`; registered clients' `backchannel_logout_uri`. It SHALL send no telemetry, heartbeat, version check or crash report anywhere. A test runs every flow with outbound requests intercepted (`@msw/cloudflare`, unhandled requests rejected) and an allow-list of exactly those hosts, and fails on any other outbound request.
 
 ---
 ## 3. Identity model
@@ -2072,6 +2072,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 | Test runner | Vitest 4.1+ | Two configs: `vitest.unit.config.ts` (Node environment, pure functions) and `vitest.workers.config.ts` (workerd via `@cloudflare/vitest-plugin`). |
 | Workers runtime in tests | `@cloudflare/vitest-plugin` 1.x (formerly `@cloudflare/vitest-pool-workers`) | Runs tests inside workerd with real D1, Durable Objects, Queues, R2 and cron bindings. Storage is isolated **per test file**, not per test; suites are written accordingly (§13.3). |
 | Coverage | `@vitest/coverage-istanbul` | V8 coverage is unsupported in workerd; Istanbul instrumentation is required. |
+| Outbound request mocking | `@msw/cloudflare` + `msw` 2.14+ | `fetchMock` was removed from `@cloudflare/vitest-plugin` 1.x; MSW's `onUnhandledFrame: "error"` gives the disable-network behavior. |
 | Browser end-to-end | Playwright 1.61+ (Chromium, Firefox, WebKit) | First-party `browserContext.credentials` for discoverable passkeys on all engines; CDP `WebAuthn.*` on Chromium for negative user-verification cases. |
 | Property-based tests | `fast-check` | Codecs, envelopes, parsers, redirect-URI matcher. |
 | Load | k6 via `grafana/setup-k6-action` | Against staging. |
@@ -2162,7 +2163,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-TEST-030]** `test/support/virtual-authenticator.ts` SHALL implement a software WebAuthn authenticator on Web Crypto (ES256 by default; EdDSA and RS256 selectable) that produces registration responses (`fmt: "none"`) and assertions for arbitrary origins, RP IDs, flags, counters and challenges, with fault injection for every negative case in §13.7. It is itself unit-tested by verifying its output with `@simplewebauthn/server`.
 
-**[TIO-TEST-031]** `test/support/fake-upstream/` SHALL implement a minimal OIDC OP (discovery, authorize with auto-approve, token, JWKS, userinfo) as a pure `handle(Request): Response` module with fault injection via a control header or query flags (bad `iss`, `aud`, `nonce`, `exp`, `iat`, unknown `kid`, key rotation, slow responses, malformed JSON, `error` responses, string `email_verified`). It is mounted in workers tests through `fetchMock` and deployed as a standalone Worker for staging (`conformance/` and `perf/` depend on it). It SHALL never be deployable to production (the deploy script refuses a `fake-upstream` name outside staging).
+**[TIO-TEST-031]** `test/support/fake-upstream/` SHALL implement a minimal OIDC OP (discovery, authorize with auto-approve, token, JWKS, userinfo) as a pure `handle(Request): Response` module with fault injection via a control header or query flags (bad `iss`, `aud`, `nonce`, `exp`, `iat`, unknown `kid`, key rotation, slow responses, malformed JSON, `error` responses, string `email_verified`). It is mounted in workers tests through the outbound interceptor (`test/support/fetch-allowlist.ts`, `@msw/cloudflare`) and deployed as a standalone Worker for staging (`conformance/` and `perf/` depend on it). It SHALL never be deployable to production (the deploy script refuses a `fake-upstream` name outside staging).
 
 **[TIO-TEST-032]** `test/support/factories.ts` SHALL create users, passkeys, clients, upstreams, sessions and tokens through the public APIs and Durable Object methods only, never by writing storage directly, except in tests that deliberately construct inconsistent state (§4.6) and say so in their title.
 
@@ -2234,7 +2235,7 @@ tiny-oidc/
 └── .github/workflows/               pr.yml (gates), nightly.yml (conformance, load, mutation); deploys are Workers Builds, not Actions
 ```
 
-Dependencies (runtime): `hono`, `@hono/zod-openapi`, `zod`, `jose`, `@simplewebauthn/server`, `uuidv7`. Nothing else at runtime. Dev: `wrangler`, `vitest`, `@cloudflare/vitest-plugin`, `@vitest/coverage-istanbul`, `@playwright/test`, `fast-check`, `oauth4webapi`, `openid-client`, `biome`, `knip`, `typescript`.
+Dependencies (runtime): `hono`, `@hono/zod-openapi`, `zod`, `jose`, `@simplewebauthn/server`, `uuidv7`. Nothing else at runtime. Dev: `wrangler`, `vitest`, `@cloudflare/vitest-plugin`, `@vitest/coverage-istanbul`, `@playwright/test`, `fast-check`, `msw`, `@msw/cloudflare`, `oauth4webapi`, `openid-client`, `biome`, `knip`, `typescript`, `jsonc-parser`, `@types/node`.
 
 **[TIO-GEN-003]** (V: ci) Adding a runtime dependency SHALL require a change to the list above in the same pull request; `scripts/config-check.ts` compares `package.json` against the list.
 
