@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Handler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { bootstrapHandler } from "../admin/bootstrap.ts";
 import { API_INFO, API_ROUTES, OPENAPI_PATH } from "../api/definitions.ts";
 import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
@@ -185,6 +186,7 @@ export function createApp(deps: AppDeps) {
   for (const op of ["upstream/:alias", "logout"]) {
     app.post(`/api/v1/interactions/:id/${op}`, notImplemented);
   }
+  app.post("/api/v1/admin/bootstrap", bootstrapHandler(deps.clock));
   for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);
 
   app.use(OPENAPI_PATH, async (c, next) => {

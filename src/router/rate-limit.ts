@@ -28,6 +28,8 @@ export const LIMIT_CLASSES = {
   client_token: { binding: "RL_CLIENT", prefix: "tok" },
   /** `/api/v1/admin/*` per admin token (`jti` prefix). */
   admin_token: { binding: "RL_CLIENT", prefix: "adm" },
+  /** Wrong bootstrap tokens per IP (TIO-ADMIN-010). */
+  ip_bootstrap: { binding: "RL_IP", prefix: "boot" },
 } as const satisfies Record<string, { binding: "RL_IP" | "RL_CLIENT"; prefix: string }>;
 
 export const RETRY_AFTER_SECONDS = 10;

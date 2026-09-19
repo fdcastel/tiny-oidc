@@ -91,6 +91,13 @@ export const ROUTES: readonly Route[] = [
     cacheable: true,
   },
   { method: "GET", path: "/api/v1/health", cors: "public", navigation: false, cacheable: false },
+  {
+    method: "POST",
+    path: "/api/v1/admin/bootstrap",
+    cors: "public",
+    navigation: false,
+    cacheable: false,
+  },
   ...interactionRoutes(),
 ];
 

@@ -27,6 +27,8 @@ export default defineConfig(async () => {
         "test/interop/**/*.test.ts",
       ],
       setupFiles: ["./test/support/setup.ts"],
+      // Rate-limit tests exhaust a binding (2,000 calls) while other files run in parallel.
+      testTimeout: 30_000,
     },
   };
 });

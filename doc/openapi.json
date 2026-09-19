@@ -506,6 +506,51 @@
             ]
           }
         ]
+      },
+      "BootstrapResponse": {
+        "type": "object",
+        "properties": {
+          "invitation": {
+            "type": "string",
+            "description": "The tio_iv register invitation token"
+          },
+          "invitation_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invitation_expires_at": {
+            "type": "integer"
+          },
+          "client": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "The admin-cli client record"
+          }
+        },
+        "required": [
+          "invitation",
+          "invitation_url",
+          "invitation_expires_at",
+          "client"
+        ]
+      },
+      "BootstrapBody": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email of the first administrator"
+          },
+          "display_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ]
       }
     },
     "parameters": {}
@@ -1138,6 +1183,86 @@
           },
           "409": {
             "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/bootstrap": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "One-time bootstrap: admins group, admin-cli client and the first admin invitation (§9.3)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Bootstrapped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request or email_invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "bootstrap_completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
             "content": {
               "application/json": {
                 "schema": {

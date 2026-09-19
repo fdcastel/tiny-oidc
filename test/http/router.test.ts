@@ -350,6 +350,7 @@ describe("OpenAPI", () => {
       "/api/v1/interactions/{id}/register/verify",
       "/api/v1/interactions/{id}/consent",
       "/api/v1/interactions/{id}/abort",
+      "/api/v1/admin/bootstrap",
     ]);
   });
 });

@@ -320,6 +320,44 @@ export const interactionRegisterVerifyRoute = createRoute({
   },
 });
 
+// --- Admin API (§9) ----------------------------------------------------------
+
+export const BootstrapBodySchema = z
+  .object({
+    email: z.string().openapi({ description: "Email of the first administrator" }),
+    display_name: z.string().optional(),
+  })
+  .openapi("BootstrapBody");
+
+export const BootstrapResponseSchema = z
+  .object({
+    invitation: z.string().openapi({ description: "The tio_iv register invitation token" }),
+    invitation_url: z.string().nullable(),
+    invitation_expires_at: z.int(),
+    client: z.looseObject({}).openapi({ description: "The admin-cli client record" }),
+  })
+  .openapi("BootstrapResponse");
+
+export const adminBootstrapRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/bootstrap",
+  tags: ["admin"],
+  summary:
+    "One-time bootstrap: admins group, admin-cli client and the first admin invitation (§9.3)",
+  request: { body: jsonBody(BootstrapBodySchema) },
+  responses: {
+    201: {
+      description: "Bootstrapped",
+      content: { "application/json": { schema: BootstrapResponseSchema } },
+    },
+    400: errorResponse("invalid_request or email_invalid"),
+    401: errorResponse("unauthorized"),
+    410: errorResponse("bootstrap_completed"),
+    429: errorResponse("rate_limited"),
+    503: errorResponse("temporarily_unavailable"),
+  },
+});
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -330,6 +368,7 @@ export const API_ROUTES = [
   interactionRegisterVerifyRoute,
   interactionConsentRoute,
   interactionAbortRoute,
+  adminBootstrapRoute,
 ] as const;
 
 /** The OpenAPI 3.1 document built from the definitions alone (no handlers, no bindings). */
