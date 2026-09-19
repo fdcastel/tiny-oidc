@@ -195,6 +195,8 @@ describe("UserDO sessions", () => {
       idle_expires_at: t0 + IDLE,
       absolute_expires_at: t0 + ABSOLUTE,
       clients: [],
+      country: "BR",
+      ua_family: "Chrome/128",
     });
     expect((await stub.getSession(first.input.sid, first.secretHash, t0)).ok).toBe(true);
     // Re-authentication of the same user: new secret and auth context, same sid, absolute expiry untouched.

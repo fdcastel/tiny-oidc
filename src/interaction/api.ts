@@ -210,6 +210,13 @@ export function getInteractionHandler(clock: Clock): Handler<AppEnv> {
       error: doc.error,
       attempts_remaining: Math.max(0, ATTEMPT_LIMIT - doc.attempts),
     };
+    if (doc.kind === "logout" && doc.logout !== null) {
+      // §7.6: who asked, and whether the browser will land at the client afterwards.
+      body.logout = {
+        client: body.client,
+        post_logout_redirect_uri_registered: doc.logout.post_logout_redirect_uri !== null,
+      };
+    }
     const uid = interactionUid(doc);
     if (doc.status === "consent_required" && client && request && uid !== null) {
       const stub = userStub(c.env, uid);

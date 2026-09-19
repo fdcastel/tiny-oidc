@@ -1,5 +1,4 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import type { Handler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { requireAdmin } from "../admin/auth.ts";
 import { bootstrapHandler } from "../admin/bootstrap.ts";
@@ -83,8 +82,12 @@ import { UPSTREAM_JWKS_COOLDOWN_MS, UpstreamMetadataCache } from "../federation/
 import { upstreamHandler } from "../federation/outbound.ts";
 import { abortHandler, consentHandler, getInteractionHandler } from "../interaction/api.ts";
 import { completeHandler } from "../interaction/complete.ts";
+import { logoutDecisionHandler } from "../interaction/logout.ts";
 import { passkeyOptionsHandler, passkeyVerifyHandler } from "../interaction/passkey.ts";
 import { registerOptionsHandler, registerVerifyHandler } from "../interaction/register.ts";
+import { logoutHandler } from "../logout/rp-logout.ts";
+import { requireAccount } from "../me/auth.ts";
+import * as me from "../me/handlers.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
 import { sessionMetadata } from "../obs/request-meta.ts";
@@ -251,16 +254,12 @@ export function createApp(deps: AppDeps) {
   app.get("/.well-known/jwks.json", jwksHandler);
   app.get("/.well-known/webauthn", webauthnHandler);
   app.get("/api/v1/health", healthHandler(deps.clock));
-  // Protocol endpoints arrive with Phase 2; until then they answer 501 so the
-  // route table, discovery and the header matrix already agree (TIO-DISC-002).
-  const notImplemented: Handler<AppEnv> = (c) =>
-    errorResponse(c, 501, "not_implemented", "this endpoint arrives with a later phase");
   app.get("/authorize", authorizeHandler(deps.clock));
   app.post("/par", parHandler(deps.clock));
   app.post("/token", tokenHandler(deps.clock));
   app.on(["GET", "POST"], "/userinfo", userinfoHandler(deps.clock));
   app.post("/revoke", revokeHandler(deps.clock));
-  app.on(["GET", "POST"], "/logout", notImplemented);
+  app.on(["GET", "POST"], "/logout", logoutHandler(deps.clock));
   app.on(["GET", "POST"], "/federation/callback", federationCallbackHandler(deps.clock));
   app.get("/interactions/:id/complete", completeHandler(deps.clock));
   // Interaction API (§7); the JSON APIs are documented from their route definitions.
@@ -272,7 +271,24 @@ export function createApp(deps: AppDeps) {
   app.post("/api/v1/interactions/:id/register/options", registerOptionsHandler(deps.clock));
   app.post("/api/v1/interactions/:id/register/verify", registerVerifyHandler(deps.clock));
   app.post("/api/v1/interactions/:id/upstream/:alias", upstreamHandler(deps.clock));
-  app.post("/api/v1/interactions/:id/logout", notImplemented);
+  app.post("/api/v1/interactions/:id/logout", logoutDecisionHandler(deps.clock));
+  // Self-service API (§8): every path needs the person's own token.
+  app.use("/api/v1/me/*", requireAccount(deps.clock));
+  app.get("/api/v1/me", me.getProfileHandler);
+  app.patch("/api/v1/me", me.patchProfileHandler(deps.clock));
+  app.get("/api/v1/me/passkeys", me.listPasskeysHandler);
+  app.post("/api/v1/me/passkeys/options", me.passkeyOptionsHandler(deps.clock));
+  app.post("/api/v1/me/passkeys", me.registerPasskeyHandler(deps.clock));
+  app.patch("/api/v1/me/passkeys/:id", me.renamePasskeyHandler());
+  app.delete("/api/v1/me/passkeys/:id", me.deletePasskeyHandler());
+  app.get("/api/v1/me/sessions", me.listSessionsHandler(deps.clock));
+  app.delete("/api/v1/me/sessions/:sid", me.deleteSessionHandler(deps.clock));
+  app.delete("/api/v1/me/sessions", me.deleteSessionsHandler(deps.clock));
+  app.get("/api/v1/me/identities", me.listIdentitiesHandler);
+  app.delete("/api/v1/me/identities/:id", me.deleteIdentityHandler);
+  app.get("/api/v1/me/grants", me.listGrantsHandler);
+  app.delete("/api/v1/me/grants/:client_id", me.deleteGrantHandler(deps.clock));
+  app.get("/api/v1/me/events", me.eventsNotImplemented);
   app.post("/api/v1/admin/bootstrap", bootstrapHandler(deps.clock));
   // Admin API (§9): every other path under the prefix needs an administrator's token.
   app.use("/api/v1/admin/*", async (c, next) => {

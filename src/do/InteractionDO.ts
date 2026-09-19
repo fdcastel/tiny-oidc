@@ -76,6 +76,8 @@ export interface LogoutRequest {
   uid: string | null;
   post_logout_redirect_uri: string | null;
   state: string | null;
+  /** What the person answered (TIO-IX-050); null until they do. */
+  decision: "confirm" | "decline" | null;
 }
 
 export interface InteractionError {

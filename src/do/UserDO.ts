@@ -211,6 +211,8 @@ export interface SessionSnapshot {
   idle_expires_at: number;
   absolute_expires_at: number;
   clients: string[];
+  country: string | null;
+  ua_family: string | null;
 }
 
 export interface SessionMetadata {
@@ -612,6 +614,7 @@ export class UserDO extends DurableObject<Env> {
       grace,
       grace,
     );
+    sql.exec("DELETE FROM challenges WHERE expires_at < ?", now);
   }
 
   /** Runs the purge as a write would. */
@@ -654,6 +657,8 @@ export class UserDO extends DurableObject<Env> {
       idle_expires_at: row.idle_expires_at,
       absolute_expires_at: row.absolute_expires_at,
       clients: this.sessionClients(row.sid),
+      country: row.country,
+      ua_family: row.ua_family,
     };
   }
 
@@ -904,6 +909,67 @@ export class UserDO extends DurableObject<Env> {
       )
       .toArray();
     return { ok: true, sessions: rows.map((r) => this.snapshot(r)) };
+  }
+
+  /** Revokes every live session but `except` (the Self-service API, §8); families of those sessions go with them. */
+  revokeSessions(
+    except: string | null,
+    now: number,
+    reason: string,
+  ): DoResult<{ revoked: RevokedSession[] }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    return this.ctx.storage.transactionSync(() => {
+      this.purgeIfDue(now, PURGE_GRACE_SECONDS);
+      const sids = this.ctx.storage.sql
+        .exec<{ sid: string }>(
+          "SELECT sid FROM sessions WHERE revoked_at IS NULL AND idle_expires_at > ? AND absolute_expires_at > ? ORDER BY created_at",
+          now,
+          now,
+        )
+        .toArray()
+        .map((r) => r.sid)
+        .filter((sid) => sid !== except);
+      const revoked = sids.map((sid) => ({
+        sid,
+        clients: this.revokeSessionRows(sid, now, reason),
+      }));
+      return { ok: true, revoked };
+    });
+  }
+
+  /** Stores a single-use WebAuthn challenge under `key` (a session or token id), replacing any previous one (§8). */
+  putChallenge(
+    key: string,
+    value: string,
+    expiresAt: number,
+  ): DoResult<Record<never, never>, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    this.ctx.storage.sql.exec(
+      "INSERT INTO challenges (key, value, expires_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at",
+      key,
+      value,
+      expiresAt,
+    );
+    return { ok: true };
+  }
+
+  /** Takes the challenge stored under `key`, once; null when there is none or it expired. */
+  takeChallenge(key: string, now: number): DoResult<{ value: string | null }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    return this.ctx.storage.transactionSync(() => {
+      const sql = this.ctx.storage.sql;
+      const row = sql
+        .exec<{ value: string; expires_at: number }>(
+          "SELECT value, expires_at FROM challenges WHERE key = ?",
+          key,
+        )
+        .toArray()[0];
+      sql.exec("DELETE FROM challenges WHERE key = ?", key);
+      return { ok: true, value: row !== undefined && row.expires_at > now ? row.value : null };
+    });
   }
 
   /** Revokes every session and every family (disable, delete, recovery: TIO-DATA-009, TIO-REG-004). */

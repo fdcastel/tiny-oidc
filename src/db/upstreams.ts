@@ -163,6 +163,14 @@ export async function listEnabledUpstreams(db: Db): Promise<Upstream[]> {
   return rows.results.map(decodeUpstreamRow).filter((u) => u !== null);
 }
 
+/** Every upstream's alias and issuer, enabled or not (the Self-service identities listing names the alias). */
+export async function listUpstreamAliases(db: Db): Promise<{ alias: string; issuer: string }[]> {
+  const rows = await db
+    .prepare("SELECT alias, issuer FROM upstreams ORDER BY alias")
+    .all<{ alias: string; issuer: string }>();
+  return rows.results;
+}
+
 /** The bound values of every column from `alias` to `enabled`, in table order. */
 function columnValues(upstream: Upstream): unknown[] {
   return [

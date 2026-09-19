@@ -2,9 +2,10 @@ import type { Handler } from "hono";
 import { sha256 } from "../crypto/hash.ts";
 import { newSecret } from "../crypto/random.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
-import type { ExistingSession } from "../do/InteractionDO.ts";
+import type { ExistingSession, LogoutRequest } from "../do/InteractionDO.ts";
 import type { AuthContext, CodeInput } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
+import { endSession, postLogoutDestination } from "../logout/rp-logout.ts";
 import { sessionMetadata } from "../obs/request-meta.ts";
 import type { AuthorizeRequest } from "../oidc/authorize.ts";
 import {
@@ -79,6 +80,27 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
     c.get("metrics").doCalls += 1;
     const claimed = await stub.claimCompletion(now);
     if (!claimed.ok) return toLoginApp("interaction_already_completed");
+    if (doc.kind === "logout") {
+      // TIO-IX-050: the session ends only on a confirmation, and only while the browser
+      // still presents the cookie the interaction was created from.
+      const logout = doc.logout as LogoutRequest;
+      const sessionCookie = cookies.get(SESSION_COOKIE);
+      const presented =
+        sessionCookie === undefined ? null : await openSessionHandle(config.keys, sessionCookie);
+      const same =
+        presented !== null && presented.sid === logout.sid && presented.uid === logout.uid;
+      if (doc.status === "ready" && logout.decision === "confirm" && same) {
+        await endSession(c, clock, logout.uid as string, logout.sid as string, "logout");
+        c.header("Set-Cookie", clearCookie(SESSION_COOKIE), { append: true });
+      }
+      c.get("metrics").doCalls += 1;
+      await stub.apply("complete", "completed", {}, now);
+      c.header("Set-Cookie", clearCookie(bindingCookieName(id)), { append: true });
+      return c.redirect(
+        postLogoutDestination(settings, logout.post_logout_redirect_uri, logout.state),
+        303,
+      );
+    }
     const request = doc.request as AuthorizeRequest;
     const finish = async (params: Record<string, string>, sessionCookie?: string) => {
       c.get("metrics").doCalls += 1;
@@ -184,8 +206,7 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
     if (sid === null) {
       if (existing !== null && existing.uid !== uid) {
         // Another user's session ends before the new one starts (TIO-SESS-002).
-        c.get("metrics").doCalls += 1;
-        await userStub(c.env, existing.uid).revokeSession(existing.sid, now, "reauth");
+        await endSession(c, clock, existing.uid, existing.sid, "reauth");
       }
       sid = new UuidV7(clock).next();
       c.get("metrics").doCalls += 1;

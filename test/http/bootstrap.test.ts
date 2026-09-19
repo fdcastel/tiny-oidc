@@ -1,7 +1,11 @@
 import type { PublicKeyCredentialCreationOptionsJSON } from "@simplewebauthn/server";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { describe, expect, it } from "vitest";
-import { ADMIN_CLI_CLIENT_ID, ADMIN_CLI_REDIRECT_URI } from "../../src/admin/bootstrap.ts";
+import {
+  ADMIN_CLI_CLIENT_ID,
+  ADMIN_CLI_POST_LOGOUT_URI,
+  ADMIN_CLI_REDIRECT_URI,
+} from "../../src/admin/bootstrap.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { getClient } from "../../src/db/clients.ts";
 import { Db } from "../../src/db/db.ts";
@@ -112,6 +116,7 @@ describe("POST /api/v1/admin/bootstrap", () => {
     expect(body.client).toMatchObject({
       client_id: ADMIN_CLI_CLIENT_ID,
       redirect_uris: [ADMIN_CLI_REDIRECT_URI],
+      post_logout_redirect_uris: [ADMIN_CLI_POST_LOGOUT_URI],
       grant_types: ["authorization_code", "refresh_token"],
       token_endpoint_auth_method: "none",
       skip_consent: true,

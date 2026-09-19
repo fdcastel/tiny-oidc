@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import snapshot from "../../doc/openapi.json" with { type: "json" };
+import { OPENAPI_PATH } from "../../src/api/definitions.ts";
 import { ROUTES } from "../../src/router/routes.ts";
 import { op } from "../support/op.ts";
 
@@ -28,8 +29,9 @@ describe("OpenAPI snapshot", () => {
     for (const [path, operations] of Object.entries(doc.paths)) {
       for (const [method, operation] of Object.entries(operations)) {
         const admin = path.startsWith("/api/v1/admin/") && path !== "/api/v1/admin/bootstrap";
+        const me = path === "/api/v1/me" || path.startsWith("/api/v1/me/");
         expect(operation.security, `${method} ${path}`).toEqual(
-          admin ? [{ adminToken: [] }] : undefined,
+          admin ? [{ adminToken: [] }] : me ? [{ accountToken: [] }] : undefined,
         );
         if (admin) {
           expect(Object.keys(operation.responses), `${method} ${path}`).toEqual(
@@ -43,6 +45,15 @@ describe("OpenAPI snapshot", () => {
           `${method} ${path}`,
         ).toBe(true);
       }
+    }
+    // And every JSON API route is documented (the OpenAPI document itself excepted).
+    for (const route of ROUTES) {
+      if (!route.path.startsWith("/api/v1/") || route.path === OPENAPI_PATH) continue;
+      const template = route.path.replace(/:(\w+)/g, "{$1}");
+      expect(
+        doc.paths[template]?.[route.method.toLowerCase()],
+        `${route.method} ${route.path}`,
+      ).toBeDefined();
     }
   });
 });

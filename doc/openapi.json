@@ -12,6 +12,12 @@
         "scheme": "bearer",
         "bearerFormat": "at+jwt",
         "description": "An access token with scope admin and the issuer in aud (§9.1)"
+      },
+      "accountToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "at+jwt",
+        "description": "A user's access token with scope account and the issuer in aud (§8)"
       }
     },
     "schemas": {
@@ -475,6 +481,29 @@
           "response"
         ]
       },
+      "UpstreamStartResponse": {
+        "type": "object",
+        "properties": {
+          "redirect_to": {
+            "type": "string",
+            "description": "The upstream's authorization URL the browser must visit"
+          }
+        },
+        "required": [
+          "redirect_to"
+        ]
+      },
+      "UpstreamStart": {
+        "type": "object",
+        "properties": {
+          "invitation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "A register invitation token (tio_iv_…) to create the account with"
+          }
+        }
+      },
       "ConsentDecision": {
         "oneOf": [
           {
@@ -513,6 +542,329 @@
               "decision"
             ]
           }
+        ]
+      },
+      "LogoutStep": {
+        "type": "object",
+        "properties": {
+          "redirect_to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_to"
+        ]
+      },
+      "LogoutDecision": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "additionalProperties": false
+      },
+      "MeProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "email_verified",
+          "display_name",
+          "groups",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "MeProfilePatch": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "email": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254,
+            "description": "Only under the me.allow_email_change setting; verification is reset"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MePasskey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "credential_id": {
+            "type": "string"
+          },
+          "alg": {
+            "type": "integer"
+          },
+          "counter": {
+            "type": "integer"
+          },
+          "transports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "aaguid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "backup_eligible": {
+            "type": "boolean"
+          },
+          "backed_up": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_via": {
+            "type": "string",
+            "enum": [
+              "interaction",
+              "me",
+              "recovery"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "last_used_at": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "credential_id",
+          "alg",
+          "counter",
+          "transports",
+          "aaguid",
+          "backup_eligible",
+          "backed_up",
+          "name",
+          "created_via",
+          "created_at",
+          "last_used_at"
+        ]
+      },
+      "MePasskeyRegister": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "RegistrationResponseJSON from the browser"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "additionalProperties": false
+      },
+      "MePasskeyRename": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "MeSession": {
+        "type": "object",
+        "properties": {
+          "sid": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "last_seen_at": {
+            "type": "integer"
+          },
+          "auth_time": {
+            "type": "integer"
+          },
+          "amr": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ua_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "sid",
+          "created_at",
+          "last_seen_at",
+          "auth_time",
+          "amr",
+          "upstream",
+          "country",
+          "ua_family",
+          "current",
+          "clients"
+        ]
+      },
+      "MeIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "last_login_at": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "upstream",
+          "issuer",
+          "email",
+          "name",
+          "created_at",
+          "last_login_at"
+        ]
+      },
+      "MeGrant": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "granted_at": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "scopes",
+          "granted_at",
+          "updated_at"
         ]
       },
       "BootstrapResponse": {
@@ -2778,6 +3130,112 @@
         }
       }
     },
+    "/api/v1/interactions/{id}/upstream/{alias}": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Start a federated login through an upstream (§7.5, TIO-IX-040)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "The upstream alias"
+            },
+            "required": true,
+            "description": "The upstream alias",
+            "name": "alias",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamStart"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Where to send the browser",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, invitation_invalid, invitation_expired or invitation_used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found or upstream_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable or upstream_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/interactions/{id}/consent": {
       "post": {
         "tags": [
@@ -2925,6 +3383,1298 @@
           },
           "409": {
             "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/logout": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Confirm or decline signing out (§7.6)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Where the browser finishes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutStep"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The signed-in person's profile (§8)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Update display_name, and email when allowed (§8)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeProfilePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request or email_invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope or email_change_not_allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/passkeys": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The person's passkeys (§8)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MePasskey"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Register a passkey (§8, TIO-ME-003)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MePasskeyRegister"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MePasskey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request or passkey_not_discoverable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token or passkey_verification_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope, reauthentication_required or passkey_limit_reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/passkeys/options": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Registration options for a new passkey (§8, TIO-ME-003)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "publicKey": {
+                      "type": "object",
+                      "properties": {},
+                      "additionalProperties": {},
+                      "description": "PublicKeyCredentialCreationOptionsJSON for navigator.credentials.create()"
+                    }
+                  },
+                  "required": [
+                    "publicKey"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope or reauthentication_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/passkeys/{id}": {
+      "patch": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Rename a passkey (TIO-PK-041)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Passkey id"
+            },
+            "required": true,
+            "description": "Passkey id",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MePasskeyRename"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Renamed"
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Delete a passkey; the last way to sign in stays (TIO-PK-040)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Passkey id"
+            },
+            "required": true,
+            "description": "Passkey id",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "last_login_method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/sessions": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The person's live sessions, the token's own flagged current (§8)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MeSession"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "End every other session (include_current=true ends this one too)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "include_current",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revoked": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "revoked"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/sessions/{sid}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "End one session; its clients receive back-channel logout (TIO-LOGOUT-013)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "sid",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Ended"
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/identities": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Linked identities, never the upstream subject (§8)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Identities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MeIdentity"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/identities/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Unlink an identity; the last way to sign in stays (TIO-FED-051)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unlinked"
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "last_login_method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/grants": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Consent grants per client (§8)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MeGrant"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/grants/{client_id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Revoke a grant and the client's refresh families (TIO-CONSENT-004)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "client_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/events": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The person's recent events (arrives with the audit endpoints)",
+        "security": [
+          {
+            "accountToken": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "not_implemented",
             "content": {
               "application/json": {
                 "schema": {

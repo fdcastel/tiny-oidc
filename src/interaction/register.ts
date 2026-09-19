@@ -13,6 +13,7 @@ import { findVerifiedUser, getUser, lookupCredential } from "../db/users.ts";
 import type { RegistrationDraft } from "../do/InteractionDO.ts";
 import type { UserProfile } from "../do/UserDO.ts";
 import type { Clock } from "../env.ts";
+import { notifyEndedSessions } from "../logout/rp-logout.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
 import { BODY_LIMITS } from "../router/routes.ts";
@@ -254,7 +255,14 @@ export function registerVerifyHandler(clock: Clock): Handler<AppEnv> {
       const current = await user.getProfile();
       if (!current.ok)
         return errorResponse(c, 400, "invitation_invalid", "invitation not accepted");
-      await user.revokeAll(now, "recover");
+      const revoked = await user.revokeAll(now, "recover");
+      if (revoked.ok) {
+        await notifyEndedSessions(
+          c,
+          clock,
+          revoked.revoked.map((s) => ({ uid, ...s })),
+        );
+      }
       profile = current.profile;
     }
     const registered = await registerPasskey(

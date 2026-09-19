@@ -344,17 +344,19 @@ describe("OpenAPI", () => {
     // Every documented path is in the route table (with {param} as :param), and the
     // Interaction and Admin APIs are documented completely.
     const documented = Object.keys(doc.paths);
-    expect(documented.slice(0, 10)).toEqual([
+    expect(documented.slice(0, 12)).toEqual([
       "/api/v1/health",
       "/api/v1/interactions/{id}",
       "/api/v1/interactions/{id}/passkey/options",
       "/api/v1/interactions/{id}/passkey/verify",
       "/api/v1/interactions/{id}/register/options",
       "/api/v1/interactions/{id}/register/verify",
+      "/api/v1/interactions/{id}/upstream/{alias}",
       "/api/v1/interactions/{id}/consent",
       "/api/v1/interactions/{id}/abort",
-      "/api/v1/admin/bootstrap",
-      "/api/v1/admin/users",
+      "/api/v1/interactions/{id}/logout",
+      "/api/v1/me",
+      "/api/v1/me/passkeys",
     ]);
     const tablePaths = new Set(ROUTES.map((r) => r.path));
     for (const path of documented) {

@@ -23,6 +23,7 @@ import { readJsonBody } from "../util/json.ts";
 
 export const ADMIN_CLI_CLIENT_ID = "admin-cli";
 export const ADMIN_CLI_REDIRECT_URI = "http://127.0.0.1:0/callback";
+export const ADMIN_CLI_POST_LOGOUT_URI = "http://127.0.0.1:0/loggedout";
 
 const BootstrapBody = z.object({
   email: z.string().min(1).max(254),
@@ -68,6 +69,7 @@ export function bootstrapHandler(clock: Clock): Handler<AppEnv> {
         client_id: ADMIN_CLI_CLIENT_ID,
         client_name: "Tiny OIDC admin CLI",
         redirect_uris: [ADMIN_CLI_REDIRECT_URI],
+        post_logout_redirect_uris: [ADMIN_CLI_POST_LOGOUT_URI],
         // Code and refresh (TIO-ADMIN-010): the first two supported grant types.
         grant_types: CAPABILITIES.grant_types_supported.filter((g) => g !== "client_credentials"),
         token_endpoint_auth_method: "none",

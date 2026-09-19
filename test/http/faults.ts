@@ -1,4 +1,5 @@
 import type { InteractionDO } from "../../src/do/InteractionDO.ts";
+import type { UserDO } from "../../src/do/UserDO.ts";
 import type { Env } from "../../src/env.ts";
 import { env } from "../support/op.ts";
 
@@ -101,6 +102,64 @@ export function sabotageDo(userId: string, method: string, nth = 1, spare: strin
               const invoke = (target as unknown as Record<string, Method>)[property] as Method;
               return invoke(...args);
             };
+          },
+        });
+      },
+    },
+  } as unknown as Env;
+}
+
+/**
+ * An environment where, before the first call of `method` on one user's
+ * object, `before` runs against the real stub (to change the object under
+ * the handler's feet).
+ */
+export function interceptDo(
+  userId: string,
+  method: string,
+  before: (stub: DurableObjectStub<UserDO>) => Promise<void>,
+): Env {
+  let done = false;
+  return {
+    ...env,
+    USER_DO: {
+      idFromName: (name: string) => env.USER_DO.idFromName(name),
+      get: (id: DurableObjectId) => {
+        const real = env.USER_DO.get(id);
+        if (!id.equals(env.USER_DO.idFromName(userId))) return real;
+        return new Proxy(real, {
+          get(target, property) {
+            const value = Reflect.get(target, property) as unknown;
+            if (property !== method || typeof value !== "function") return value;
+            return async (...args: unknown[]) => {
+              if (!done) {
+                done = true;
+                await before(target);
+              }
+              const invoke = (target as unknown as Record<string, Method>)[property] as Method;
+              return invoke(...args);
+            };
+          },
+        });
+      },
+    },
+  } as unknown as Env;
+}
+
+/** An environment where `method` on one user's object rejects (a call lost in transit); everything else works. */
+export function throwingDo(userId: string, method: string): Env {
+  return {
+    ...env,
+    USER_DO: {
+      idFromName: (name: string) => env.USER_DO.idFromName(name),
+      get: (id: DurableObjectId) => {
+        const real = env.USER_DO.get(id);
+        if (!id.equals(env.USER_DO.idFromName(userId))) return real;
+        return new Proxy(real, {
+          get(target, property) {
+            const value = Reflect.get(target, property) as unknown;
+            if (property !== method || typeof value !== "function") return value;
+            return () => Promise.reject(new Error("DO call lost"));
           },
         });
       },

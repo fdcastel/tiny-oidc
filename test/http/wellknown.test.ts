@@ -20,9 +20,9 @@ function harness(overrides: Partial<Env> = {}) {
   const lines: LogLine[] = [];
   const app = createApp({ clock: new FakeClock(), sink: (line) => lines.push(line) });
   const testEnv = { ...env, ...overrides } as Env;
-  const fetch = async (path: string) => {
+  const fetch = async (path: string, init?: RequestInit) => {
     const ctx = createExecutionContext();
-    const res = await app.fetch(new Request(url(path)), testEnv, ctx);
+    const res = await app.fetch(new Request(url(path), init), testEnv, ctx);
     await waitOnExecutionContext(ctx);
     return res;
   };
@@ -215,20 +215,30 @@ describe("WebAuthn related origins", () => {
   });
 });
 
-describe("protocol endpoints of a later phase", () => {
-  it("answer 501 not_implemented on every route of the table that has no handler yet, with the right header class", async () => {
-    const cases: [string, string, boolean][] = [
-      ["GET", "/logout", true],
-      ["POST", "/logout", true],
-    ];
-    for (const [method, path, navigation] of cases) {
-      const res = await op(path, { method, headers: { Origin: "https://app.example.org" } });
-      expect(res.status, `${method} ${path}`).toBe(501);
-      expect(await res.json()).toMatchObject({ error: "not_implemented" });
-      expect(res.headers.get("Permissions-Policy"), path).toBe(
-        navigation ? "publickey-credentials-get=(), publickey-credentials-create=()" : null,
+describe("navigation endpoints", () => {
+  it("/logout carries the navigation header class and no CORS; /authorize preflights are refused", async () => {
+    await writeSettings(
+      Db.from(env.DB),
+      { login_url: "https://login.example.com/", login_origins: ["https://login.example.com"] },
+      "test",
+      0,
+    );
+    const { fetch } = harness();
+    for (const method of ["GET", "POST"]) {
+      const res = await fetch("/logout", {
+        method,
+        headers: {
+          Origin: "https://app.example.org",
+          ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+        },
+        ...(method === "POST" ? { body: "" } : {}),
+      });
+      expect(res.status, method).toBe(303);
+      expect(res.headers.get("location")).toBe("https://login.example.com/?event=logged_out");
+      expect(res.headers.get("Permissions-Policy")).toBe(
+        "publickey-credentials-get=(), publickey-credentials-create=()",
       );
-      expect(res.headers.get("Access-Control-Allow-Origin"), path).toBe(navigation ? null : "*");
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
     }
     const preflight = await op("/authorize", {
       method: "OPTIONS",

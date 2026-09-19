@@ -253,6 +253,70 @@ export const interactionPasskeyVerifyRoute = createRoute({
   },
 });
 
+export const UpstreamStartBodySchema = z
+  .object({
+    invitation: z.string().min(1).max(512).optional().openapi({
+      description: "A register invitation token (tio_iv_…) to create the account with",
+    }),
+  })
+  .openapi("UpstreamStart");
+
+export const UpstreamStartResponseSchema = z
+  .object({
+    redirect_to: z
+      .string()
+      .openapi({ description: "The upstream's authorization URL the browser must visit" }),
+  })
+  .openapi("UpstreamStartResponse");
+
+export const interactionUpstreamRoute = createRoute({
+  method: "post",
+  path: "/api/v1/interactions/{id}/upstream/{alias}",
+  tags: ["interactions"],
+  summary: "Start a federated login through an upstream (§7.5, TIO-IX-040)",
+  request: {
+    params: InteractionIdParams.extend({
+      alias: z.string().min(1).max(64).openapi({ description: "The upstream alias" }),
+    }),
+    body: jsonBody(UpstreamStartBodySchema),
+  },
+  responses: {
+    200: {
+      description: "Where to send the browser",
+      content: { "application/json": { schema: UpstreamStartResponseSchema } },
+    },
+    400: errorResponse(
+      "invalid_request, invitation_invalid, invitation_expired or invitation_used",
+    ),
+    ...INTERACTION_ERRORS,
+    404: errorResponse("interaction_not_found or upstream_not_found"),
+    503: errorResponse("temporarily_unavailable or upstream_unavailable"),
+  },
+});
+
+export const LogoutDecisionSchema = z
+  .object({ confirm: z.boolean() })
+  .strict()
+  .openapi("LogoutDecision");
+
+export const LogoutStepSchema = z.object({ redirect_to: z.string() }).openapi("LogoutStep");
+
+export const interactionLogoutRoute = createRoute({
+  method: "post",
+  path: "/api/v1/interactions/{id}/logout",
+  tags: ["interactions"],
+  summary: "Confirm or decline signing out (§7.6)",
+  request: { params: InteractionIdParams, body: jsonBody(LogoutDecisionSchema) },
+  responses: {
+    200: {
+      description: "Where the browser finishes",
+      content: { "application/json": { schema: LogoutStepSchema } },
+    },
+    400: errorResponse("invalid_request"),
+    ...INTERACTION_ERRORS,
+  },
+});
+
 export const RegisterOptionsBodySchema = z
   .object({
     invitation: z.string().optional().openapi({ description: "A tio_iv invitation token" }),
@@ -1956,6 +2020,320 @@ export const adminImportUsersRoute = createRoute({
   },
 });
 
+// Self-service API (§8)
+
+const ME_ERRORS = {
+  401: errorResponse("invalid_token"),
+  403: errorResponse("insufficient_scope"),
+  429: errorResponse("rate_limited"),
+  503: errorResponse("temporarily_unavailable"),
+};
+const meSecurity = [{ accountToken: [] }];
+
+export const MeProfileSchema = z
+  .object({
+    id: z.string(),
+    email: z.string().nullable(),
+    email_verified: z.boolean(),
+    display_name: z.string().nullable(),
+    groups: z.array(z.string()),
+    created_at: z.int(),
+    updated_at: z.int(),
+  })
+  .openapi("MeProfile");
+
+export const MeProfilePatchSchema = z
+  .object({
+    display_name: z.string().min(1).max(128).optional(),
+    email: z.string().min(3).max(254).optional().openapi({
+      description: "Only under the me.allow_email_change setting; verification is reset",
+    }),
+  })
+  .strict()
+  .openapi("MeProfilePatch");
+
+export const MePasskeySchema = AdminPasskeySchema.openapi("MePasskey");
+
+export const MePasskeyRegisterSchema = z
+  .object({
+    response: z
+      .looseObject({})
+      .openapi({ description: "RegistrationResponseJSON from the browser" }),
+    name: z.string().max(256).optional(),
+  })
+  .strict()
+  .openapi("MePasskeyRegister");
+
+export const MePasskeyRenameSchema = z
+  .object({ name: z.string().max(256) })
+  .strict()
+  .openapi("MePasskeyRename");
+
+export const MeSessionSchema = z
+  .object({
+    sid: z.string(),
+    created_at: z.int(),
+    last_seen_at: z.int(),
+    auth_time: z.int(),
+    amr: z.array(z.string()),
+    upstream: z.string().nullable(),
+    country: z.string().nullable(),
+    ua_family: z.string().nullable(),
+    current: z.boolean(),
+    clients: z.array(z.string()),
+  })
+  .openapi("MeSession");
+
+export const MeIdentitySchema = z
+  .object({
+    id: z.string(),
+    upstream: z.string().nullable(),
+    issuer: z.string(),
+    email: z.string().nullable(),
+    name: z.string().nullable(),
+    created_at: z.int(),
+    last_login_at: z.int().nullable(),
+  })
+  .openapi("MeIdentity");
+
+export const MeGrantSchema = AdminGrantSchema.openapi("MeGrant");
+
+const meList = (description: string, schema: z.ZodType) => ({
+  200: {
+    description,
+    content: { "application/json": { schema: z.object({ items: z.array(schema) }) } },
+  },
+  ...ME_ERRORS,
+});
+
+export const meGetRoute = createRoute({
+  method: "get",
+  path: "/api/v1/me",
+  tags: ["me"],
+  summary: "The signed-in person's profile (§8)",
+  security: meSecurity,
+  responses: {
+    200: { description: "Profile", content: { "application/json": { schema: MeProfileSchema } } },
+    ...ME_ERRORS,
+  },
+});
+
+export const mePatchRoute = createRoute({
+  method: "patch",
+  path: "/api/v1/me",
+  tags: ["me"],
+  summary: "Update display_name, and email when allowed (§8)",
+  security: meSecurity,
+  request: { body: jsonBody(MeProfilePatchSchema) },
+  responses: {
+    200: { description: "Profile", content: { "application/json": { schema: MeProfileSchema } } },
+    400: errorResponse("invalid_request or email_invalid"),
+    ...ME_ERRORS,
+    403: errorResponse("insufficient_scope or email_change_not_allowed"),
+  },
+});
+
+export const mePasskeysListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/me/passkeys",
+  tags: ["me"],
+  summary: "The person's passkeys (§8)",
+  security: meSecurity,
+  responses: meList("Passkeys", MePasskeySchema),
+});
+
+export const mePasskeyOptionsRoute = createRoute({
+  method: "post",
+  path: "/api/v1/me/passkeys/options",
+  tags: ["me"],
+  summary: "Registration options for a new passkey (§8, TIO-ME-003)",
+  security: meSecurity,
+  responses: {
+    200: {
+      description: "Options",
+      content: {
+        "application/json": {
+          schema: z.object({
+            publicKey: z.looseObject({}).openapi({
+              description:
+                "PublicKeyCredentialCreationOptionsJSON for navigator.credentials.create()",
+            }),
+          }),
+        },
+      },
+    },
+    ...ME_ERRORS,
+    403: errorResponse("insufficient_scope or reauthentication_required"),
+  },
+});
+
+export const mePasskeyRegisterRoute = createRoute({
+  method: "post",
+  path: "/api/v1/me/passkeys",
+  tags: ["me"],
+  summary: "Register a passkey (§8, TIO-ME-003)",
+  security: meSecurity,
+  request: { body: jsonBody(MePasskeyRegisterSchema) },
+  responses: {
+    201: {
+      description: "Registered",
+      content: { "application/json": { schema: MePasskeySchema } },
+    },
+    400: errorResponse("invalid_request or passkey_not_discoverable"),
+    ...ME_ERRORS,
+    401: errorResponse("invalid_token or passkey_verification_failed"),
+    403: errorResponse("insufficient_scope, reauthentication_required or passkey_limit_reached"),
+  },
+});
+
+const PasskeyIdParams = z.object({ id: z.uuid().openapi({ description: "Passkey id" }) });
+
+export const mePasskeyRenameRoute = createRoute({
+  method: "patch",
+  path: "/api/v1/me/passkeys/{id}",
+  tags: ["me"],
+  summary: "Rename a passkey (TIO-PK-041)",
+  security: meSecurity,
+  request: { params: PasskeyIdParams, body: jsonBody(MePasskeyRenameSchema) },
+  responses: {
+    204: { description: "Renamed" },
+    400: errorResponse("invalid_request"),
+    404: errorResponse("not_found"),
+    ...ME_ERRORS,
+  },
+});
+
+export const mePasskeyDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/me/passkeys/{id}",
+  tags: ["me"],
+  summary: "Delete a passkey; the last way to sign in stays (TIO-PK-040)",
+  security: meSecurity,
+  request: { params: PasskeyIdParams },
+  responses: {
+    204: { description: "Deleted" },
+    404: errorResponse("not_found"),
+    409: errorResponse("last_login_method"),
+    ...ME_ERRORS,
+  },
+});
+
+export const meSessionsListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/me/sessions",
+  tags: ["me"],
+  summary: "The person's live sessions, the token's own flagged current (§8)",
+  security: meSecurity,
+  responses: meList("Sessions", MeSessionSchema),
+});
+
+export const meSessionDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/me/sessions/{sid}",
+  tags: ["me"],
+  summary: "End one session; its clients receive back-channel logout (TIO-LOGOUT-013)",
+  security: meSecurity,
+  request: { params: z.object({ sid: z.string().min(1) }) },
+  responses: {
+    204: { description: "Ended" },
+    404: errorResponse("not_found"),
+    ...ME_ERRORS,
+  },
+});
+
+export const meSessionsDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/me/sessions",
+  tags: ["me"],
+  summary: "End every other session (include_current=true ends this one too)",
+  security: meSecurity,
+  request: { query: z.object({ include_current: z.enum(["true", "false"]).optional() }) },
+  responses: {
+    200: {
+      description: "How many ended",
+      content: { "application/json": { schema: z.object({ revoked: z.int() }) } },
+    },
+    ...ME_ERRORS,
+  },
+});
+
+export const meIdentitiesListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/me/identities",
+  tags: ["me"],
+  summary: "Linked identities, never the upstream subject (§8)",
+  security: meSecurity,
+  responses: meList("Identities", MeIdentitySchema),
+});
+
+export const meIdentityDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/me/identities/{id}",
+  tags: ["me"],
+  summary: "Unlink an identity; the last way to sign in stays (TIO-FED-051)",
+  security: meSecurity,
+  request: { params: z.object({ id: z.uuid() }) },
+  responses: {
+    204: { description: "Unlinked" },
+    404: errorResponse("not_found"),
+    409: errorResponse("last_login_method"),
+    ...ME_ERRORS,
+  },
+});
+
+export const meGrantsListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/me/grants",
+  tags: ["me"],
+  summary: "Consent grants per client (§8)",
+  security: meSecurity,
+  responses: meList("Grants", MeGrantSchema),
+});
+
+export const meGrantDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/me/grants/{client_id}",
+  tags: ["me"],
+  summary: "Revoke a grant and the client's refresh families (TIO-CONSENT-004)",
+  security: meSecurity,
+  request: { params: z.object({ client_id: z.string().min(1) }) },
+  responses: {
+    204: { description: "Revoked" },
+    404: errorResponse("not_found"),
+    ...ME_ERRORS,
+  },
+});
+
+export const meEventsRoute = createRoute({
+  method: "get",
+  path: "/api/v1/me/events",
+  tags: ["me"],
+  summary: "The person's recent events (arrives with the audit endpoints)",
+  security: meSecurity,
+  responses: {
+    501: errorResponse("not_implemented"),
+    ...ME_ERRORS,
+  },
+});
+
+export const ME_ROUTES = [
+  meGetRoute,
+  mePatchRoute,
+  mePasskeysListRoute,
+  mePasskeyOptionsRoute,
+  mePasskeyRegisterRoute,
+  mePasskeyRenameRoute,
+  mePasskeyDeleteRoute,
+  meSessionsListRoute,
+  meSessionDeleteRoute,
+  meSessionsDeleteRoute,
+  meIdentitiesListRoute,
+  meIdentityDeleteRoute,
+  meGrantsListRoute,
+  meGrantDeleteRoute,
+  meEventsRoute,
+] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -1964,8 +2342,11 @@ export const API_ROUTES = [
   interactionPasskeyVerifyRoute,
   interactionRegisterOptionsRoute,
   interactionRegisterVerifyRoute,
+  interactionUpstreamRoute,
   interactionConsentRoute,
   interactionAbortRoute,
+  interactionLogoutRoute,
+  ...ME_ROUTES,
   adminBootstrapRoute,
   ...ADMIN_USER_ROUTES,
   ...ADMIN_GROUP_ROUTES,
@@ -1984,6 +2365,12 @@ export function registerApi(app: Pick<OpenAPIHono, "openAPIRegistry">): void {
     scheme: "bearer",
     bearerFormat: "at+jwt",
     description: "An access token with scope admin and the issuer in aud (§9.1)",
+  });
+  app.openAPIRegistry.registerComponent("securitySchemes", "accountToken", {
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "at+jwt",
+    description: "A user's access token with scope account and the issuer in aud (§8)",
   });
 }
 

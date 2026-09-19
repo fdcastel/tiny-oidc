@@ -1,15 +1,13 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { INVITATION_FILE } from "./global-setup.ts";
+import { OP, RP, type RpResult, rpJson, signUp } from "./support/flows.ts";
 import { type PasskeyProvider, passkeyProvider } from "./support/passkeys.ts";
 
 // Passkey sign-up and sign-in through the reference login app and the example
 // relying party (TIO-TEST-033: everything here speaks HTTP to the OP). The RP
 // on openid-client verifies the ID token against the live JWKS and shows the
 // claims as JSON; the browser never sees a token.
-
-const OP = process.env["TIO_E2E_BASE_URL"] ?? "http://localhost:8787";
-const RP = "http://127.0.0.1:8788";
 
 test.describe.configure({ mode: "serial" });
 
@@ -22,36 +20,6 @@ function takeInvitation(): { invitation: string; client: { client_id: string } }
   };
   unlinkSync(INVITATION_FILE);
   return parsed;
-}
-
-interface RpResult {
-  claims: Record<string, unknown>;
-  scope: string;
-}
-
-/** The JSON the RP renders at its callback. */
-async function rpJson(page: Page): Promise<RpResult> {
-  await expect(page).toHaveURL(new RegExp(`^${RP.replaceAll(".", "\\.")}/`));
-  return JSON.parse(await page.locator("body").innerText()) as RpResult;
-}
-
-async function signUp(
-  page: Page,
-  provider: PasskeyProvider,
-  fields: { email?: string; name?: string; invitation?: string; passkey?: string },
-) {
-  await page.goto(`${RP}/login?scope=openid%20email%20profile`);
-  await expect(page).toHaveURL(/\/login\/\?interaction=/);
-  await page.getByRole("button", { name: "Create an account" }).click();
-  if (fields.invitation)
-    await page.getByLabel("Invitation (if you have one)").fill(fields.invitation);
-  if (fields.email) await page.getByLabel("Email").fill(fields.email);
-  if (fields.name) await page.getByLabel("Name", { exact: true }).fill(fields.name);
-  if (fields.passkey) await page.getByLabel("Passkey name").fill(fields.passkey);
-  await page.getByRole("button", { name: "Create a passkey" }).click();
-  const result = await rpJson(page);
-  await provider.remember(page);
-  return result;
 }
 
 let provider: PasskeyProvider;

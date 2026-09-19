@@ -101,6 +101,7 @@ export const ROUTES: readonly Route[] = [
     cacheable: false,
   },
   ...interactionRoutes(),
+  ...meRoutes(),
   ...adminRoutes(),
   {
     method: "GET",
@@ -137,6 +138,36 @@ function interactionRoutes(): Route[] {
       }),
     ),
   ];
+}
+
+/** The Self-service API (§8): JSON under /api/v1/me, bearer-protected, public CORS (TIO-HTTP-003). */
+function meRoutes(): Route[] {
+  const operations: [Route["method"], string][] = [
+    ["GET", ""],
+    ["PATCH", ""],
+    ["GET", "/passkeys"],
+    ["POST", "/passkeys/options"],
+    ["POST", "/passkeys"],
+    ["PATCH", "/passkeys/:id"],
+    ["DELETE", "/passkeys/:id"],
+    ["GET", "/sessions"],
+    ["DELETE", "/sessions/:sid"],
+    ["DELETE", "/sessions"],
+    ["GET", "/identities"],
+    ["DELETE", "/identities/:id"],
+    ["GET", "/grants"],
+    ["DELETE", "/grants/:client_id"],
+    ["GET", "/events"],
+  ];
+  return operations.map(
+    ([method, path]): Route => ({
+      method,
+      path: `/api/v1/me${path}`,
+      cors: "public",
+      navigation: false,
+      cacheable: false,
+    }),
+  );
 }
 
 /** The Admin API (§9.4): JSON under /api/v1/admin, bearer-protected, public CORS (TIO-HTTP-003). */

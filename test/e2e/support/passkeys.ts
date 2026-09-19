@@ -23,7 +23,23 @@ export interface PasskeyProvider {
   attach(page: Page): Promise<void>;
   /** Persists the credentials created in the page so a later context can sign in with them. */
   remember(page: Page): Promise<void>;
+  /**
+   * Swaps in an authenticator that holds none of the credentials so far, as a
+   * second device would: a registration that excludes the existing credentials
+   * (§8, adding a passkey) succeeds on it, and the credentials it creates are
+   * remembered alongside the others.
+   */
+  newDevice(page: Page): Promise<void>;
 }
+
+const VIRTUAL_AUTHENTICATOR = {
+  protocol: "ctap2",
+  transport: "internal",
+  hasResidentKey: true,
+  hasUserVerification: true,
+  isUserVerified: true,
+  automaticPresenceSimulation: true,
+} as const;
 
 class CdpProvider implements PasskeyProvider {
   private credentials: CdpCredential[] = [];
@@ -33,14 +49,7 @@ class CdpProvider implements PasskeyProvider {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("WebAuthn.enable");
     const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
-      options: {
-        protocol: "ctap2",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-        automaticPresenceSimulation: true,
-      },
+      options: VIRTUAL_AUTHENTICATOR,
     });
     for (const credential of this.credentials) {
       await cdp.send("WebAuthn.addCredential", { authenticatorId, credential });
@@ -54,7 +63,22 @@ class CdpProvider implements PasskeyProvider {
     const { credentials } = await session.cdp.send("WebAuthn.getCredentials", {
       authenticatorId: session.authenticatorId,
     });
-    this.credentials = credentials as CdpCredential[];
+    const held = credentials as CdpCredential[];
+    const ids = new Set(held.map((c) => c.credentialId));
+    this.credentials = [...this.credentials.filter((c) => !ids.has(c.credentialId)), ...held];
+  }
+
+  async newDevice(page: Page): Promise<void> {
+    const session = this.sessions.get(page);
+    if (!session) throw new Error("attach() first");
+    await this.remember(page);
+    await session.cdp.send("WebAuthn.removeVirtualAuthenticator", {
+      authenticatorId: session.authenticatorId,
+    });
+    const { authenticatorId } = await session.cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: VIRTUAL_AUTHENTICATOR,
+    });
+    session.authenticatorId = authenticatorId;
   }
 }
 
@@ -76,6 +100,10 @@ class ShimProvider implements PasskeyProvider {
 
   async remember(): Promise<void> {
     // The software authenticator already keeps every credential it created.
+  }
+
+  async newDevice(): Promise<void> {
+    // The software authenticator ignores exclusion lists and holds every credential.
   }
 }
 

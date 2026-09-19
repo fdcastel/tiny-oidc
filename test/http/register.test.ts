@@ -32,6 +32,7 @@ import {
   type AuthenticatorFaults,
   VirtualAuthenticator,
 } from "../support/virtual-authenticator.ts";
+import { sabotageDo } from "./faults.ts";
 
 const ISSUER = "https://auth.example.com";
 const h = harness();
@@ -346,6 +347,22 @@ describe("registration policy and invitations", () => {
       clock,
     ).catch((e: Error) => e);
     expect(ghost).toBeInstanceOf(Error);
+    // A user whose object vanishes while its sessions are being revoked.
+    const halfway = await userWithPasskey(clock);
+    const halfwayRecovery = await invite({ kind: "recover", user_id: halfway.profile.id });
+    const halfwayStart = await h.start(web);
+    const halfwayOptions = (await (
+      await h.post(halfwayStart, "register/options", { invitation: halfwayRecovery.token })
+    ).json()) as OptionsResponse;
+    const halfwayVerify = await h.post(
+      halfwayStart,
+      "register/verify",
+      {
+        response: await new VirtualAuthenticator().register(halfwayOptions.publicKey, LOGIN_ORIGIN),
+      },
+      { env: sabotageDo(halfway.profile.id, "revokeAll") },
+    );
+    expect(halfwayVerify.status).toBe(503);
     // A user whose row is no longer active.
     const disabledUser = await userWithPasskey(clock);
     const disabledRecovery = await invite({ kind: "recover", user_id: disabledUser.profile.id });

@@ -1,7 +1,7 @@
 // UserDO SQLite schema (spec §4.2), versioned for lazy migration. Each entry
 // is one idempotent step; `migrate()` applies the steps above the stored version.
 
-export const USER_SCHEMA_VERSION = 1;
+export const USER_SCHEMA_VERSION = 2;
 
 export const USER_SCHEMA_STEPS: readonly string[] = [
   `
@@ -120,6 +120,15 @@ CREATE TABLE IF NOT EXISTS grants (
   scopes            TEXT NOT NULL,
   granted_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
+);
+`,
+  // Version 2: WebAuthn registration challenges of the Self-service API (§8), keyed by the
+  // session or, for offline tokens, the token; single use, expired rows purged.
+  `
+CREATE TABLE IF NOT EXISTS challenges (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
 );
 `,
 ];

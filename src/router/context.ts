@@ -4,6 +4,7 @@ import type { KeyStore } from "../crypto/keystore.ts";
 import type { Db } from "../db/db.ts";
 import type { Config, Env, Settings, SettingsLoader } from "../env.ts";
 import type { UpstreamMetadataCache } from "../federation/metadata.ts";
+import type { Account } from "../me/auth.ts";
 import type { Logger } from "../obs/log.ts";
 import type { ClientCache } from "../oidc/client-cache.ts";
 import type { RemoteJwksCache } from "../oidc/jwks-cache.ts";
@@ -34,6 +35,8 @@ export interface Variables {
   audit: Auditor;
   /** Set by requireAdmin() on /api/v1/admin/* (TIO-ADMIN-001). */
   admin?: AdminActor;
+  /** Set by requireAccount() on /api/v1/me/* (TIO-ME-001). */
+  me?: Account;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Variables };

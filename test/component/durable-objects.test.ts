@@ -84,6 +84,7 @@ describe("UserDO", () => {
         .map((r) => r.name);
       expect(tables).toEqual([
         "auth_codes",
+        "challenges",
         "grants",
         "identities",
         "meta",
@@ -109,6 +110,21 @@ describe("UserDO", () => {
     await evictDurableObject(stub);
     const again = await stub.getProfile();
     expect(again.ok && again.profile.groups).toEqual([]);
+    // An object left at version 1 by an earlier deploy gets only the later steps.
+    await runInDurableObject(stub, (_instance: UserDO, state) => {
+      state.storage.sql.exec("DROP TABLE challenges");
+      state.storage.sql.exec("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
+    });
+    await evictDurableObject(stub);
+    expect(await stub.putChallenge("k", "v", 1_790_000_100)).toEqual({ ok: true });
+    expect(await stub.takeChallenge("k", 1_790_000_000)).toEqual({ ok: true, value: "v" });
+    expect(await stub.takeChallenge("k", 1_790_000_000)).toEqual({ ok: true, value: null });
+    await runInDurableObject(stub, (_instance: UserDO, state) => {
+      const version = state.storage.sql
+        .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'")
+        .toArray()[0];
+      expect(version?.value).toBe(String(USER_SCHEMA_VERSION));
+    });
   });
 
   it("[TIO-DATA-019] purges expired codes, consumed tokens past the reuse window, and stale families and sessions on write, at most once per 60 s (rows inserted directly to construct the state)", async () => {

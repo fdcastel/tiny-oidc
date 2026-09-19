@@ -14,6 +14,7 @@ import { releaseIdentity } from "../db/identities.ts";
 import { getUser, listUsers, type UserFilters, type UserRow } from "../db/users.ts";
 import type { ClientRef, PasskeyRecord, UserCounts, UserDO, UserProfile } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
+import { notifyEndedSessions } from "../logout/rp-logout.ts";
 import type { AppContext } from "../oidc/token-common.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
@@ -398,6 +399,11 @@ export function setDisabledHandler(clock: Clock, disabled: boolean): Handler<App
         after: auditable(result.profile),
         data: { sessions_revoked: result.revoked.length },
       });
+      await notifyEndedSessions(
+        c,
+        clock,
+        result.revoked.map((s) => ({ uid: user.row.id, ...s })),
+      );
       const counts = await user.stub.counts(now);
       if (!counts.ok) return notFound(c);
       const row: UserRow = {
@@ -426,6 +432,11 @@ export function deleteUserHandler(clock: Clock): Handler<AppEnv> {
         user_id: user.row.id,
         data: { sessions_revoked: result.revoked.length },
       });
+      await notifyEndedSessions(
+        c,
+        clock,
+        result.revoked.map((s) => ({ uid: user.row.id, ...s })),
+      );
       return c.body(null, 204);
     } catch {
       return unavailable(c);
@@ -573,6 +584,7 @@ export const deleteSessionHandler = (clock: Clock) =>
         sid,
         data: { clients: revoked.revoked.clients },
       });
+      await notifyEndedSessions(c, clock, [{ uid: userId, ...revoked.revoked }]);
     }
     return { ok: true, removed: revoked.revoked !== null };
   });
@@ -593,6 +605,11 @@ export function deleteSessionsHandler(clock: Clock): Handler<AppEnv> {
           data: { clients: session.clients },
         });
       }
+      await notifyEndedSessions(
+        c,
+        clock,
+        revoked.revoked.map((s) => ({ uid: user.row.id, ...s })),
+      );
       return c.json({ revoked: revoked.revoked.length });
     } catch {
       return unavailable(c);

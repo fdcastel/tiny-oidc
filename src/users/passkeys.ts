@@ -56,6 +56,23 @@ export async function registerPasskey(
   return { ok: true, passkey: added.passkey };
 }
 
+export type UnregisterOwnResult = "removed" | "missing" | "last_login_method" | "unavailable";
+
+/** The user's own removal (TIO-PK-040): refused when the passkey is their last way to sign in. */
+export async function unregisterOwnPasskey(
+  env: Env,
+  db: Db,
+  userId: string,
+  passkey: Pick<PasskeyRecord, "id" | "credential_id">,
+): Promise<UnregisterOwnResult> {
+  const removed = await userStub(env, userId).removePasskey(passkey.id, "self");
+  if (!removed.ok)
+    return removed.error === "last_login_method" ? "last_login_method" : "unavailable";
+  if (!removed.removed) return "missing";
+  await releaseCredential(db, passkey.credential_id);
+  return "removed";
+}
+
 /** Removes a passkey from the DO, then its index row (§4.6); an orphan row is harmless (TIO-DATA-026). */
 export async function unregisterPasskey(
   env: Env,
