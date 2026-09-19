@@ -108,28 +108,28 @@ Each principle is a decision filter. When a proposal conflicts with one, the pro
 
 - OIDC Core (code flow), discovery (OIDC and RFC 8414), JWKS, UserInfo.
 - PKCE S256 required for every authorization request. Exact redirect URI matching (loopback port exception for native apps).
-- Pushed Authorization Requests (RFC 9126), `iss` authorization response parameter (RFC 9207), JWT access tokens (RFC 9068), resource indicators (RFC 8707), token revocation (RFC 7009).
+- Pushed Authorization Requests (RFC 9126), `iss` authorization response parameter (RFC 9207), JWT access tokens (RFC 9068) with a static per-client audience list, token revocation (RFC 7009).
 - Grants: `authorization_code`, `refresh_token` (rotating, family-tracked, reuse-detected), `client_credentials`.
 - Client authentication: `none` (public clients), `client_secret_basic`, `client_secret_post`, `private_key_jwt`.
 - Passkeys: registration, authentication, discoverable credentials, user verification required, counter policy, up to 20 per user. Related Origin Requests for first-party apps on other domains.
-- Upstream OIDC federation with automatic discovery, PKCE, nonce, full ID-token validation, explicit account-resolution policy, and self-service linking. Verified against Google and Microsoft (single tenant).
+- Upstream OIDC federation with automatic discovery, PKCE, nonce, full ID-token validation, and an explicit account-resolution policy (login-time linking by verified email). Verified against Google and Microsoft (single tenant).
 - Browser sessions with SSO across clients, `prompt`, `max_age`, `login_hint`, `ui_locales`.
 - RP-initiated logout with `id_token_hint`, logout confirmation through the login app when no hint is present, back-channel logout to registered clients.
 - Groups (flat), per-client `allowed_groups`, `groups` claim and scope.
 - Consent with per-client persistent grants; first-party clients may skip consent.
 - Registration policy (`closed`, `invite`, `open`), invitations, admin-driven recovery.
 - Interaction API for the login app; Self-service API for end users; Admin API with bootstrap, bulk NDJSON import, settings, key rotation, audit query.
-- Audit pipeline (per-user recent events, 30-day hot table, R2 archive), structured logs, optional metrics.
+- Audit pipeline (30-day hot table, R2 archive, per-user views of the hot table), structured logs, optional metrics.
 - Rate limiting, cron maintenance, D1 and Durable Object schema migrations, OpenAPI 3.1 document.
 - Deploy-to-Cloudflare button for one-click evaluation, with an optional bundled reference login app served as static assets on the OP origin (§7.9, §12.3).
 
 **Explicitly excluded (will not be added)**
 
-Passwords and password reset; SAML; LDAP; RADIUS; SCIM in the OP core; SMS, TOTP and email one-time codes; magic links; implicit, hybrid and password grants; `plain` PKCE; front-channel logout; OIDC Session Management (`check_session_iframe`); JAR request objects and JARM; dynamic client registration open to the public; wildcard or prefix redirect URIs; HTML of any kind; multi-tenancy inside one deployment; an authorization policy language; email sending.
+Passwords and password reset; SAML; LDAP; RADIUS; SCIM in the OP core; SMS, TOTP and email one-time codes; magic links; implicit, hybrid and password grants; `plain` PKCE; front-channel logout; OIDC Session Management (`check_session_iframe`); JAR request objects and JARM; token introspection (RFC 7662), unnecessary because access tokens are `at+jwt` validated locally against JWKS; dynamic client registration open to the public; wildcard or prefix redirect URIs; HTML of any kind; multi-tenancy inside one deployment; an authorization policy language; email sending; telemetry of any kind.
 
 **Deferred (post-1.0 candidates, tracked in Appendix B)**
 
-DPoP (RFC 9449); Apple Sign-in upstream; EdDSA as a signing option; pairwise subject identifiers; device authorization grant; token exchange; outbound webhooks; SCIM server; sharding the D1 directory beyond ~5,000,000 users.
+DPoP (RFC 9449); Apple Sign-in upstream; EdDSA as a signing option; pairwise subject identifiers; device authorization grant; token exchange; outbound webhooks; SCIM server; sharding the D1 directory beyond ~5,000,000 users; RFC 8707 resource indicators; self-service identity linking; configuration as code (`PUT /admin/config`); a `jti` replay cache for `private_key_jwt`.
 
 ### 1.6 Benchmark
 
@@ -168,10 +168,10 @@ authentik is the feature reference. Appendix A maps every authentik capability t
  │ Durable Objects │   │ D1 "directory"   │  │ Queue      │  │ Rate Limiting  │
  │                 │   │                  │  │ TASKS      │  │ bindings       │
  │ UserDO ×1/user  │   │ users (index)    │  │            │  │ per IP, client,│
- │ InteractionDO   │   │ groups, members  │  │ audit      │  │ interaction    │
+ │ InteractionDO   │   │ groups, members  │  │ audit      │  │ (per-colo)     │
  │   ×1/login      │   │ passkey_index    │  │ batches,   │  └────────────────┘
- │ ClientDO        │   │ identity_index   │  │ logout     │
- │   ×1/client     │   │ clients          │  │ retries    │  ┌────────────────┐
+ │                 │   │ identity_index   │  │ logout     │
+ │                 │   │ clients          │  │ retries    │  ┌────────────────┐
  │                 │   │ upstreams        │  └─────┬──────┘  │ Cron Trigger   │
  │ SQLite each     │   │ signing_keys     │        │         │ every 5 min    │
  │                 │   │ invitations      │        ▼         └────────────────┘
@@ -187,7 +187,7 @@ authentik is the feature reference. Appendix A maps every authentik capability t
               └────────────────────┘
 ```
 
-**[TIO-ARCH-001]** (V: review) The deployable unit SHALL be a single Worker script exporting `fetch`, `queue` and `scheduled` handlers and the three Durable Object classes `UserDO`, `InteractionDO`, `ClientDO`.
+**[TIO-ARCH-001]** (V: review) The deployable unit SHALL be a single Worker script exporting `fetch`, `queue` and `scheduled` handlers and the two Durable Object classes `UserDO` and `InteractionDO`.
 
 **[TIO-ARCH-002]** No request path SHALL depend on a Durable Object that is shared by all users or all clients. Per-deployment state (clients, upstreams, keys, settings) is read from D1 through isolate caches. Tests assert that the Durable Object namespaces are only addressed by user id, interaction id or client id.
 
@@ -198,10 +198,9 @@ authentik is the feature reference. Appendix A maps every authentik capability t
 | `DB` | D1 | Directory, configuration, key store, hot audit | One database. 10 GB hard cap. Capacity model §2.7. |
 | `USER_DO` | Durable Object namespace (SQLite) | One object per user | `idFromName(user_id)`. 10 GB per object cap, never approached. |
 | `INTERACTION_DO` | Durable Object namespace (SQLite) | One object per authorization/logout/link interaction and per PAR request | `idFromName(interaction_id)`. Self-deletes on alarm. |
-| `CLIENT_DO` | Durable Object namespace (SQLite) | One object per confidential client | Replay cache for `private_key_jwt` `jti` values. |
 | `TASKS` | Queue (producer and consumer) | Audit event batches, back-channel logout retries | 5,000 msg/s per queue; we need < 500. |
 | `AUDIT_BUCKET` | R2 | Audit archive, D1 exports | NDJSON, gzip. |
-| `RL_IP`, `RL_CLIENT`, `RL_INTERACTION` | Rate Limiting | Per-colo permissive limits | GA since 2025-09. Periods 10 s or 60 s only. |
+| `RL_IP`, `RL_CLIENT` | Rate Limiting | Per-colo permissive limits | GA since 2025-09. Periods 10 s or 60 s only. Exact per-interaction and per-user limits live in Durable Object state (§6.7). |
 | `METRICS` | Analytics Engine (optional) | Request and event counters | Absent binding disables metrics. |
 | `ASSETS` | Workers Assets | Static files of the reference login app, served under `/login/` only when `BUNDLED_LOGIN_APP=true` | Bundled in every environment; inert unless enabled. |
 | Cron `*/5 * * * *` | Cron Trigger | Maintenance | One trigger. |
@@ -222,17 +221,15 @@ The rule: **a user's Durable Object is the source of truth for everything about 
 | Authorization codes | `UserDO` | Issued after authentication when the user is known; consumed exactly once inside the DO. |
 | Refresh-token families and tokens | `UserDO` | Rotation is the highest-frequency write in the system. Per-user isolation makes it linear. |
 | Consent grants | `UserDO` | Read at authorization time with the session. |
-| Recent security events (last 200) | `UserDO` | Self-service "recent activity" without touching the global audit store. |
 | Interaction state (authorize params, challenge, upstream state, link candidate) | `InteractionDO` | Exists before the user is known; ten-minute lifetime; self-deletes. |
 | PAR request | `InteractionDO` (same object becomes the interaction) | One-minute lifetime. |
-| `private_key_jwt` replay cache | `ClientDO` | Per-client, five-minute window, no D1 write on the hot path. |
 | Clients, upstreams, groups, settings, invitations | D1 | Global configuration. Low write rate. Isolate-cached reads. |
 | Signing keys (public + encrypted private) | D1 | Global. Cached in isolates for 5 minutes. |
 | Audit events | `TASKS` queue → D1 `audit_hot` (30 days) + R2 archive (indefinite) | Volume is unbounded; D1 cannot hold it. |
 
 **[TIO-ARCH-004]** The authorization-code exchange, refresh-token rotation, passkey assertion verification and session validation paths SHALL perform no D1 write. Component tests wrap the D1 binding in a spy and assert zero write statements.
 
-**[TIO-ARCH-005]** Each of those paths SHALL perform at most one Durable Object round trip to `UserDO` (plus one to `InteractionDO` during an interaction, plus one to `ClientDO` for `private_key_jwt` clients). Tests count stub invocations.
+**[TIO-ARCH-005]** Each of those paths SHALL perform at most one Durable Object round trip to `UserDO` (plus one to `InteractionDO` during an interaction). Tests count stub invocations.
 
 ### 2.4 Opaque handles
 
@@ -325,9 +322,9 @@ One `UserDO` hop, no `InteractionDO`. If the session is valid but consent is mis
 
 ```text
 POST /token grant_type=authorization_code
-  → authenticate client (none / secret / private_key_jwt [ClientDO jti check])
+  → authenticate client (none / secret / private_key_jwt)
   → decrypt code envelope → uid
-  → UserDO.exchangeCode({secret_hash, client_id, redirect_uri, code_verifier, resources})
+  → UserDO.exchangeCode({secret_hash, client_id, client_created_at, redirect_uri, code_verifier})
       atomically: exists, not expired, not consumed, client & redirect match, PKCE ok
       → mark consumed; create refresh family (kind session|offline) and first token secret
       → return grant (sub, scope, nonce, sid, auth_time, amr, acr, claims, family, rt_secret)
@@ -343,7 +340,7 @@ One `UserDO` hop. Two signatures.
 POST /token grant_type=refresh_token
   → authenticate client
   → decrypt rt envelope → uid, family
-  → UserDO.rotateRefreshToken({family, secret_hash, client_id, scope?, resources?})
+  → UserDO.rotateRefreshToken({family, secret_hash, client_id, client_created_at, scope?})
       atomically: family active and unexpired; token is current and unconsumed
         → consumed → reuse detected → revoke family (+ session if session-bound) → error
         → current  → mark consumed, insert next token, extend idle, return claims + new secret
@@ -396,7 +393,7 @@ GET /logout (no hint, session present)
 |---|---|---|
 | RP browser → OP | Untrusted. Every parameter is validated; redirects only to registered URIs. | §5.3 validation order, exact matching, `state`, `iss`, PKCE. |
 | Login app → OP | Trusted to render, never trusted to decide. It cannot assert an identity; it can only drive ceremonies whose proofs the OP verifies (WebAuthn signatures, upstream ID tokens). | Interaction API accepts proofs, not claims. Origin allow-list, binding cookie, single-use challenges. |
-| RP backend → OP | Authenticated per client type. Public clients are identified, not authenticated; PKCE binds the code to the requester. | §5.5 client authentication, `ClientDO` replay cache. |
+| RP backend → OP | Authenticated per client type. Public clients are identified, not authenticated; PKCE binds the code to the requester. | §5.6 client authentication; `private_key_jwt` assertions live 60 seconds (TIO-TOKEN-003). |
 | OP → upstream | Trusted only for what its signed ID token proves after full validation against the configured issuer. Email is an attribute, never an identifier. | §6.4. |
 | OP → storage | D1 and DO are trusted for integrity but treated as leakable: no plaintext secrets, private keys encrypted under `MASTER_KEYS`. | §2.4, §10. |
 | Admin token → OP | Trusted per scope and audience; every action is audited with the actor. | §9.1. |
@@ -414,8 +411,8 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 | `GET /authorize` (session hit) | 30 ms | 150 ms | 1 | 0 | 0 |
 | `GET /authorize` (new interaction) | 30 ms | 150 ms | 1 | 0 | 0 |
 | `POST /par` | 30 ms | 150 ms | 1 | 0 | 0 |
-| `POST /token` code exchange | 40 ms | 200 ms | 1 (+1 ClientDO) | 0 | 2 |
-| `POST /token` refresh | 30 ms | 150 ms | 1 (+1 ClientDO) | 0 | 2 |
+| `POST /token` code exchange | 40 ms | 200 ms | 1 | 0 | 2 |
+| `POST /token` refresh | 30 ms | 150 ms | 1 | 0 | 2 |
 | `POST /token` client credentials | 30 ms | 150 ms | 0–1 | 0 | 1 |
 | `GET /userinfo` | 20 ms | 100 ms | 1 | 0 | 0 |
 | `POST …/passkey/verify` | 40 ms | 250 ms | 2 | 0 | 0 |
@@ -431,7 +428,7 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 
 | Store | Rows / objects | Size estimate | Limit | Headroom |
 |---|---|---|---|---|
-| `UserDO` objects | 1,000,000 | ≤ 100 KB each typical (profile 1 KB, 2 passkeys 1.2 KB, sessions 2 KB, refresh rows ≤ 30 KB at 24 h retention, events 80 KB) → ≤ 100 GB total | 10 GB per object; unlimited total | Enormous |
+| `UserDO` objects | 1,000,000 | ≤ 40 KB each typical (profile 1 KB, 2 passkeys 1.2 KB, sessions 2 KB, refresh rows ≤ 30 KB at 24 h retention) → ≤ 40 GB total | 10 GB per object; unlimited total | Enormous |
 | `InteractionDO` objects | ~300,000 created per day, deleted after ≤ 15 min | negligible | — | — |
 | D1 `users` | 1,000,000 | ~200 MB | | |
 | D1 `passkey_index` | 2,000,000 | ~300 MB | | |
@@ -468,13 +465,15 @@ The D1 directory is the first ceiling. Its size is dominated by `audit_hot` rete
 |---|---|
 | D1 unavailable | Login of federated users fails (identity lookup). Passkey login, code exchange, refresh, userinfo continue on stale caches for ≤ 1 h. User creation, admin API, invitations fail. Health endpoint reports `degraded`. |
 | A `UserDO` unavailable | That user's operations fail with `temporarily_unavailable` / HTTP 503. Other users unaffected. |
-| Queue unavailable | Audit events are still written to `UserDO.events` and to structured logs; the global hot table and archive lag; back-channel logout retries are lost after the first synchronous attempt. |
+| Queue unavailable | Audit events are still written to structured logs; the hot table, the archive and the per-user views lag; back-channel logout retries are lost after the first synchronous attempt. |
 | Upstream unavailable | Federated login fails with `upstream_unavailable`; passkey login unaffected. |
 | `MASTER_KEYS` missing or malformed | The Worker refuses to start handling requests (fails every request with 500 `server_error` and logs a fatal). |
 
 **[TIO-ARCH-014]** Every security-relevant failure SHALL fail closed: unknown key, unknown client, unverifiable handle, storage error during verification, clock outside tolerance. Tests inject each failure and assert rejection with a generic error and no token issuance.
 
 **[TIO-ARCH-015]** Storage errors SHALL map to HTTP 503 with `error: "temporarily_unavailable"` on the token endpoint and Interaction API, never to a 200 or to an OAuth `invalid_grant`. Tests assert the status and that no state transition was partially applied (the DO transaction rolled back).
+
+**[TIO-ARCH-016]** The OP SHALL make outbound HTTP requests only to: the configured upstreams' discovery, authorization, token, JWKS and userinfo endpoints; registered clients' `jwks_uri`; registered clients' `backchannel_logout_uri`. It SHALL send no telemetry, heartbeat, version check or crash report anywhere. A test runs every flow with `fetchMock` in disable-network mode and an allow-list of exactly those hosts, and fails on any other outbound request.
 
 ---
 ## 3. Identity model
@@ -490,8 +489,7 @@ User (canonical, immutable id)
  ├── RefreshFamily ×0..n    one per (client, login); kind = session | offline
  │    └── RefreshToken ×1..n  rotation chain; only the newest is valid
  ├── Grant ×0..n            consent: per client, the union of scopes the user granted
- ├── AuthorizationCode ×0..n  60-second, single-use
- └── Event ×0..200          recent security events for self-service display
+ └── AuthorizationCode ×0..n  60-second, single-use
 
 Group (flat)  ◀──▶  User   many-to-many; the `admins` group is system-defined
 Client        registered relying party or service client
@@ -643,8 +641,7 @@ CREATE TABLE clients (
   jwks                        TEXT,                 -- JSON JWK Set for private_key_jwt (either jwks or jwks_uri)
   jwks_uri                    TEXT,
   scopes_allowed              TEXT NOT NULL,        -- JSON array
-  resources_allowed           TEXT NOT NULL DEFAULT '[]',
-  default_resources           TEXT NOT NULL DEFAULT '[]',
+  audiences                   TEXT NOT NULL DEFAULT '[]',   -- JSON array of resource identifiers placed in aud (TIO-TOKEN-033)
   allowed_groups              TEXT,                 -- NULL = everyone; JSON array of group names otherwise
   skip_consent                INTEGER NOT NULL DEFAULT 0,
   require_par                 INTEGER NOT NULL DEFAULT 0,
@@ -679,17 +676,15 @@ CREATE TABLE upstreams (
 );
 
 CREATE TABLE signing_keys (
-  kid             TEXT PRIMARY KEY,                 -- 16 random base64url chars
+  kid             TEXT PRIMARY KEY,                 -- RFC 7638 JWK thumbprint (TIO-KEYS-014)
   alg             TEXT NOT NULL CHECK (alg = 'ES256'),
   public_jwk      TEXT NOT NULL,
   private_jwk_enc BLOB,                             -- NULL once retired
-  status          TEXT NOT NULL CHECK (status IN ('next','active','retiring','retired')),
   created_at      INTEGER NOT NULL,
-  activated_at    INTEGER,
-  retiring_at     INTEGER,
+  activates_at    INTEGER NOT NULL,                 -- signs from this instant; role is derived (§10.3)
   retired_at      INTEGER
 );
-CREATE INDEX signing_keys_status ON signing_keys(status);
+CREATE INDEX signing_keys_active ON signing_keys(retired_at, activates_at);
 
 CREATE TABLE invitations (
   id               TEXT PRIMARY KEY,                -- UUID v7
@@ -700,7 +695,6 @@ CREATE TABLE invitations (
   email_verified   INTEGER NOT NULL DEFAULT 0,
   display_name     TEXT,
   groups           TEXT NOT NULL DEFAULT '[]',
-  revoke_existing  INTEGER NOT NULL DEFAULT 0,      -- recover: revoke sessions/families/passkeys on use
   expires_at       INTEGER NOT NULL,
   used_at          INTEGER,
   used_by_user_id  TEXT,
@@ -824,7 +818,6 @@ CREATE TABLE auth_codes (
   scope           TEXT NOT NULL,                    -- space-delimited, validated
   nonce           TEXT,
   code_challenge  TEXT NOT NULL,
-  resources       TEXT NOT NULL DEFAULT '[]',
   sid             TEXT NOT NULL,
   auth_time       INTEGER NOT NULL,
   amr             TEXT NOT NULL,
@@ -838,10 +831,10 @@ CREATE INDEX auth_codes_expires ON auth_codes(expires_at);
 CREATE TABLE refresh_families (
   id                  TEXT PRIMARY KEY,
   client_id           TEXT NOT NULL,
+  client_created_at   INTEGER NOT NULL,             -- the client's created_at when the family was created (TIO-CLIENT-005)
   kind                TEXT NOT NULL CHECK (kind IN ('session','offline')),
   sid                 TEXT,                         -- session-bound families
   scope               TEXT NOT NULL,
-  resources           TEXT NOT NULL DEFAULT '[]',
   auth_time           INTEGER NOT NULL,
   amr                 TEXT NOT NULL,
   acr                 TEXT NOT NULL,
@@ -865,21 +858,15 @@ CREATE TABLE refresh_tokens (
 CREATE INDEX refresh_tokens_family ON refresh_tokens(family_id, serial);
 
 CREATE TABLE grants (
-  client_id  TEXT PRIMARY KEY,
-  scopes     TEXT NOT NULL,                         -- JSON array
-  granted_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE events (
-  id   TEXT PRIMARY KEY,                            -- UUID v7
-  ts   INTEGER NOT NULL,
-  type TEXT NOT NULL,
-  data TEXT NOT NULL                                -- JSON, bounded 1 KB, no secrets
+  client_id         TEXT PRIMARY KEY,
+  client_created_at INTEGER NOT NULL,               -- the client's created_at when consent was given (TIO-CLIENT-005)
+  scopes            TEXT NOT NULL,                  -- JSON array
+  granted_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
 );
 ```
 
-**[TIO-DATA-018]** `UserDO` SHALL keep at most 200 rows in `events`, deleting the oldest on insert.
+**[TIO-DATA-018]** (withdrawn) The per-user `events` ring was removed on 2026-09-19 (Appendix B #31); per-user activity is read from `audit_hot` (TIO-AUDIT-010).
 
 **[TIO-DATA-019]** `UserDO` SHALL purge, on any write and at most once per 60 seconds: expired `auth_codes`; `refresh_tokens` rows consumed more than `refresh_reuse_window` (default 24 h) ago; families expired or revoked more than 24 h ago; sessions expired or revoked more than 24 h ago. Purge never runs on dormant objects (no alarms); logical expiry is always checked on read.
 
@@ -894,7 +881,7 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
 ```jsonc
 {
   "id": "…",                              // 43-char interaction id
-  "kind": "authorize" | "logout" | "link" | "par",
+  "kind": "authorize" | "logout" | "par",
   "status": "pushed" | "login_required" | "link_required" | "consent_required" | "ready" | "completed" | "failed",
   "created_at": 0, "expires_at": 0,
   "binding_hash": "<base64 sha256>",      // secret from the __Host-tio_ix_<p> cookie
@@ -902,7 +889,7 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
   "request": {                            // validated /authorize or /par parameters
     "redirect_uri": "…", "scope": ["openid","email"], "state": "…", "nonce": "…",
     "code_challenge": "…", "prompt": ["login"], "max_age": 3600, "login_hint": "…",
-    "ui_locales": "…", "acr_values": [], "resources": []
+    "ui_locales": "…", "acr_values": []
   },
   "existing_session": { "uid": "…", "sid": "…", "auth_time": 0 } | null,
   "passkey_challenge": { "value": "…", "expires_at": 0, "pending_uid": "…" | null, "invitation_id": "…" | null } | null,
@@ -911,7 +898,6 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
   "auth": { "uid": "…", "method": "passkey" | "federated", "amr": ["…"], "acr": "…", "upstream": "…" | null, "auth_time": 0, "new_session": true } | null,
   "consent": { "scopes": ["…"] } | null,
   "logout": { "sid": "…", "uid": "…", "post_logout_redirect_uri": "…", "state": "…" } | null,
-  "link_request": { "uid": "…", "return_to": "…" } | null,
   "error": { "error": "…", "error_description": "…" } | null
 }
 ```
@@ -920,16 +906,9 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
 
 **[TIO-DATA-023]** Every state transition SHALL be validated against the state machine in §7.2; an invalid transition SHALL fail with `interaction_invalid_state` and leave the document unchanged.
 
-### 4.4 `ClientDO` state
+### 4.4 (removed) `ClientDO`
 
-```sql
-CREATE TABLE jti_seen (
-  jti_hash   BLOB PRIMARY KEY,
-  expires_at INTEGER NOT NULL
-);
-```
-
-**[TIO-DATA-024]** `ClientDO.checkAndRecordJti(hash, exp)` SHALL insert the hash and return `true`, or return `false` if it already exists, in one transaction. Rows expire at the assertion's `exp` and are purged on access.
+**[TIO-DATA-024]** (withdrawn) The per-client Durable Object holding a `jti` replay cache for `private_key_jwt` was removed on 2026-09-19 (Appendix B #28). Assertions are short-lived instead (TIO-TOKEN-003).
 
 ### 4.5 Queue messages and the R2 archive
 
@@ -966,7 +945,6 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 | Authorization codes | 60 s + lazy purge | `UserDO` purge |
 | Consumed refresh tokens | `refresh_reuse_window` (24 h) | `UserDO` purge |
 | Expired/revoked families and sessions | 24 h after expiry | `UserDO` purge |
-| `UserDO.events` | last 200 | Ring |
 | `audit_hot` | `audit.hot_retention_days` (30) | Cron, 1,000 rows per run per iteration, bounded to 10 iterations |
 | R2 archive | Indefinite (bucket lifecycle rule is the operator's choice) | — |
 | Invitations | Deleted 30 days after expiry or use | Cron |
@@ -1004,7 +982,9 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 
 **[TIO-DISC-001]** `/.well-known/openid-configuration` and `/.well-known/oauth-authorization-server` SHALL return the same JSON document, built from `ISSUER` and the effective settings, with `Cache-Control: public, max-age=300`.
 
-**[TIO-DISC-002]** The document SHALL advertise only features the OP implements. The conformance run (§13.9) and a test comparing the document against the router's route table both enforce this.
+**[TIO-DISC-002]** The document SHALL advertise only features the OP implements. Every advertised list (`scopes_supported`, `response_types_supported`, `response_modes_supported`, `grant_types_supported`, `token_endpoint_auth_methods_supported`, `token_endpoint_auth_signing_alg_values_supported`, `code_challenge_methods_supported`, `claims_supported`, `acr_values_supported`, and the accepted `prompt` values) SHALL be generated from one constant in `src/oidc/capabilities.ts`, which the validators in §5.4 and §5.6 also import. The conformance run (§13.9) and a test comparing the document against the router's route table both enforce this.
+
+**[TIO-DISC-004]** A test SHALL deep-equal every array in the discovery document to the `capabilities.ts` constant, and the lint rules (TIO-TEST-060) SHALL forbid literal arrays of scopes, grant types, response types, client authentication methods, algorithms or `prompt` values anywhere else in `src/`.
 
 Reference document:
 
@@ -1048,7 +1028,7 @@ Reference document:
 
 ### 5.3 JWKS
 
-**[TIO-KEYS-001]** `/.well-known/jwks.json` SHALL publish the public JWK of every key in status `next`, `active` or `retiring`, each with `kid`, `kty: "EC"`, `crv: "P-256"`, `alg: "ES256"`, `use: "sig"`, and nothing else. Private parameters (`d`) SHALL never appear. A test asserts the response contains no `d` member under any key-rotation state.
+**[TIO-KEYS-001]** `/.well-known/jwks.json` SHALL publish the public JWK of every unretired key (`retired_at IS NULL`, that is the signing key, keys not yet active, and superseded keys still verifying), each with `kid`, `kty: "EC"`, `crv: "P-256"`, `alg: "ES256"`, `use: "sig"`, and nothing else. Private parameters (`d`) SHALL never appear. A test asserts the response contains no `d` member under any key-rotation state.
 
 **[TIO-KEYS-002]** The JWKS response SHALL carry `Cache-Control: public, max-age=300` and be served from the Worker cache when present.
 
@@ -1056,7 +1036,7 @@ Reference document:
 
 ```text
 GET /authorize?client_id&redirect_uri&response_type=code&scope&state&code_challenge&code_challenge_method=S256
-              [&nonce&prompt&max_age&login_hint&ui_locales&acr_values&resource(*)]
+              [&nonce&prompt&max_age&login_hint&ui_locales&acr_values]
 GET /authorize?client_id&request_uri=urn:ietf:params:oauth:request_uri:…
 ```
 
@@ -1074,10 +1054,10 @@ GET /authorize?client_id&request_uri=urn:ietf:params:oauth:request_uri:…
 10. **[TIO-AUTHZ-010]** `nonce`, if present, SHALL be 1–512 characters. `login_hint` ≤ 256, `ui_locales` ≤ 64, `acr_values` ≤ 256 characters; each is passed to the login app verbatim and never interpreted by the OP except that `acr_values` is echoed.
 11. **[TIO-AUTHZ-011]** `prompt`, if present, SHALL be a space-separated subset of `none`, `login`, `consent`, `select_account`; `none` SHALL NOT be combined with others; else `invalid_request`. `select_account` is treated as `login`.
 12. **[TIO-AUTHZ-012]** `max_age`, if present, SHALL be a non-negative integer; else `invalid_request`.
-13. **[TIO-AUTHZ-013]** Every `resource` value SHALL be an absolute URI without fragment and SHALL appear in the client's `resources_allowed`; else `invalid_target`.
+13. **[TIO-AUTHZ-013]** (withdrawn) RFC 8707 resource indicators were deferred on 2026-09-19 (Appendix B #29). A `resource` parameter is ignored like any other unrecognized parameter (RFC 6749 §3.1); the audience comes from the client record (TIO-TOKEN-033).
 14. **Session evaluation.** Decrypt `__Host-tio_session` if present; call `UserDO.authorizeWithSession`. The session is usable when it exists, is not revoked or expired, the user is not disabled, the user satisfies `allowed_groups`, and (`max_age` absent or `auth_time + max_age > now`), and `prompt` does not contain `login`. Consent is satisfied when `skip_consent = 1` or the stored grant covers the requested scopes and `prompt` does not contain `consent`.
     - **[TIO-AUTHZ-014]** Usable session and consent satisfied → issue code and redirect (§5.4.2). No interaction is created.
-    - **[TIO-AUTHZ-015]** `prompt=none` and anything is missing → redirect with `login_required` (no or unusable session), `consent_required` (consent missing) or `interaction_required` (other), never an interaction.
+    - **[TIO-AUTHZ-015]** `prompt=none` and anything is missing → redirect with `login_required` (no or unusable session), `consent_required` (consent missing) or `interaction_required` (other), never an interaction. The existing session, if any, SHALL remain untouched: an RP cannot end or shorten a session by probing with `prompt=none`.
     - **[TIO-AUTHZ-016]** Otherwise create an interaction (§7) with `existing_session` set when the session is usable, and respond `303` to `login_url` with `?interaction=<id>`, setting the binding cookie.
     - **[TIO-AUTHZ-017]** A user who fails `allowed_groups` with a usable session → redirect with `access_denied` and `error_description=user_not_allowed`; without a session the check happens after authentication and produces the same redirect through `/complete`.
 
@@ -1093,9 +1073,11 @@ GET /authorize?client_id&request_uri=urn:ietf:params:oauth:request_uri:…
 
 **[TIO-AUTHZ-021]** The OP SHALL redirect `303` to `redirect_uri` with `code`, `state` and `iss` (RFC 9207), appended to the existing query string without altering registered components. No other parameters. `Cache-Control: no-store`.
 
-**[TIO-AUTHZ-022]** The authorization code SHALL be a `tio_ac` handle with `expires_at = now + 60`, bound to `client_id`, `redirect_uri`, `scope`, `nonce`, `code_challenge`, `resources`, `sid`, `auth_time`, `amr`, `acr`.
+**[TIO-AUTHZ-022]** The authorization code SHALL be a `tio_ac` handle with `expires_at = now + 60`, bound to `client_id`, `redirect_uri`, `scope`, `nonce`, `code_challenge`, `sid`, `auth_time`, `amr`, `acr`.
 
 **[TIO-AUTHZ-023]** Issuing a code SHALL record `(sid, client_id)` in `session_clients` and touch `last_seen_at` and `idle_expires_at` of the session.
+
+**[TIO-AUTHZ-024]** A code SHALL bind exactly the `scope`, `nonce`, `redirect_uri`, `code_challenge` and `state` of the request that produced it. A session hit SHALL never reuse any parameter from an earlier request or from the interaction that created the session, and `prompt` and `max_age` SHALL never be persisted anywhere except inside the interaction that carried them. Two tests name this bug class: two `/authorize` requests on one session with different `nonce` and `code_challenge` produce a second code that redeems only with the second verifier and an ID token carrying the second `nonce`; an interaction started with `prompt=login` followed by a bare `/authorize` on the resulting session is a session hit, never a login loop.
 
 ### 5.5 Pushed Authorization Requests (RFC 9126)
 
@@ -1115,17 +1097,17 @@ GET /authorize?client_id&request_uri=urn:ietf:params:oauth:request_uri:…
 
 **[TIO-TOKEN-002]** Client authentication SHALL be determined by the registered `token_endpoint_auth_method` and SHALL be enforced strictly: a `none` client SHALL send `client_id` in the body and no credentials; a `client_secret_basic` client SHALL send an HTTP Basic header (secret compared by SHA-256 in constant time) and SHALL NOT be accepted with `client_secret` in the body; a `client_secret_post` client SHALL send `client_id` and `client_secret` in the body and SHALL NOT be accepted with an `Authorization` header; a `private_key_jwt` client SHALL send `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer` and `client_assertion`. Mixed or mismatched methods are `invalid_client` (401 with `WWW-Authenticate: Basic realm="tiny-oidc"` for basic).
 
-**[TIO-TOKEN-003]** A `private_key_jwt` assertion SHALL be verified with the client's registered `jwks` or `jwks_uri` (fetched with a 5 s timeout, cached 1 h, refetched once on unknown `kid`), and SHALL satisfy: `alg` ∈ {ES256, ES384, EdDSA, PS256, RS256} and not `none`; `iss = sub = client_id`; `aud` equals `ISSUER` or the token endpoint URL; `exp` present and ≤ 300 s in the future; `iat`, if present, ≤ 60 s in the future; `jti` present, ≤ 255 chars, and not previously seen (`ClientDO`). Each failing condition is a separate test.
+**[TIO-TOKEN-003]** A `private_key_jwt` assertion SHALL be verified with the client's registered `jwks` or `jwks_uri` (fetched with a 5 s timeout, cached 1 h, refetched once on unknown `kid`), and SHALL satisfy: `alg` ∈ {ES256, ES384, EdDSA, PS256, RS256} and not `none`; `iss = sub = client_id`; `aud` equals `ISSUER` or the token endpoint URL; `iat` present, no more than 60 s in the past and no more than 60 s in the future; `exp` present and no more than 60 s after `now`; `jti` present and ≤ 255 chars. Assertions are not stored: a replay inside the 60-second window is accepted by design (Appendix B #28), which is why the window is short and `iat` is mandatory. Each failing condition is a separate test.
 
 **[TIO-TOKEN-004]** Client credentials SHALL never be logged, and a failed client authentication SHALL be rate-limited per client id and per IP.
 
 **[TIO-TOKEN-005]** Successful responses SHALL be `200` JSON with `Cache-Control: no-store` and `Pragma: no-cache`. Error responses SHALL follow RFC 6749 §5.2 with status 400, except `invalid_client` (401) and storage failures (503 `temporarily_unavailable`).
 
-**[TIO-TOKEN-006]** `resource` parameters on the token endpoint SHALL be validated as in `/authorize` step 13 and SHALL be a subset of the resources bound to the code or family; otherwise `invalid_target`.
+**[TIO-TOKEN-006]** (withdrawn) Resource indicators on the token endpoint were deferred with TIO-AUTHZ-013; a `resource` parameter is ignored.
 
 #### 5.6.2 `grant_type=authorization_code`
 
-Parameters: `code`, `redirect_uri`, `code_verifier`, `client_id` (public clients), optional `resource`.
+Parameters: `code`, `redirect_uri`, `code_verifier`, `client_id` (public clients).
 
 **[TIO-TOKEN-010]** The OP SHALL decrypt `code` as a `tio_ac` handle; any malformed code is `invalid_grant` with no storage access.
 
@@ -1139,7 +1121,7 @@ Parameters: `code`, `redirect_uri`, `code_verifier`, `client_id` (public clients
 
 #### 5.6.3 `grant_type=refresh_token`
 
-Parameters: `refresh_token`, `client_id` (public), optional `scope` (subset), optional `resource`.
+Parameters: `refresh_token`, `client_id` (public), optional `scope` (subset).
 
 **[TIO-RT-001]** The OP SHALL decrypt `refresh_token` as a `tio_rt` handle; malformed tokens are `invalid_grant` with no storage access.
 
@@ -1157,7 +1139,7 @@ Parameters: `refresh_token`, `client_id` (public), optional `scope` (subset), op
 
 **[TIO-TOKEN-020]** `client_credentials` SHALL be accepted only from clients with `client_credentials` in `grant_types` and `token_endpoint_auth_method ≠ none`. Requested `scope` SHALL be a subset of `scopes_allowed` excluding `openid`, `profile`, `email`, `groups`, `offline_access`, `account`; `admin` is allowed only when the client has it in `scopes_allowed`.
 
-**[TIO-TOKEN-021]** The response SHALL contain an access token with `sub = client_id`, no ID token and no refresh token. `aud` follows the resource rules; `admin` scope forces `aud` to include `ISSUER`.
+**[TIO-TOKEN-021]** The response SHALL contain an access token with `sub = client_id`, no ID token and no refresh token. `aud` follows [TIO-TOKEN-033]; `admin` scope forces `aud` to include `ISSUER`.
 
 ### 5.7 Tokens
 
@@ -1188,7 +1170,7 @@ Parameters: `refresh_token`, `client_id` (public), optional `scope` (subset), op
 
 **[TIO-TOKEN-032]** Access tokens SHALL be JWTs with header `{"alg":"ES256","typ":"at+jwt","kid":…}` and claims `iss`, `sub`, `aud`, `exp` (`iat + access_token_ttl`, default 600 s, client override 60–3600 s), `iat`, `jti` (UUID v7), `client_id`, `scope` (space-delimited), and, for user tokens, `sid` (session families only), `auth_time`, `acr`, `amr`, plus `groups` when the `groups` scope is present.
 
-**[TIO-TOKEN-033]** `aud` SHALL be computed as: the requested `resource` values if any; else the client's `default_resources` if non-empty; else `[client_id]`. When the scope includes `account` or `admin`, `ISSUER` SHALL be added. `aud` is a string when it has one member and an array otherwise.
+**[TIO-TOKEN-033]** `aud` SHALL be the client's `audiences` list when it is non-empty, else `[client_id]`. When the scope includes `account` or `admin`, `ISSUER` SHALL be added. `aud` is a string when it has one member and an array otherwise.
 
 **[TIO-TOKEN-034]** The OP SHALL accept its own access tokens on `/userinfo`, `/api/v1/me/*` and `/api/v1/admin/*` only when `aud` contains `ISSUER` (for `/userinfo`, `aud` containing the client id is also sufficient per OIDC Core), the signature verifies against a key in `active` or `retiring` state, `iss` matches, `exp` is in the future with 0 s leeway, and `typ` is `at+jwt`.
 
@@ -1274,13 +1256,15 @@ GET|POST /logout?[id_token_hint][&post_logout_redirect_uri][&state][&client_id][
 - `token_endpoint_auth_method`: `none` requires `grant_types = ["authorization_code"]` or `["authorization_code","refresh_token"]`; `client_credentials` requires `client_secret_basic`, `client_secret_post` or `private_key_jwt`.
 - `client_secret_basic` and `client_secret_post` require a generated secret (§5.11.1 below); `private_key_jwt` requires exactly one of `jwks` (≤ 8 keys, each a public EC/RSA/OKP key with `kid`) or `jwks_uri` (`https`).
 - `scopes_allowed`: non-empty subset of `scopes_supported`; `admin` may be granted only by an actor that itself holds `admin`.
-- `resources_allowed`, `default_resources`: absolute URIs without fragment; `default_resources ⊆ resources_allowed`.
+- `audiences`: 0–16 entries, each an absolute `https` URI or URN without fragment, no duplicates, never equal to `ISSUER` (which is added by scope, not configured).
 - `allowed_groups`: `null` or an array of existing group names.
 - TTL overrides within the bounds of §5.7.4.
 
-**[TIO-CLIENT-003]** A client secret SHALL be 32 random bytes, base64url, returned exactly once in the create or rotate response, and stored as SHA-256. Rotation keeps the previous secret valid for a grace period given in the request (0–24 h, default 0).
+**[TIO-CLIENT-003]** A client secret SHALL be 32 random bytes, base64url, returned exactly once in the create or rotate response, and stored as SHA-256. Rotation replaces the secret immediately; clients that need zero-downtime rotation use `private_key_jwt` with several keys in `jwks`.
 
-**[TIO-CLIENT-004]** Disabling a client SHALL cause every grant, PAR, token and refresh operation for it to fail within the cache window, and SHALL revoke all of its refresh families lazily on next use (a family whose client is disabled is `invalid_grant`).
+**[TIO-CLIENT-004]** Disabling a client SHALL cause every grant, PAR, token and refresh operation for it to fail within the cache window, and SHALL revoke all of its refresh families lazily on next use (a family whose client is disabled is `invalid_grant`). Deletion follows [TIO-CLIENT-005].
+
+**[TIO-CLIENT-005]** Deleting a client SHALL write no `UserDO`. Consent grants and refresh families store the client's `created_at` (`client_created_at`) when they are created; every read that resolves one (`authorizeWithSession`, `exchangeCode`, `rotateRefreshToken`, `/me/grants`, `/admin/users/{id}/grants`, `/admin/users/{id}/refresh-families`) receives the current client record from the caller and SHALL treat a record whose client is unknown, or whose `client_created_at` differs from the client's `created_at` (the id was deleted and re-created), as absent and delete it on discovery, in the TIO-DATA-026 pattern. Tests delete a client, re-create it under the same id, and assert that the old consent does not apply and the old families are `invalid_grant`.
 
 #### 5.11.2 Client types
 
@@ -1288,7 +1272,7 @@ GET|POST /logout?[id_token_hint][&post_logout_redirect_uri][&state][&client_id][
 |---|---|---|---|
 | Public | `none` | SPAs, native and mobile apps, CLIs | PKCE is the only binding. Refresh tokens are session-bound unless `offline_access = 1`. |
 | Confidential (secret) | `client_secret_basic` or `client_secret_post` | Server-side web apps that cannot hold a key | Secret hashed; rotate via API. `client_secret_post` exists for clients and conformance profiles that require it; `client_secret_basic` is preferred. |
-| Confidential (key) | `private_key_jwt` | Server-side web apps, service clients, admin automation | Preferred. Replay-protected by `jti`. |
+| Confidential (key) | `private_key_jwt` | Server-side web apps, service clients, admin automation | Preferred. Assertions live 60 seconds; rotate keys by publishing several in `jwks`. |
 
 #### 5.11.3 Redirect URI rules
 
@@ -1316,7 +1300,7 @@ GET|POST /logout?[id_token_hint][&post_logout_redirect_uri][&state][&client_id][
 
 **[TIO-ERR-001]** Every JSON error SHALL have the shape `{"error": "<code>", "error_description": "<ascii, ≤ 256 chars>", "request_id": "<uuid>"}`. `error_description` SHALL never contain user data, secrets, SQL, stack traces or storage identifiers.
 
-OAuth error codes used: `invalid_request`, `invalid_client`, `invalid_grant`, `invalid_scope`, `invalid_target`, `unauthorized_client`, `unsupported_grant_type`, `unsupported_response_type`, `access_denied`, `login_required`, `consent_required`, `interaction_required`, `server_error`, `temporarily_unavailable`. Product API codes are listed in §7–§9.
+OAuth error codes used: `invalid_request`, `invalid_client`, `invalid_grant`, `invalid_scope`, `unauthorized_client`, `unsupported_grant_type`, `unsupported_response_type`, `access_denied`, `login_required`, `consent_required`, `interaction_required`, `server_error`, `temporarily_unavailable`. Product API codes are listed in §7–§9.
 
 **[TIO-ERR-002]** Responses to invalid credentials, unknown users, unknown codes and unknown tokens SHALL be indistinguishable in status, body and headers from each other within the same endpoint. Tests compare responses field by field.
 
@@ -1416,7 +1400,7 @@ Setting `registration.mode`:
 
 **[TIO-REG-003]** A `register` invitation SHALL pre-fill `email`, `email_verified`, `display_name` and `groups` on the created user; a login app MAY override `display_name` and MAY supply `email` only when the invitation has none (then unverified).
 
-**[TIO-REG-004]** A `recover` invitation SHALL bind to an existing user; using it registers a new passkey on that user and, when `revoke_existing = 1`, revokes all sessions, all refresh families and all other passkeys first. The interaction becomes authenticated as that user with `amr = ["hwk"|"swk","user"]`.
+**[TIO-REG-004]** A `recover` invitation SHALL bind to an existing user; using it registers a new passkey on that user and always revokes all of that user's sessions and refresh families first (back-channel logout follows). Other passkeys are never deleted by recovery; an administrator removes a lost or suspect passkey explicitly. The interaction becomes authenticated as that user with `amr = ["hwk"|"swk","user"]`.
 
 **[TIO-REG-005]** Registration in `open` mode with an email that is already verified on another account SHALL still succeed (the new account's email is unverified and non-unique); the login app is told `email_in_use: true` in the response so it can suggest signing in instead.
 
@@ -1466,9 +1450,9 @@ Setting `registration.mode`:
 
 **[TIO-FED-043]** A disabled user resolved through federation SHALL fail `access_denied` with no upstream information leaked.
 
-#### 6.4.6 Self-service linking
+#### 6.4.6 Unlinking
 
-**[TIO-FED-050]** `POST /api/v1/me/identities/link` SHALL create a `link` interaction bound to the bearer's user and return `{"redirect_to": "${ISSUER}/interactions/{id}/start"}`; a top-level navigation to that URL sets the binding cookie and redirects to the upstream. The callback links the `(issuer, subject)` to the bound user (failing with `identity_already_linked` if it belongs to someone else, or `identity_mismatch` if the interaction's `link_request.uid` differs from the session user), then redirects to `return_to`, which SHALL be an absolute URL whose origin is in `webauthn_origins` or `login_origins`.
+**[TIO-FED-050]** (withdrawn) Self-service linking through a `link` interaction was deferred on 2026-09-19 (Appendix B #30). Identities are linked at login time by verified email ([TIO-FED-040] step 2, [TIO-IX-031]) or by import.
 
 **[TIO-FED-051]** Unlinking the last identity of a user with no passkeys SHALL fail with `last_login_method`.
 
@@ -1636,7 +1620,7 @@ Response (fields are `null` when not applicable):
 
 ### 7.7 `GET /interactions/{id}/complete`
 
-**[TIO-IX-060]** `/complete` SHALL be a top-level navigation endpoint that: verifies the binding cookie; requires status `ready` or `failed`; for `authorize` kind and `ready`: creates or rotates the session (§6.2), issues the code via `UserDO.issueCode`, marks the interaction `completed`, clears the binding cookie, sets the session cookie and redirects `303` to the RP with `code`, `state`, `iss`; for `failed`: clears the binding cookie and redirects with `error`, `error_description`, `state`, `iss`. For `logout` kind: ends the session when confirmed and redirects to the post-logout URL. For `link` kind: redirects to `return_to`.
+**[TIO-IX-060]** `/complete` SHALL be a top-level navigation endpoint that: verifies the binding cookie; requires status `ready` or `failed`; for `authorize` kind and `ready`: creates or rotates the session (§6.2), issues the code via `UserDO.issueCode`, marks the interaction `completed`, clears the binding cookie, sets the session cookie and redirects `303` to the RP with `code`, `state`, `iss`; for `failed`: clears the binding cookie and redirects with `error`, `error_description`, `state`, `iss`. For `logout` kind: ends the session when confirmed and redirects to the post-logout URL.
 
 **[TIO-IX-061]** `/complete` on an interaction that is not `ready` or `failed` SHALL redirect to `login_url?interaction=<id>` so the login app resumes. `/complete` on `completed` SHALL redirect to `login_url?error=interaction_already_completed` (a code is never issued twice).
 
@@ -1674,11 +1658,10 @@ For first-party apps building "security settings" screens. Authorization: a user
 | DELETE | `/me/sessions/{sid}` | Revoke one (back-channel logout) |
 | DELETE | `/me/sessions` | Revoke all except current (`?include_current=true` to revoke all) |
 | GET | `/me/identities` | Linked identities: `id`, `upstream` alias, `issuer`, `email`, `name`, `created_at`, `last_login_at` (never `subject`) |
-| POST | `/me/identities/link` | `{ upstream, return_to }` → `{ redirect_to }` (§6.4.6) |
 | DELETE | `/me/identities/{id}` | Unlink; last-method rule |
 | GET | `/me/grants` | Per-client consent grants with scopes and `granted_at` |
 | DELETE | `/me/grants/{client_id}` | Revoke grant and refresh families for that client |
-| GET | `/me/events` | Last 200 events (`type`, `ts`, `client_id`, `country`, `ua_family`, `outcome`) |
+| GET | `/me/events` | The user's events from `audit_hot` (`type`, `ts`, `client_id`, `country`, `ua_family`, `outcome`), keyset-paginated, limited to the hot retention window |
 
 **[TIO-ME-002]** Self-service mutations SHALL be audited with `actor = {kind: "user", id: sub}` and the token's `client_id`.
 
@@ -1728,8 +1711,8 @@ For first-party apps building "security settings" screens. Authorization: a user
 | GET | `/users/{id}/sessions` · DELETE `/users/{id}/sessions/{sid}` · DELETE `/users/{id}/sessions` | |
 | GET | `/users/{id}/refresh-families` · DELETE `/users/{id}/refresh-families/{fid}` · DELETE `/users/{id}/refresh-families?client_id=` | |
 | GET | `/users/{id}/grants` · DELETE `/users/{id}/grants/{client_id}` | |
-| GET | `/users/{id}/events` | From `UserDO` |
-| POST | `/users/{id}/invitations` | `{ kind: "recover", revoke_existing?, expires_in? }` |
+| GET | `/users/{id}/events` | From `audit_hot` by `user_id` |
+| POST | `/users/{id}/invitations` | `{ kind: "recover", expires_in? }` |
 | POST | `/users/{id}/reindex` | §4.6 |
 | GET | `/users/{id}/export` | Complete JSON export of the user's `UserDO` state minus secret hashes (data-portability) |
 
@@ -1745,7 +1728,7 @@ For first-party apps building "security settings" screens. Authorization: a user
 | Method | Path |
 |---|---|
 | GET | `/clients` · POST `/clients` · GET `/clients/{id}` · PATCH `/clients/{id}` · DELETE `/clients/{id}` |
-| POST | `/clients/{id}/rotate-secret` `{ grace_seconds? }` |
+| POST | `/clients/{id}/rotate-secret` |
 | POST | `/clients/{id}/disable` · `/clients/{id}/enable` |
 
 **Upstreams**
@@ -1767,9 +1750,9 @@ The token is returned once at creation as `token` and `url` (`login_url?invitati
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/keys` | Every key with status and timestamps; public JWK only |
-| POST | `/keys/rotate` | Runs the rotation step (§10.3): creates `next` if none, or activates `next` |
-| POST | `/keys/{kid}/retire` | Forces `retiring → retired` (emergency); documented consequence: tokens signed with it become invalid |
+| GET | `/keys` | Every key with its derived `role` (`signing`, `next`, `verifying`, `retired`) and timestamps; public JWK only |
+| POST | `/keys/rotate` | Creates a key (§10.3); body `{ "immediate": true }` makes it sign at once (emergency) |
+| DELETE | `/keys/{kid}` | Retires a key immediately (emergency); refused with 409 `last_active_key` for the only active key; tokens signed with it become invalid |
 
 **Settings**
 
@@ -1801,11 +1784,11 @@ The token is returned once at creation as `token` and `url` (`login_url?invitati
 |---|---|
 | POST | `/maintenance/reindex` `{ cursor? }` — §4.6 |
 | POST | `/maintenance/purge` — runs the cron body once, synchronously bounded |
-| GET | `/stats` — counts of users by status, clients, upstreams, keys by status, `audit_hot` rows, last cron run |
+| GET | `/stats` — counts of users by status, clients, upstreams, keys by role, `audit_hot` rows, last cron run |
 
-### 9.5 Configuration as code
+### 9.5 Configuration as code (deferred)
 
-**[TIO-ADMIN-030]** `PUT /api/v1/admin/config` SHALL accept a full desired-state document `{ clients: [...], upstreams: [...], groups: [...], settings: {...} }` and apply it as a diff (create, update, disable-not-delete for missing clients and upstreams when `prune: true`), returning the plan and result. Secrets are write-only in the document. This is the Terraform-free path to GitOps.
+**[TIO-ADMIN-030]** (withdrawn) `PUT /api/v1/admin/config` was deferred on 2026-09-19 (Appendix B #33). Automation uses `client_credentials` with the idempotent CRUD endpoints above.
 
 ---
 
@@ -1851,22 +1834,26 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
 
 ### 10.3 Signing key lifecycle
 
-```text
-        create()                 activate()               retire after
-  ──────────▶  next  ──────────▶  active  ──────────▶  retiring  ──────────▶  retired
-             (in JWKS,           (signs,               (in JWKS,             (removed from JWKS,
-              not signing)        verifies)             verifies only)        private key deleted)
-```
+Keys carry no status column. A key's role is derived from two timestamps and the clock, so there is no transition to forget and nothing to get out of sync:
 
-**[TIO-KEYS-010]** There SHALL be exactly one `active` key at all times after bootstrap; the first request on an empty key store SHALL create and activate one (guarded by a D1 `INSERT ... WHERE NOT EXISTS` so concurrent isolates create at most one).
+| Role | Definition |
+|---|---|
+| `signing` | The unretired key with the greatest `activates_at ≤ now`. Exactly one after bootstrap. |
+| `next` | Unretired keys with `activates_at > now`. Published in JWKS so caches warm up; they never sign. |
+| `verifying` | Unretired keys with `activates_at` below the signing key's. Published; verify only. |
+| `retired` | `retired_at IS NOT NULL`. Not published; private material deleted; row removed 90 days after `retired_at`. |
+
+**[TIO-KEYS-010]** The first request on an empty key store SHALL create one key with `activates_at = now` (guarded by a D1 `INSERT ... WHERE NOT EXISTS` so concurrent isolates create at most one). If no unretired key has `activates_at ≤ now`, the OP SHALL fail closed (500 `server_error`) rather than sign with a `next` key.
 
 **[TIO-KEYS-011]** Private keys SHALL be generated with `crypto.subtle.generateKey` as extractable only for the export step, exported as JWK, encrypted under the keystore key, and stored; at runtime they are imported non-extractable. A test asserts the imported key's `extractable` is `false`.
 
-**[TIO-KEYS-012]** Rotation SHALL be a two-step procedure so that clients caching JWKS see the new key before it signs: step 1 creates `next` (published in JWKS); step 2, no earlier than `keys.prepublish_seconds` (default 24 h) later, promotes `next` to `active` and the previous `active` to `retiring`. `retiring` becomes `retired` after `keys.retire_after_seconds` (default 7 days; must exceed the maximum ID, access and logout token lifetime plus 1 h). Automatic rotation runs from cron every `keys.rotation_days` (default 90, `0` disables).
+**[TIO-KEYS-012]** Rotation SHALL be a single action that only creates. `POST /api/v1/admin/keys/rotate` inserts a key with `activates_at = now + keys.prepublish_seconds` (default 24 h), or `activates_at = now` when the body carries `immediate: true` (emergency). Because a key is published before it signs, clients that cache JWKS see it in time. Automatic rotation runs from cron when the signing key's `activates_at` is older than `keys.rotation_days` (default 90, `0` disables) and no `next` key exists. Cron SHALL retire every key whose `activates_at` is below the signing key's once the signing key has been signing for `keys.retire_after_seconds` (default 7 days; must exceed the maximum ID, access and logout token lifetime plus 1 h), setting `retired_at = now`, deleting `private_jwk_enc` and emitting `key.retired`; retired rows are deleted 90 days later. Tests drive the whole life of three keys with the injected clock.
 
-**[TIO-KEYS-013]** Verification of the OP's own tokens SHALL accept `active` and `retiring` keys only. A token signed by a `retired` or `next` key SHALL fail.
+**[TIO-KEYS-013]** Verification of the OP's own tokens SHALL accept any unretired key; a token whose `kid` names a retired or unknown key SHALL fail. `DELETE /api/v1/admin/keys/{kid}` retires a key immediately and SHALL be refused with 409 `last_active_key` when the key is the only unretired key with `activates_at ≤ now`; the runbook says to rotate with `immediate: true` first.
 
-**[TIO-KEYS-014]** `kid` SHALL be 16 random base64url characters, unique in the table.
+**[TIO-KEYS-014]** `kid` SHALL be the RFC 7638 JWK Thumbprint of the public key (base64url of SHA-256 over the canonical `{"crv","kty","x","y"}` member set), so any JWKS consumer can recompute it from the key itself; the table enforces uniqueness.
+
+**[TIO-KEYS-015]** Every JWT the OP signs SHALL carry a JOSE header containing only `alg`, `typ` and `kid`, whose encoded form is at most 512 bytes; a test pins the header size for ID, access and logout tokens.
 
 ### 10.4 Envelope key versions
 
@@ -1916,8 +1903,8 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
 | `logout.rp_initiated`, `logout.confirmed`, `logout.backchannel_sent`, `logout.backchannel_failed` | §5.10 |
 | `client.created`, `client.updated`, `client.secret_rotated`, `client.disabled`, `client.enabled`, `client.deleted` | §9 |
 | `upstream.created`, `upstream.updated`, `upstream.deleted`, `upstream.discovery_failed` | §9, §6.4 |
-| `key.created`, `key.activated`, `key.retiring`, `key.retired`, `masterkey.rekeyed` | §10 |
-| `settings.updated`, `admin.bootstrap`, `admin.import_batch`, `admin.config_applied` | §9 |
+| `key.created`, `key.retired`, `key.deleted`, `masterkey.rekeyed` | §10 |
+| `settings.updated`, `admin.bootstrap`, `admin.import_batch` | §9 |
 | `ratelimit.exceeded` | §6.7 |
 | `system.cron_run`, `system.repair` | §12 |
 
@@ -1927,7 +1914,7 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
 
 ### 11.3 Sinks
 
-**[TIO-AUDIT-010]** Every event SHALL be delivered to: (1) `UserDO.events` when it has a `user_id` (synchronously, inside the same DO call when the event originates there, otherwise via one extra DO call in `waitUntil`); (2) the `TASKS` queue (batched per request, sent in `waitUntil`); (3) a structured log line at level `info`.
+**[TIO-AUDIT-010]** Every event SHALL be delivered to: (1) the `TASKS` queue (batched per request, sent in `waitUntil`); (2) a structured log line at level `info`. Per-user views (`GET /api/v1/me/events`, `GET /api/v1/admin/users/{id}/events`) read `audit_hot` by `user_id` and are therefore eventually consistent (seconds) and bounded by `audit.hot_retention_days`.
 
 **[TIO-AUDIT-011]** The queue consumer SHALL write each batch to `audit_hot` (`INSERT OR IGNORE`, ≤ 9 rows per statement, `db.batch()`) and to R2 as one gzip NDJSON object, and SHALL acknowledge the batch only after both succeed; a failure retries the whole batch (idempotent by design).
 
@@ -1943,7 +1930,7 @@ Derived keys (HKDF-SHA256, empty salt, `info` strings):
 
 ### 11.5 Privacy
 
-**[TIO-PRIV-001]** The OP SHALL store about a user only: id, email, verified flag, display name, groups, passkey public material and metadata, federated identifiers and the attributes the upstream provided, sessions with pseudonymized network metadata, consent grants, and the bounded event ring. No profile pictures, no addresses, no phone numbers, no free-form attributes.
+**[TIO-PRIV-001]** The OP SHALL store about a user only: id, email, verified flag, display name, groups, passkey public material and metadata, federated identifiers and the attributes the upstream provided, sessions with pseudonymized network metadata, and consent grants. No profile pictures, no addresses, no phone numbers, no free-form attributes.
 
 **[TIO-PRIV-002]** `GET /api/v1/admin/users/{id}/export` and `DELETE /api/v1/admin/users/{id}` SHALL satisfy data-portability and erasure requests; archived audit lines reference the random user id only.
 
@@ -1977,17 +1964,15 @@ The configuration is host-neutral: it names no hostname, zone or account. The to
   "d1_databases": [{ "binding": "DB", "database_name": "tiny-oidc", "database_id": "00000000-0000-4000-8000-000000000000", "migrations_dir": "migrations" }],
   "durable_objects": { "bindings": [
     { "name": "USER_DO", "class_name": "UserDO" },
-    { "name": "INTERACTION_DO", "class_name": "InteractionDO" },
-    { "name": "CLIENT_DO", "class_name": "ClientDO" } ] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserDO", "InteractionDO", "ClientDO"] }],
+    { "name": "INTERACTION_DO", "class_name": "InteractionDO" } ] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserDO", "InteractionDO"] }],
   "queues": {
     "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-tasks" }],
     "consumers": [{ "queue": "tiny-oidc-tasks", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "tiny-oidc-dlq" }] },
   "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-audit" }],
   "ratelimits": [
     { "name": "RL_IP", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
-    { "name": "RL_CLIENT", "namespace_id": "1002", "simple": { "limit": 2000, "period": 10 } },
-    { "name": "RL_INTERACTION", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } } ],
+    { "name": "RL_CLIENT", "namespace_id": "1002", "simple": { "limit": 2000, "period": 10 } } ],
   "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc" }],
   "triggers": { "crons": ["*/5 * * * *"] },
   "env": {
@@ -2047,6 +2032,8 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-CFG-004]** The OP SHALL refuse to serve `/authorize` (503 `not_configured` rendered as JSON, since no `login_url` exists to redirect to) until `login_url` and `login_origins` are effective, either stored as settings or defaulted by `BUNDLED_LOGIN_APP=true`.
 
+**[TIO-CFG-005]** (V: ci) Environment variables, secrets and settings SHALL be declared exactly once, as a zod schema in `src/env.ts` with a description, a default and bounds per entry. `scripts/gen-config-docs.ts` SHALL generate `doc/CONFIG.md` and `.dev.vars.example` from that schema, and CI SHALL fail when either committed file differs from the generated output, exactly as `doc/TRACEABILITY.md` is drift-checked. The tables in this section are snapshots of `doc/CONFIG.md`.
+
 ### 12.3 Environments, deployment and releases
 
 **[TIO-DEPLOY-001]** (V: review) Four deployment profiles SHALL exist: `dev` (local `wrangler dev` with local D1, Durable Objects, Queues and R2), `button` (the top-level configuration profile used by the Deploy-to-Cloudflare button: workers.dev hostname, bundled login app on), `staging` (the operator's Cloudflare account, seeded with synthetic users, target of conformance and load tests, with a staging-only auto-approving fake upstream deployed as a separate Worker), and `production`. No credential, key, database, queue or bucket is shared between profiles.
@@ -2057,13 +2044,13 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-DEPLOY-007]** The deploy command for every profile SHALL be `pnpm run deploy`, which runs `scripts/deploy.ts`: read `TIO_ENV` (default: top-level profile); apply D1 migrations with `wrangler d1 migrations apply DB --remote [--env]`; for `staging` and `production`, resolve the D1 `database_id` by `database_name` through `wrangler d1 list --json` and write a generated configuration file (never committed) that adds it; pass `--var ISSUER:$TIO_ISSUER --var RP_ID:$TIO_RP_ID --var RP_NAME:$TIO_RP_NAME`; for `production`, `wrangler versions upload`, run the smoke test (`scripts/smoke.ts`: discovery, JWKS, health) against the version's preview URL, then `wrangler versions deploy` to 100%; for other profiles, `wrangler deploy`. Any failing step aborts before traffic changes. The script is unit-tested with a fake `wrangler` and run for real in the nightly job against staging.
 
-**[TIO-DEPLOY-008]** (V: ci) `README.md` SHALL carry the Deploy-to-Cloudflare button (`https://deploy.workers.cloudflare.com/?url=<repository URL>`) near the top, followed by numbered steps: click, set `ISSUER` and `RP_ID` to the Worker's URL and host in the form, fill `ADMIN_BOOTSTRAP_TOKEN` and `MASTER_KEYS` from the generator command shown in the README, create and deploy, then call bootstrap. `.dev.vars.example` SHALL list every secret with a one-line description so the form renders the fields, and `package.json` SHALL declare `build` (typecheck) and `deploy` scripts because the button pre-fills its commands from them. A CI check validates that `wrangler.jsonc` top-level profile carries default names and ids for every provisionable resource (D1, Queues, R2, Durable Objects) as the button requires.
+**[TIO-DEPLOY-008]** (V: ci) `README.md` SHALL carry the Deploy-to-Cloudflare button (`https://deploy.workers.cloudflare.com/?url=<repository URL>`) near the top, followed by numbered steps: click, set `ISSUER` and `RP_ID` to the Worker's URL and host in the form, fill `ADMIN_BOOTSTRAP_TOKEN` and `MASTER_KEYS` from the generator command shown in the README, create and deploy, then call bootstrap. `.dev.vars.example` (generated, TIO-CFG-005) SHALL list every secret with a one-line description so the form renders the fields, and `package.json` SHALL declare `build` (typecheck) and `deploy` scripts because the button pre-fills its commands from them. A CI check validates that `wrangler.jsonc` top-level profile carries default names and ids for every provisionable resource (D1, Queues, R2, Durable Objects) as the button requires.
 
 **[TIO-DEPLOY-009]** (V: review) Custom hostnames for staging and production SHALL be attached outside this repository, in the operator's infrastructure-as-code (Cloudflare Workers custom domains), after the Worker exists. Workers custom domains provision their certificates automatically, including multi-level names, and cannot coexist with an existing DNS record on the same name. The repository's `wrangler.jsonc` SHALL contain no `routes`.
 
-**[TIO-DEPLOY-010]** (V: review) Promotion to production SHALL be a fast-forward of the `production` branch to a `main` commit whose nightly conformance and load gates passed, done through a pull request; rollback is a revert on `production`. Both branches are protected: required status checks, no force-push, linear history.
+**[TIO-DEPLOY-010]** (V: review) Promotion to production SHALL be a fast-forward push of the `production` branch to a `main` commit whose nightly conformance and load gates passed; rollback is a revert on `production`. Both branches are protected against force-push and history rewriting.
 
-**[TIO-DEPLOY-011]** (V: ci) Pull requests SHALL be the only way changes reach `main`; the full gate set (§13.1) is a required status check. The repository owner merges or delegates merging to the implementing agent once checks are green.
+**[TIO-DEPLOY-011]** (V: ci) Changes reach `main` by direct commits from the implementing agent; the full gate set (§13.1) runs on every push, and a red `main` blocks the staging deploy until it is fixed forward. Pull requests are used only when the repository owner asks for a review point.
 
 **[TIO-DEPLOY-003]** (V: review) D1 SHALL be backed up weekly by `wrangler d1 export` to `AUDIT_BUCKET/backups/`, and D1 Time Travel (30 days) is the point-in-time recovery mechanism. Durable Object point-in-time recovery is per object via the bookmark API and is exposed through `POST /api/v1/admin/users/{id}/restore` `{ "bookmark_time": … }` for individual-user recovery.
 
@@ -2071,7 +2058,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 ### 12.4 Cron maintenance
 
-**[TIO-CFG-010]** The `scheduled()` handler SHALL, every 5 minutes and bounded to 20 s of wall time: purge `audit_hot` beyond retention (≤ 10 × 1,000 rows); delete expired invitations beyond 30 days; repair or delete `creating` users; finish `deleting` users; run the key-rotation step when due; run one re-encryption chunk when a master-key rotation is pending; delete retired keys beyond 90 days; emit `system.cron_run` with counts. Each step is idempotent and individually tested with `createScheduledController`.
+**[TIO-CFG-010]** The `scheduled()` handler SHALL, every 5 minutes and bounded to 20 s of wall time: purge `audit_hot` beyond retention (≤ 10 × 1,000 rows); delete expired invitations beyond 30 days; repair or delete `creating` users; finish `deleting` users; create the next signing key when rotation is due and retire superseded keys (§10.3); run one re-encryption chunk when a master-key rotation is pending; delete retired keys beyond 90 days; emit `system.cron_run` with counts. Each step is idempotent and individually tested with `createScheduledController`.
 
 ---
 ## 13. Testing strategy
@@ -2107,7 +2094,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-TEST-004]** (V: review) Because storage isolation is per file, every workers test file SHALL either (a) create its own users, clients and interactions with unique ids and never assume an empty store, or (b) call `resetStorage()` from `test/support/reset.ts` in `beforeEach`, which truncates D1 tables, deletes every Durable Object it created (`listDurableObjectIds` + `runInDurableObject(deleteAll)`), and drains the queue. Files that test cross-user isolation use (a) deliberately.
 
-**[TIO-TEST-005]** Every test SHALL control time through the injected `Clock`; tests that depend on expiry use `vi.setSystemTime` and never sleep. A lint rule forbids `setTimeout` in tests except inside `test/support/`.
+**[TIO-TEST-005]** Every test SHALL control time through the injected `Clock`; tests that depend on expiry use `vi.setSystemTime` and never sleep. A lint rule forbids `setTimeout` in tests except inside `test/support/`, and `Date.now()` / `new Date()` anywhere in `src/` outside the `Clock` implementation in `src/env.ts`, so that every time comparison in the OP flows through one choke point.
 
 ### 13.4 Traceability gate
 
@@ -2121,7 +2108,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 |---|---|---|---|
 | **Unit** (`test/unit`) | Node | Pure logic without bindings | base64url, UUID v7 monotonicity, envelope codec, PKCE, redirect-URI matcher, scope parser, claims mapper, cookie parser, settings validator, error mapper, email normalizer, masking |
 | **Property** (`test/property`) | Node | Invariants over random inputs | envelope round-trip and tamper rejection; redirect matcher never matches a non-registered URI; scope parser idempotence; form parser handles arbitrary bytes; JWT claims builder never emits `null` |
-| **Component** (`test/component`) | workerd | Each Durable Object and repository against real storage | `UserDO` every method incl. purge and migration; `InteractionDO` state machine and alarm; `ClientDO` jti; D1 repositories against real migrations; key store lifecycle; queue consumer; cron steps |
+| **Component** (`test/component`) | workerd | Each Durable Object and repository against real storage | `UserDO` every method incl. purge and migration; `InteractionDO` state machine and alarm; D1 repositories against real migrations; key store lifecycle; queue consumer; cron steps |
 | **HTTP** (`test/http`) | workerd, `SELF.fetch` | Full flows through the router with real bindings | discovery, JWKS, PAR, authorize (all branches), interaction API, passkey ceremonies with the software authenticator, federation with the fake upstream, token (all grants), userinfo, revoke, logout, back-channel, self-service, admin, bootstrap, import |
 | **Security** (`test/security`) | workerd | Negative and adversarial behavior | §13.7 list |
 | **Concurrency** (`test/concurrency`) | workerd | Exactly-once under parallelism | §13.6 list |
@@ -2148,9 +2135,8 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 | `/complete` on the same interaction | Second redirects with `interaction_already_completed` | One code issued |
 | Create a user with the same verified email | 409 `email_taken` | One user row |
 | Link the same `(issuer, subject)` | `identity_already_linked` | One index row |
-| Record the same `jti` | `invalid_client` | One row |
 | Bootstrap | 410 | One admin invitation |
-| First key creation on an empty store | — | One `active` key |
+| First key creation on an empty store | — | One signing key |
 
 ### 13.7 Security suite
 
@@ -2160,8 +2146,8 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 - PKCE: missing, `plain`, wrong verifier, verifier of wrong length or alphabet, challenge reuse across clients.
 - Code: reuse, expired, wrong client, wrong redirect_uri, forged envelope, cross-user envelope (valid structure, other user's id).
 - Refresh: reuse, cross-client, expired idle, expired absolute, after session logout (session-bound), after user disable, after group removal for `admin` scope, scope widening.
-- Client auth: secret in body for a basic client, basic header for a `none` client, `private_key_jwt` with each failing claim, `alg: none`, `jti` replay, wrong `aud`, expired, key not in JWKS, JWKS URI unreachable.
-- Tokens: signature by `next` key, by `retired` key, wrong `typ`, `aud` without `ISSUER` on `/me` and `/admin`, `client_credentials` token on `/userinfo`, tampered payload.
+- Client auth: secret in body for a basic client, basic header for a `none` client, `private_key_jwt` with each failing claim, `alg: none`, missing `iat`, `iat` too old, `exp` too far, wrong `aud`, key not in JWKS, JWKS URI unreachable.
+- Tokens: signature by a retired key, by an unknown `kid`, wrong `typ`, `aud` without `ISSUER` on `/me` and `/admin`, `client_credentials` token on `/userinfo`, tampered payload, JOSE header over 512 bytes rejected by the builder.
 - Interaction: missing binding cookie, wrong binding cookie, cross-interaction cookie, wrong `Origin`, no `Origin` on POST, request after expiry, every invalid state transition, second authentication as another user, `link_wrong_user`, attempt exhaustion.
 - WebAuthn: wrong origin, wrong RP ID, UV flag clear, UP flag clear, wrong challenge, reused challenge, wrong signature, unknown credential, counter regression, non-discoverable (`rk:false`), duplicate credential id across users, 21st passkey, unsupported algorithm, oversized credential id.
 - Federation: each ID-token validation failure, `state` reuse, `state` from another interaction, callback without binding cookie, upstream `error` handling, userinfo `sub` mismatch, `required_claims` mismatch, `email_verified` as string, disabled user, `account_exists` policy, `registration_closed`.
@@ -2180,6 +2166,8 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-TEST-032]** `test/support/factories.ts` SHALL create users, passkeys, clients, upstreams, sessions and tokens through the public APIs and Durable Object methods only, never by writing storage directly, except in tests that deliberately construct inconsistent state (§4.6) and say so in their title.
 
+**[TIO-TEST-033]** `examples/rp-node` and everything under `test/e2e` SHALL reach the OP over HTTP only: they never import `src/**` or `cloudflare:test`, never read or write D1 or Durable Object storage, and the relying party verifies ID tokens against the live JWKS like a real client. The lint rules enforce the import ban.
+
 ### 13.9 Conformance
 
 **[TIO-TEST-040]** (V: conformance) Before every release and nightly, the OpenID Foundation conformance suite SHALL run against staging with these plans, and the results SHALL be archived in the release: `oidcc-config-certification-test-plan`, `oidcc-basic-certification-test-plan` (variants `client_secret_basic`, `client_secret_post`, and `none` with PKCE where the suite offers it), `oidcc-rp-initiated-logout-certification-test-plan`, `oidcc-backchannel-rp-initiated-logout-certification-test-plan`. Every test SHALL pass or be explicitly waived in `conformance/waivers.json` with a reason limited to "feature intentionally unsupported and advertised as such in discovery" (for example request objects).
@@ -2196,7 +2184,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 ### 13.11 Lint rules that encode requirements
 
-**[TIO-TEST-060]** (V: ci) Custom Biome/ESLint-compatible rules (implemented as a small `scripts/lint-rules.ts` run in CI) SHALL forbid: `Math.random`; `prepare(` outside `src/db/` and `src/do/`; string concatenation into SQL; `console.log` outside `src/obs/`; `new Response(` with `text/html`; `nodejs_compat`; imports of non-allow-listed crypto packages; `setTimeout` in tests outside `test/support/`; `any` in `src/`; `JSON.parse` without a schema in request handlers.
+**[TIO-TEST-060]** (V: ci) Custom Biome/ESLint-compatible rules (implemented as a small `scripts/lint-rules.ts` run in CI) SHALL forbid: `Math.random`; `Date.now()` and `new Date()` in `src/` outside `src/env.ts`; `prepare(` outside `src/db/` and `src/do/`; string concatenation into SQL; `console.log` outside `src/obs/`; `new Response(` with `text/html`; `nodejs_compat`; imports of non-allow-listed crypto packages; literal arrays of scopes, grant types, response types, client authentication methods, algorithms or `prompt` values outside `src/oidc/capabilities.ts`; imports of `src/**` or `cloudflare:test` from `examples/` and `test/e2e/`; `setTimeout` in tests outside `test/support/`; `any` in `src/`; `JSON.parse` without a schema in request handlers.
 
 ### 13.12 Definition of done for a requirement
 
@@ -2224,11 +2212,11 @@ tiny-oidc/
 │   ├── oidc/                        discovery, authorize, par, token, userinfo, revoke, logout, backchannel, claims, scopes, client-auth
 │   ├── interaction/                 Interaction API handlers, state machine, complete
 │   ├── auth/                        passkey (options/verify), session, federation, consent, registration, invitations, recovery
-│   ├── do/                          UserDO.ts, InteractionDO.ts, ClientDO.ts, schema/*.sql, migrate.ts
+│   ├── do/                          UserDO.ts, InteractionDO.ts, schema/*.sql, migrate.ts
 │   ├── db/                          D1 repositories (users, groups, clients, upstreams, keys, invitations, settings, audit)
 │   ├── crypto/                      envelope, master-keys, keystore, jwt, hash, random, uuid
 │   ├── audit/                       event catalog, emitter, redaction, queue consumer, sinks
-│   ├── admin/                       Admin API handlers, import, config-as-code, bootstrap
+│   ├── admin/                       Admin API handlers, import, bootstrap
 │   ├── me/                          Self-service API handlers
 │   ├── obs/                         logging, metrics, health
 │   └── generated/                   wrangler types
@@ -2239,7 +2227,7 @@ tiny-oidc/
 │   └── rp-node/                     Node RP with openid-client (e2e fixture)
 ├── perf/                            k6 scenarios, seed script
 ├── conformance/                     docker compose, plan configs, waivers.json, runner
-├── scripts/                         trace.ts, check-ignores.ts, lint-rules.ts, gen-openapi.ts, bundle-check.ts, config-check.ts, deploy.ts, smoke.ts, neutrality-check.ts, gen-secrets.ts
+├── scripts/                         trace.ts, check-ignores.ts, lint-rules.ts, gen-openapi.ts, gen-config-docs.ts, bundle-check.ts, config-check.ts, deploy.ts, smoke.ts, neutrality-check.ts, gen-secrets.ts
 ├── README.md  LICENSE (MIT)  .dev.vars.example  .nvmrc
 ├── wrangler.jsonc  package.json  pnpm-lock.yaml  tsconfig.json  biome.json
 ├── vitest.unit.config.ts  vitest.workers.config.ts  playwright.config.ts
@@ -2259,8 +2247,8 @@ Each phase ends when its exit criteria are green in CI. Phases are sequential; w
 | **0. Foundation** | Repo, toolchain, CI with all gates wired (coverage, trace, lint rules, bundle, config), `Clock`, envelope, master keys, UUID v7, D1 migration 0001, DO skeletons with migrations, settings loader, error model, security headers, request ids, health. | All gates pass on a nearly empty `src/`; `pnpm trace` reports the spec's identifiers as uncovered (expected) and the CI trace job is configured to allow-list uncovered identifiers by phase (`scripts/trace.config.json` `phase` field) so the gate tightens as phases complete. |
 | **1. Keys and discovery** | Key store and lifecycle, JWKS, discovery, JWT sign/verify, `at+jwt`, ID token builder. | §5.2, §5.3, §10 identifiers covered. |
 | **2. Core flow with passkeys** | Clients (D1 + admin create for tests via bootstrap), `/authorize` validation, `/par`, `InteractionDO`, Interaction API for passkeys and registration (invite + open), `UserDO` sessions/codes/families, `/complete`, `/token` (code, refresh), `/userinfo`, `/revoke`, consent, groups enforcement, reference login app, software authenticator, e2e passkey sign-up and sign-in. | §5.4–§5.9, §6.1–§6.3, §6.6, §7 covered; `oauth4webapi` interop green; concurrency suite green for code, refresh, challenge, invitation, PAR, complete. |
-| **3. Admin API** | Bootstrap, users, groups, clients, upstream CRUD (no login yet), invitations, settings, keys, stats, reindex, import, config-as-code, OpenAPI generation. | §9 covered; import benchmark measured on staging (may be below target until Phase 6 tuning). |
-| **4. Federation** | Upstream discovery, outbound request, callback, ID-token validation, account resolution and linking policy, self-service link, fake upstream fixture, Google and Microsoft manual verification recorded in `doc/adr/`. | §6.4 covered; security suite federation cases green. |
+| **3. Admin API** | Bootstrap, users, groups, clients, upstream CRUD (no login yet), invitations, settings, keys, stats, reindex, import, OpenAPI generation, generated configuration docs. | §9 covered; import benchmark measured on staging (may be below target until Phase 6 tuning). |
+| **4. Federation** | Upstream discovery, outbound request, callback, ID-token validation, account resolution and login-time linking policy, fake upstream fixture, outbound allow-list test, Google and Microsoft manual verification recorded in `doc/adr/`. | §6.4 covered; security suite federation cases green. |
 | **5. Logout and self-service** | RP-initiated logout, logout interaction, back-channel logout with retries, Self-service API, reauthentication rule. | §5.10, §8 covered; e2e logout cases green. |
 | **6. Audit, observability, rate limits, cron** | Event catalog, sinks, queue consumer, R2 archive, hot purge, metrics, rate limiting, cron steps, redaction suite. | §6.7, §11, §12.4 covered; soak test green. |
 | **7. Hardening and release** | Full security suite, conformance runs with waivers, load tests at 1,000,000 users, runbook, release pipeline with gradual rollout, mutation-test baseline, threat-model review sign-off. | Every identifier covered; conformance archived; load thresholds green; `v1.0.0` tagged. |
@@ -2273,12 +2261,18 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 
 ---
 
+### 14.4 Code conventions
+
+**[TIO-GEN-005]** (V: review) Every branch that implements a protocol rule SHALL carry a comment citing the specification section it implements (for example `// RFC 6749 §4.1.3: redirect_uri must match the one bound to the code`), and every commit that changes protocol behavior SHALL cite the section in its message. Reviewers reject protocol changes without a citation.
+
+---
+
 ## 15. Threat model
 
 | # | Threat | Mitigation | Requirements |
 |---|---|---|---|
 | T1 | Authorization-code interception or injection | PKCE S256 mandatory; code bound to client, redirect URI, verifier; 60 s lifetime; single use with family revocation on replay; `iss` parameter defeats mix-up | AUTHZ-008, TOKEN-011, TOKEN-012, AUTHZ-021 |
-| T2 | Open redirect through the OP | Exact redirect URI matching; non-redirectable errors go to `login_url` only; `post_logout_redirect_uri` registered; `return_to` origin allow-list | CLIENT-010, CLIENT-011, AUTHZ-018, LOGOUT-002, FED-050 |
+| T2 | Open redirect through the OP | Exact redirect URI matching; non-redirectable errors go to `login_url` only; `post_logout_redirect_uri` registered | CLIENT-010, CLIENT-011, AUTHZ-018, LOGOUT-002 |
 | T3 | Refresh-token theft | Rotation with family reuse detection; session-bound families die with the session; opaque encrypted handles; hashes only at rest; revocation endpoint | RT-002, RT-003, RT-006, ARCH-007, REV-002 |
 | T4 | Session fixation / login CSRF (attacker completes their auth in the victim's interaction) | Interaction bound to the browser by a cookie verified on every Interaction API call and at `/complete`; `Origin` allow-list; new session secret at authentication; different-user re-auth revokes old session | IX-001, IX-060, SESS-002 |
 | T5 | CSRF on logout | No session termination without a valid `id_token_hint` or explicit confirmation | LOGOUT-004 |
@@ -2289,7 +2283,7 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 | T10 | Storage leak (D1 or DO dump) | No plaintext secrets or tokens; private keys and upstream secrets encrypted under `MASTER_KEYS`; handle secrets hashed | ARCH-007, KEYS-011, CRYPTO-004 |
 | T11 | Master-key compromise | Handles become forgeable only in structure; every handle still requires a server-side record; documented re-key runbook | ARCH-009, CRYPTO-011, DEPLOY-004 |
 | T12 | Signing-key compromise | Emergency retire endpoint; short token lifetimes; JWKS pre-publication makes rotation routine | KEYS-012, KEYS-013 |
-| T13 | Client impersonation | Strict per-client auth method; secret hashed; `private_key_jwt` with `jti` replay cache and `aud` check; failed-auth rate limits | TOKEN-002, TOKEN-003, TOKEN-004 |
+| T13 | Client impersonation | Strict per-client auth method; secret hashed; `private_key_jwt` with a 60-second assertion lifetime and `aud` check; failed-auth rate limits | TOKEN-002, TOKEN-003, TOKEN-004 |
 | T14 | Denial of service / brute force | Per-IP, per-client, per-interaction and per-user limits; body and query limits; no unbounded loops; per-user isolation stops one user from affecting others | RL-001–RL-003, HTTP-004, ARCH-002 |
 | T15 | Enumeration of users, credentials, invitations | Uniform responses; masked emails; no existence disclosure in the Interaction API | ERR-002, IX-001, IX-070 |
 | T16 | Log or audit leakage | Redaction canaries; allow-listed data keys; pseudonymized IP | AUDIT-002, OBS-001, SESS-005 |
@@ -2299,6 +2293,9 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 | T20 | Clickjacking / framing of navigation endpoints | `frame-ancestors 'none'`; no HTML anyway | HTTP-002, GEN-001 |
 | T21 | Partial-write inconsistencies between D1 and DO | Ordered writes, repair cron, lazy cleanup, reindex | DATA-026, DATA-027 |
 | T22 | Time manipulation / clock skew | Fixed leeway per token type; injected clock tested at boundaries | TOKEN-003, FED-030, TOKEN-034 |
+| T23 | Data exfiltration through outbound requests (telemetry, SSRF via configured URLs) | Outbound allow-list limited to configured upstream and client endpoints; no telemetry; `https` required for every configured URL | ARCH-016, FED-001, CLIENT-002 |
+| T24 | Stale or confused authorization parameters (`nonce`/`code_challenge` from a previous request, `prompt` loops) | Codes bind exactly their request; session hits reuse nothing; `prompt`/`max_age` never persisted | AUTHZ-024 |
+| T25 | Consent or tokens surviving client deletion and id reuse | `client_created_at` binding; lazy deletion on discovery | CLIENT-005 |
 
 **[TIO-SEC-001]** (V: review) The threat model SHALL be reviewed at the end of Phase 7 and whenever a new endpoint or handle type is added; the review is recorded in `doc/adr/`.
 
@@ -2331,7 +2328,7 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 | Sessions and device management | **Kept** via Self-service and Admin APIs | |
 | Events, notifications, transports | **Kept** audit pipeline; webhooks deferred | |
 | Outposts | Dropped | No agents |
-| Blueprints (config as code) | **Kept** as `PUT /admin/config` | GitOps without a separate tool |
+| Blueprints (config as code) | Deferred | Idempotent CRUD plus `client_credentials` covers automation in v1 |
 | Admin UI, user UI | Dropped | API-first; UIs are the operator's |
 | API (REST, OpenAPI) | **Kept**, OpenAPI 3.1 | |
 | Certificates / key management | **Kept** as the key store with rotation | |
@@ -2343,32 +2340,44 @@ Each entry: what the draft said → what this spec does → why.
 
 1. **Built-in HTML login/consent/registration pages** → headless OP with an Interaction API and an operator-owned login app. *Why:* the "no UI" requirement; removes CSP, XSS, templating and inline-script concerns from the security core; lets every organization use its own design system.
 2. **All state in D1 (users, passkeys, codes, refresh tokens, audit)** → per-user Durable Objects for hot state; D1 as directory. *Why:* one D1 database is single-threaded and capped at 10 GB; refresh rotation alone is hundreds of writes per second at 1,000,000 users; single-use semantics are native in a DO transaction.
-3. **Signing key as a Worker secret (`OIDC_SIGNING_KEY_JWK`)** → encrypted key store in D1 with a four-state lifecycle and API-driven rotation. *Why:* rotation must not require a deploy; overlapping keys need a store.
-4. **Audit events in D1 indefinitely** → `UserDO` ring + queue → 30-day hot table + R2 archive. *Why:* capacity.
-5. **Generic `AuthState` DO used as a key-value store** → three typed DO classes with SQLite schemas and RPC methods. *Why:* atomicity, clarity, testability.
+3. **Signing key as a Worker secret (`OIDC_SIGNING_KEY_JWK`)** → encrypted key store in D1 with timestamp-derived key roles and API-driven rotation (#32). *Why:* rotation must not require a deploy; overlapping keys need a store.
+4. **Audit events in D1 indefinitely** → queue → 30-day hot table + R2 archive, per-user views of the hot table (#31). *Why:* capacity.
+5. **Generic `AuthState` DO used as a key-value store** → two typed DO classes with SQLite schemas and RPC methods. *Why:* atomicity, clarity, testability.
 6. **Cookie/session model unspecified** → encrypted opaque handles for every secret (§2.4), `__Host-` cookies, explicit binding cookie for interactions. *Why:* routing without global indexes; login-CSRF defense.
 7. **`client_type` + `token_endpoint_auth_method`** → only `token_endpoint_auth_method`. *Why:* redundancy; `public` is exactly `none`.
-8. **Access token `aud = client_id`** → RFC 8707 resource indicators with `default_resources`, `ISSUER` added for the OP's own APIs, RFC 9068 `at+jwt`. *Why:* resource servers need a real audience.
+8. **Access token `aud = client_id`** → a static per-client `audiences` list, `ISSUER` added for the OP's own APIs, RFC 9068 `at+jwt`. *Why:* resource servers need a real audience. RFC 8707 resource indicators were designed in and then deferred (#29).
 9. **No `sid`, `amr`, `acr`, `at_hash`** → added. *Why:* back-channel logout needs `sid`; clients need authentication context.
 10. **Logout "MAY support RP-initiated"** → RP-initiated with hint, confirmation interaction without hint, back-channel logout with retries; front-channel and session iframe rejected. *Why:* third-party cookies are gone; back-channel is the only reliable mechanism.
 11. **No PAR / `iss` response parameter / revocation** → added. *Why:* cheap, modern, expected by current libraries and conformance profiles.
 12. **No `client_credentials`** → added with `private_key_jwt` and `client_secret_basic`/`client_secret_post`. *Why:* API-first administration needs machine tokens. `client_secret_post` was added specifically because the OIDF basic certification plan exercises it.
 13. **Consent as a UI concern** → persistent per-client grants in `UserDO`, `skip_consent` for first-party clients, consent decisions through the Interaction API. *Why:* headless.
 14. **Email unique per user** → unique only among verified emails; unverified emails are never used for resolution. *Why:* prevents email squatting at consumer scale.
-15. **Recovery "MAY include admin procedure"** → concrete `recover` invitations with optional revoke-everything. *Why:* operators need a defined path.
+15. **Recovery "MAY include admin procedure"** → concrete `recover` invitations that always revoke sessions and refresh families and never delete passkeys (#34). *Why:* operators need a defined path with one behavior.
 16. **Rate limiting "MAY use Cloudflare controls"** → Rate Limiting binding for coarse limits, DO state for exact per-entity limits, with a numeric table. *Why:* the binding is GA, per-colo and permissive by design, so exact limits live where the state is.
 17. **Unit/protocol/browser test list** → eleven suites, 100% coverage gate, traceability gate, concurrency and security suites enumerated, conformance and load as release gates. *Why:* "not tested = not working" must be a CI failure, not a sentence.
 18. **Project layout with `ui/`** → no `ui/`; `examples/login-app` as a test fixture. *Why:* no UI.
 19. **Recommended tokens in `localStorage` prohibition** → out of scope for the OP (it cannot enforce client storage); moved to `LOGIN_APP_GUIDE.md` guidance.
 20. **`ISSUER` and `RP_ID` equal** → `RP_ID` is the registrable domain shared by the OP and the login app; Related Origin Requests for other first-party origins. *Why:* the login app runs on a different origin than the OP.
-21. **Groups, self-service API, bulk import, config-as-code** → added. *Why:* authentik benchmark; 1,000,000-user migration is impossible without import.
-22. **Dynamic client registration "OPTIONAL, admin-protected"** → no RFC 7591 endpoint; Admin API and config-as-code only. *Why:* one fewer public surface.
+21. **Groups, self-service API, bulk import** → added; configuration as code was added and later deferred (#33). *Why:* authentik benchmark; 1,000,000-user migration is impossible without import.
+22. **Dynamic client registration "OPTIONAL, admin-protected"** → no RFC 7591 endpoint; Admin API only. *Why:* one fewer public surface.
 23. **`nodejs_compat`** → forbidden. *Why:* every runtime dependency is Web-standard; keeping the flag off keeps the bundle small and the runtime surface known.
 
 24. **Deployment pipeline unspecified** → Cloudflare Workers Builds per environment (`main` → staging, `production` branch → production), GitHub Actions for gates only, public repository host- and account-neutral, hostnames attached from the operator's infrastructure repository. *Why:* the operator's standing rule for public repositories is that no credential, hostname, zone or account id may land in them; Workers Builds needs no token in GitHub and is the same path the Deploy button exercises.
 25. **Deploy-to-Cloudflare button on workers.dev** → optional bundled reference login app served as static assets on the OP origin. *Why:* `workers.dev` is on the Public Suffix List, so two workers.dev names are different sites and the interaction binding cookie would not flow; same-origin static files give a working one-click evaluation while OP code still never generates HTML.
 26. **Staging isolation** → staging under its own subdomain with its own RP ID, so staging passkeys never appear in the production picker. *Why:* operator decision; Workers custom domains provision certificates for multi-level names automatically.
-27. **License** → MIT. **Git flow** → feature branches and pull requests; the implementing agent merges after the required checks pass.
+27. **License** → MIT. **Git flow** → direct commits to `main` by the implementing agent with the full gate set on every push (changed from pull requests on 2026-09-19 at the owner's request).
+
+**Reference review (2026-09-19).** Before Phase 0 the spec was compared against two similar open-source providers: tinyauth (Go, OpenID Certified Basic OP, forward-auth and OIDC provider, ~22k LOC) and authenti-kate tiny-oidc (Flask, a toy OP with a strong test harness, ~4.7k LOC). Entries 28–36 record what changed as a result.
+
+28. **`ClientDO` replay cache for `private_key_jwt`** → removed; assertions must carry `iat` and expire within 60 s (TIO-TOKEN-003). *Why:* RFC 7523 §3 makes replay rejection optional and neither reference implements `private_key_jwt` at all; the cache cost a DO class, a binding, a token-endpoint hop and a concurrency case for a threat (a captured assertion replayed within a minute) that already implies a compromised client host.
+29. **RFC 8707 resource indicators** → deferred; clients get a static `audiences` list (TIO-TOKEN-033). *Why:* per-request audience narrowing is unused by first-party applications; the static list keeps the real-audience property with a fraction of the validation surface.
+30. **Self-service identity linking (`link` interaction, `/me/identities/link`, `return_to`)** → deferred. *Why:* login-time linking by verified email covers the common case; the deferred path added a second interaction kind and an open-redirect surface (`return_to`) for a rare need.
+31. **Per-user `events` ring in `UserDO`** → removed; per-user views read `audit_hot`. *Why:* the ring was 80% of the per-user storage estimate and an extra DO call per event, to answer a query the indexed hot table already answers.
+32. **Four-state key lifecycle (`next`/`active`/`retiring`/`retired` with a two-step activation)** → roles derived from `activates_at` and `retired_at` (§10.3). *Why:* authenti-kate's per-client keys and tinyauth's single unrotated key both show what happens without a rotation story; ours now has no forgettable step and no state column to drift.
+33. **`PUT /admin/config` (configuration as code)** → deferred. *Why:* plan/diff/prune semantics are a product of their own; `client_credentials` plus idempotent CRUD serves automation. tinyauth's configuration-first model is its core, not a layer over CRUD.
+34. **Client-secret rotation grace period; `revoke_existing` on recovery invitations** → removed. *Why:* the grace period contradicted the single-hash schema, and `private_key_jwt` with several keys already gives zero-downtime rotation; recovery now has one behavior.
+35. **Improvements adopted from the references:** `kid` as the RFC 7638 thumbprint with a 512-byte header test (authenti-kate `tests/test_key_id.py`, after a PEM-derived `kid` produced a 1,702-byte header); one `capabilities.ts` constant driving validators and discovery with an equality test (authenti-kate `app/prompts.py`, `tests/test_discovery_jwks.py`); the stale-parameter requirement TIO-AUTHZ-024 (authenti-kate `authorize.py:242-249` documents the exact bug); `prompt=none` never touching the session; lazy cleanup of grants and families when a client is deleted or re-created (tinyauth reconciles consents of vanished clients, `oidc_service.go:1051-1079`; a sweep over 1,000,000 Durable Objects is impossible, so ours is lazy); no `Date.now()` outside `Clock` (authenti-kate `app/times.py`); the e2e relying party never touches OP storage (authenti-kate `tests/e2e/rp_app.py`); generated `doc/CONFIG.md` and `.dev.vars.example` with a drift check (tinyauth `gen/docs/gen_env.go` and its `git diff --exit-code` CI step); an outbound-host allow-list with a no-network test (tinyauth's default-on heartbeat to its vendor); RFC citations as a code convention; introspection and telemetry named as exclusions; the unused `RL_INTERACTION` binding removed.
+36. **Kept deliberately although a reference does it more simply:** immutable `sub` (TIO-DATA-001; tinyauth derives it from `username:client_id`); S256-only PKCE (TIO-AUTHZ-008; both accept `plain`); rolling keys with pre-publication (TIO-KEYS-012; neither rotates); Durable-Object-backed codes and state (TIO-ARCH-002; tinyauth uses in-memory caches); refresh families with reuse detection (TIO-RT-002); unknown scopes rejected (TIO-SCOPE-001; tinyauth filters silently); no request objects (TIO-DISC-003; tinyauth parses them unverified); claims gated by scope (TIO-TOKEN-030); `email_verified` only from trusted sources (TIO-DATA-008; tinyauth infers it from a non-empty email); `Secure` cookies always (TIO-SESS-001); one JWKS per issuer (TIO-KEYS-001; authenti-kate publishes a key per client); exact redirect matching (TIO-CLIENT-011; authenti-kate uses an unanchored regex); no plaintext secrets and no tokens in logs (TIO-ARCH-007, TIO-KEYS-011, TIO-TOKEN-004, TIO-AUDIT-002); remembered consent (TIO-CONSENT-001); no public dynamic registration (TIO-CLIENT-001); a blocking coverage gate (TIO-TEST-002; tinyauth's is informational); `client_secret_post` (conformance); the `account` and `admin` scopes; the bundled reference login app.
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 
@@ -2427,7 +2436,7 @@ Identifiers are numbered per area; gaps are intentional to leave room. The trace
 | **Session-bound family** | A refresh-token family that dies with the OP browser session. |
 | **Offline family** | A refresh-token family independent of the browser session (`offline_access`). |
 | **Directory** | The D1 database: existence, uniqueness, configuration. |
-| **UserDO / InteractionDO / ClientDO** | The three Durable Object classes. |
+| **UserDO / InteractionDO** | The two Durable Object classes. |
 | **Related Origin Requests** | WebAuthn mechanism letting origins outside the RP ID's domain use its passkeys via `/.well-known/webauthn`. |
 | **Hot table** | `audit_hot`, the last 30 days of audit events in D1. |
 | **Reindex** | Rebuilding a user's D1 mirror and index rows from `UserDO`. |

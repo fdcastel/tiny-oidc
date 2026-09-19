@@ -12,7 +12,7 @@ Tiny OIDC gives one organization a single, standards-compliant identity service 
 
 ## What it is
 
-- **OpenID Connect, modern subset only.** Authorization Code with PKCE (S256), Pushed Authorization Requests, JWT access tokens (RFC 9068), resource indicators, rotating refresh tokens with reuse detection, RP-initiated and back-channel logout, token revocation, client credentials with `private_key_jwt`.
+- **OpenID Connect, modern subset only.** Authorization Code with PKCE (S256), Pushed Authorization Requests, JWT access tokens (RFC 9068), rotating refresh tokens with reuse detection, RP-initiated and back-channel logout, token revocation, client credentials with `private_key_jwt`.
 - **Passkeys as the only local credential.** WebAuthn discoverable credentials with user verification required. No passwords, no OTP, no magic links.
 - **Federation** to any standards-compliant upstream OIDC provider, with strict ID-token validation and an explicit account-linking policy.
 - **Headless.** Your login screens, in any framework, driven by a small JSON Interaction API. A dependency-free reference login app ships as static files for evaluation and tests.
