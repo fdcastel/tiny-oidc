@@ -341,7 +341,10 @@ describe("OpenAPI", () => {
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=300");
     const doc = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
     expect(doc.openapi).toBe("3.1.0");
-    expect(Object.keys(doc.paths)).toEqual([
+    // Every documented path is in the route table (with {param} as :param), and the
+    // Interaction and Admin APIs are documented completely.
+    const documented = Object.keys(doc.paths);
+    expect(documented.slice(0, 10)).toEqual([
       "/api/v1/health",
       "/api/v1/interactions/{id}",
       "/api/v1/interactions/{id}/passkey/options",
@@ -353,5 +356,20 @@ describe("OpenAPI", () => {
       "/api/v1/admin/bootstrap",
       "/api/v1/admin/users",
     ]);
+    const tablePaths = new Set(ROUTES.map((r) => r.path));
+    for (const path of documented) {
+      expect(tablePaths.has(path.replace(/\{(\w+)\}/g, ":$1")), path).toBe(true);
+    }
+    // The 501 placeholders of later phases are documented when they arrive.
+    const pending = new Set([
+      "/api/v1/interactions/:id/upstream/:alias",
+      "/api/v1/interactions/:id/logout",
+    ]);
+    const apiPaths = [...tablePaths].filter(
+      (p) => p.startsWith("/api/v1/") && p !== "/api/v1/openapi.json" && !pending.has(p),
+    );
+    for (const path of apiPaths) {
+      expect(documented).toContain(path.replace(/:(\w+)/g, "{$1}"));
+    }
   });
 });

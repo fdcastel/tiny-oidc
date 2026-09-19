@@ -369,6 +369,53 @@ export interface RevokedSession {
   clients: string[];
 }
 
+/** A partial profile update from the Admin API; `email_norm` accompanies `email`. */
+export interface ProfilePatch {
+  email?: string | null;
+  email_norm?: string | null;
+  email_verified?: boolean;
+  display_name?: string | null;
+}
+
+/** A refresh family as the APIs list it: no token hashes (TIO-ADMIN-003). */
+export interface FamilySnapshot {
+  id: string;
+  client_id: string;
+  kind: "session" | "offline";
+  sid: string | null;
+  scope: string[];
+  auth_time: number;
+  amr: string[];
+  acr: string;
+  created_at: number;
+  absolute_expires_at: number;
+  idle_expires_at: number;
+  current_serial: number;
+}
+
+export interface UserCounts {
+  passkeys: number;
+  identities: number;
+  sessions: number;
+  refresh_families: number;
+  grants: number;
+}
+
+/** The data-portability export (TIO-PRIV-002). */
+export interface UserExport {
+  exported_at: number;
+  profile: UserProfile;
+  passkeys: Omit<PasskeyRecord, "public_key">[];
+  identities: IdentityRecord[];
+  sessions: (SessionSnapshot &
+    SessionMetadata & { revoked_at: number | null; revoke_reason: string | null })[];
+  refresh_families: (FamilySnapshot & {
+    revoked_at: number | null;
+    revoke_reason: string | null;
+  })[];
+  grants: GrantRecord[];
+}
+
 const PKCE_VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
 
 const bytes = (buffer: ArrayBuffer): Uint8Array => new Uint8Array(buffer);
@@ -1182,6 +1229,16 @@ export class UserDO extends DurableObject<Env> {
     });
   }
 
+  /** The clients the user holds grants for, so a caller can resolve their records before listGrants(). */
+  grantClientIds(): DoResult<{ client_ids: string[] }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const rows = this.ctx.storage.sql
+      .exec<{ client_id: string }>("SELECT client_id FROM grants ORDER BY granted_at, client_id")
+      .toArray();
+    return { ok: true, client_ids: rows.map((r) => r.client_id) };
+  }
+
   /** Grants whose client the caller confirms as current (TIO-CLIENT-005); others are deleted on discovery. */
   listGrants(clients: ClientRef[]): DoResult<{ grants: GrantRecord[] }, UserDoError> {
     const user = this.guard();
@@ -1426,5 +1483,195 @@ export class UserDO extends DurableObject<Env> {
       id,
     ).rowsWritten;
     return { ok: true, removed: removed > 0 };
+  }
+  // ---------------------------------------------------------------------------
+  // Administration (§9.4): profile updates, listings, export and recovery
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Applies a partial profile update (TIO-DATA-008: a changed email resets
+   * `email_verified` unless the caller sets it). The D1 mirror is the
+   * caller's second write.
+   */
+  updateProfile(patch: ProfilePatch, now: number): DoResult<{ profile: UserProfile }, UserDoError> {
+    const row = this.guard();
+    if (typeof row === "string") return fail(row);
+    const email = patch.email === undefined ? row.email : patch.email;
+    const emailNorm = patch.email === undefined ? row.email_norm : (patch.email_norm ?? null);
+    const emailChanged = email !== row.email;
+    const verified =
+      patch.email_verified !== undefined
+        ? patch.email_verified
+        : emailChanged
+          ? false
+          : row.email_verified === 1;
+    this.ctx.storage.sql.exec(
+      "UPDATE user SET email = ?, email_norm = ?, email_verified = ?, display_name = ?, updated_at = ? WHERE id = ?",
+      email,
+      emailNorm,
+      verified ? 1 : 0,
+      patch.display_name === undefined ? row.display_name : patch.display_name,
+      now,
+      row.id,
+    );
+    return { ok: true, profile: UserDO.profile(this.readUser() as UserRow) };
+  }
+
+  private static familySnapshot(row: FamilyRow): FamilySnapshot {
+    return {
+      id: row.id,
+      client_id: row.client_id,
+      kind: row.kind,
+      sid: row.sid,
+      scope: row.scope.split(" ").filter((s) => s.length > 0),
+      auth_time: row.auth_time,
+      amr: parseStrings(row.amr),
+      acr: row.acr,
+      created_at: row.created_at,
+      absolute_expires_at: row.absolute_expires_at,
+      idle_expires_at: row.idle_expires_at,
+      current_serial: row.current_serial,
+    };
+  }
+
+  /** Every family not yet revoked or expired, oldest first; never a token hash. */
+  listFamilies(now: number): DoResult<{ families: FamilySnapshot[] }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const rows = this.ctx.storage.sql
+      .exec<FamilyRow>(
+        "SELECT * FROM refresh_families WHERE revoked_at IS NULL AND idle_expires_at > ? AND absolute_expires_at > ? ORDER BY created_at, id",
+        now,
+        now,
+      )
+      .toArray();
+    return { ok: true, families: rows.map((r) => UserDO.familySnapshot(r)) };
+  }
+
+  /** Revokes every live family of a client (admin `DELETE /refresh-families?client_id=`). */
+  revokeFamiliesOfClient(
+    clientId: string,
+    now: number,
+    reason: string,
+  ): DoResult<{ revoked: number }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const result = this.ctx.storage.sql.exec(
+      "UPDATE refresh_families SET revoked_at = ?, revoke_reason = ? WHERE client_id = ? AND revoked_at IS NULL",
+      now,
+      reason,
+      clientId,
+    );
+    return { ok: true, revoked: result.rowsWritten };
+  }
+
+  /** The counts shown next to a profile (`GET /admin/users/{id}`). */
+  counts(now: number): DoResult<{ counts: UserCounts }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const sql = this.ctx.storage.sql;
+    const count = (statement: string, ...binds: SqlStorageValue[]): number =>
+      (sql.exec<{ n: number }>(statement, ...binds).toArray()[0] as { n: number }).n;
+    return {
+      ok: true,
+      counts: {
+        passkeys: count("SELECT COUNT(*) AS n FROM passkeys"),
+        identities: count("SELECT COUNT(*) AS n FROM identities"),
+        sessions: count(
+          "SELECT COUNT(*) AS n FROM sessions WHERE revoked_at IS NULL AND idle_expires_at > ? AND absolute_expires_at > ?",
+          now,
+          now,
+        ),
+        refresh_families: count(
+          "SELECT COUNT(*) AS n FROM refresh_families WHERE revoked_at IS NULL AND idle_expires_at > ? AND absolute_expires_at > ?",
+          now,
+          now,
+        ),
+        grants: count("SELECT COUNT(*) AS n FROM grants"),
+      },
+    };
+  }
+
+  /**
+   * Everything the object holds about the user, for data portability
+   * (TIO-PRIV-002): no secret hashes, no token material, no public keys
+   * (TIO-ADMIN-003).
+   */
+  exportState(now: number): DoResult<{ export: UserExport }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const sql = this.ctx.storage.sql;
+    const passkeys = sql
+      .exec<PasskeyRow>("SELECT * FROM passkeys ORDER BY created_at, id")
+      .toArray()
+      .map((row) => {
+        const { public_key: _key, ...rest } = UserDO.passkeyRecord(row);
+        return rest;
+      });
+    const identities = sql
+      .exec<IdentityRow>("SELECT * FROM identities ORDER BY created_at, id")
+      .toArray()
+      .map((row) => UserDO.identityRecord(row));
+    const sessions = sql
+      .exec<SessionRow>("SELECT * FROM sessions ORDER BY created_at, sid")
+      .toArray()
+      .map((row) => ({
+        ...this.snapshot(row),
+        ip_hash: row.ip_hash,
+        ua_family: row.ua_family,
+        country: row.country,
+        revoked_at: row.revoked_at,
+        revoke_reason: row.revoke_reason,
+      }));
+    const families = sql
+      .exec<FamilyRow>("SELECT * FROM refresh_families ORDER BY created_at, id")
+      .toArray()
+      .map((row) => ({
+        ...UserDO.familySnapshot(row),
+        revoked_at: row.revoked_at,
+        revoke_reason: row.revoke_reason,
+      }));
+    const grants = sql
+      .exec<GrantRow>("SELECT * FROM grants ORDER BY granted_at, client_id")
+      .toArray()
+      .map((row) => UserDO.grantRecord(row));
+    return {
+      ok: true,
+      export: {
+        exported_at: now,
+        profile: UserDO.profile(user),
+        passkeys,
+        identities,
+        sessions,
+        refresh_families: families,
+        grants,
+      },
+    };
+  }
+
+  /**
+   * Point-in-time recovery (TIO-DEPLOY-003): the next session of this object
+   * starts from the storage as it was at `bookmarkTime` (Unix seconds), and
+   * the object ends right after answering so the restore takes effect at once.
+   */
+  async restore(
+    bookmarkTime: number,
+  ): Promise<DoResult<{ bookmark: string }, "restore_unavailable">> {
+    try {
+      return await this.applyBookmark(
+        await this.ctx.storage.getBookmarkForTime(bookmarkTime * 1000),
+      );
+    } catch {
+      return fail("restore_unavailable");
+    }
+  }
+
+  /* istanbul ignore next -- reason: the local Durable Object backend implements no point-in-time recovery, so no bookmark is ever applied in tests */
+  private async applyBookmark(bookmark: string): Promise<DoResult<{ bookmark: string }, never>> {
+    await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
+    this.ctx.waitUntil(
+      Promise.resolve().then(() => this.ctx.abort("restored by an administrator")),
+    );
+    return { ok: true, bookmark };
   }
 }

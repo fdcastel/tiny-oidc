@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { auditAdmin } from "../../src/admin/audit.ts";
 import {
   boundedDiff,
   MAX_DIFF_FIELDS,
@@ -137,5 +138,44 @@ describe("boundedDiff", () => {
     const capped = boundedDiff({}, wide);
     expect(Object.keys(capped)).toHaveLength(MAX_DIFF_FIELDS + 1);
     expect(capped["…"]).toEqual({ changed: true });
+  });
+});
+
+describe("auditAdmin", () => {
+  it("[TIO-ADMIN-002] records the administrator as actor with the target and a diff when either side is given, and no diff otherwise", () => {
+    const a = auditor();
+    const admin = { kind: "admin", id: "admin-1", subject: "user", token: {} };
+    const c = {
+      get: (key: string) => (key === "admin" ? admin : a),
+    } as unknown as Parameters<typeof auditAdmin>[0];
+    const deleted = auditAdmin(c, {
+      type: "client.deleted",
+      target: "c_old",
+      client_id: "c_old",
+      before: { client_name: "Old", client_secret_hash: "h" },
+    });
+    expect(deleted).toMatchObject({
+      actor: { kind: "admin", id: "admin-1" },
+      outcome: "success",
+      user_id: null,
+      client_id: "c_old",
+      upstream: null,
+      sid: null,
+      reason: null,
+      data: {
+        target: "c_old",
+        diff: { client_name: { from: "Old", to: null }, client_secret_hash: { changed: true } },
+      },
+    });
+    const plain = auditAdmin(c, {
+      type: "admin.import_batch",
+      target: "batch-1",
+      outcome: "failure",
+      reason: "partial",
+      data: { lines: 3 },
+    });
+    expect(plain.data).toEqual({ target: "batch-1", lines: 3 });
+    expect(plain).toMatchObject({ outcome: "failure", reason: "partial" });
+    expect(a.events).toHaveLength(2);
   });
 });

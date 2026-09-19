@@ -1,11 +1,12 @@
 import type { Db } from "../db/db.ts";
+import { insertIdentityStatement } from "../db/identities.ts";
 import {
   groupIdsByName,
   insertMembershipStatements,
   insertUserStatement,
   setUserStatus,
 } from "../db/users.ts";
-import type { UserDO, UserProfile } from "../do/UserDO.ts";
+import type { NewIdentity, UserDO, UserProfile } from "../do/UserDO.ts";
 import type { Env } from "../env.ts";
 import { isValidEmail, normalizeEmail } from "./email.ts";
 
@@ -22,13 +23,20 @@ export interface NewUser {
   display_name: string | null;
   /** Group names; every one must exist. */
   groups: string[];
+  /** Upstream identities to link at creation (admin, import); ids are the caller's UUID v7s. */
+  identities?: NewIdentity[];
 }
 
 export type CreateUserResult =
   | { ok: true; profile: UserProfile }
   | {
       ok: false;
-      error: "email_invalid" | "account_exists" | "group_unknown" | "temporarily_unavailable";
+      error:
+        | "email_invalid"
+        | "account_exists"
+        | "identity_already_linked"
+        | "group_unknown"
+        | "temporarily_unavailable";
     };
 
 export function userStub(env: Env, id: string): DurableObjectStub<UserDO> {
@@ -58,14 +66,25 @@ export async function createUser(
     email_verified: input.email_verified,
     display_name: input.display_name,
   };
-  // 1. Claim the row and the memberships; the partial unique index refuses a second verified email.
+  const identities = input.identities ?? [];
+  // 1. Claim the row, the memberships and the identity pairs; the partial unique index
+  //    refuses a second verified email, the index primary key a second holder of a pair.
   try {
     await db.batch([
       insertUserStatement(db, row, now),
       ...insertMembershipStatements(db, input.id, ids, now),
+      ...identities.map((identity) =>
+        insertIdentityStatement(db, identity.issuer, identity.subject, input.id, now),
+      ),
     ]);
   } catch (error) {
-    if (String(error).includes("UNIQUE")) return { ok: false, error: "account_exists" };
+    const message = String(error);
+    if (message.includes("UNIQUE")) {
+      return {
+        ok: false,
+        error: message.includes("identity_index") ? "identity_already_linked" : "account_exists",
+      };
+    }
     throw error;
   }
   // 2. The Durable Object.
@@ -84,6 +103,10 @@ export async function createUser(
     );
     if (!initialized.ok) return { ok: false, error: "temporarily_unavailable" };
     profile = initialized.profile;
+    for (const identity of identities) {
+      const linked = await userStub(env, input.id).addIdentity(identity, now);
+      if (!linked.ok) return { ok: false, error: "temporarily_unavailable" };
+    }
   } catch {
     return { ok: false, error: "temporarily_unavailable" };
   }

@@ -141,7 +141,32 @@ function interactionRoutes(): Route[] {
 
 /** The Admin API (§9.4): JSON under /api/v1/admin, bearer-protected, public CORS (TIO-HTTP-003). */
 function adminRoutes(): Route[] {
-  const operations: [Route["method"], string][] = [["GET", "users"]];
+  const operations: [Route["method"], string][] = [
+    ["GET", "users"],
+    ["POST", "users"],
+    ["GET", "users/:id"],
+    ["PATCH", "users/:id"],
+    ["DELETE", "users/:id"],
+    ["POST", "users/:id/disable"],
+    ["POST", "users/:id/enable"],
+    ["GET", "users/:id/passkeys"],
+    ["DELETE", "users/:id/passkeys/:pid"],
+    ["GET", "users/:id/identities"],
+    ["DELETE", "users/:id/identities/:iid"],
+    ["GET", "users/:id/sessions"],
+    ["DELETE", "users/:id/sessions/:sid"],
+    ["DELETE", "users/:id/sessions"],
+    ["GET", "users/:id/refresh-families"],
+    ["DELETE", "users/:id/refresh-families/:fid"],
+    ["DELETE", "users/:id/refresh-families"],
+    ["GET", "users/:id/grants"],
+    ["DELETE", "users/:id/grants/:client_id"],
+    ["GET", "users/:id/events"],
+    ["POST", "users/:id/invitations"],
+    ["POST", "users/:id/reindex"],
+    ["GET", "users/:id/export"],
+    ["POST", "users/:id/restore"],
+  ];
   return operations.map(
     ([method, path]): Route => ({
       method,

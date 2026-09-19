@@ -3,7 +3,31 @@ import type { Handler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { requireAdmin } from "../admin/auth.ts";
 import { bootstrapHandler } from "../admin/bootstrap.ts";
-import { listUsersHandler } from "../admin/users.ts";
+import {
+  createRecoverInvitationHandler,
+  createUserHandler,
+  deleteFamiliesOfClientHandler,
+  deleteFamilyHandler,
+  deleteGrantHandler,
+  deleteIdentityHandler,
+  deletePasskeyHandler,
+  deleteSessionHandler,
+  deleteSessionsHandler,
+  deleteUserHandler,
+  eventsNotImplemented,
+  exportUserHandler,
+  getUserHandler,
+  listFamiliesHandler,
+  listGrantsHandler,
+  listIdentitiesHandler,
+  listPasskeysHandler,
+  listSessionsHandler,
+  listUsersHandler,
+  patchUserHandler,
+  reindexUserHandler,
+  restoreUserHandler,
+  setDisabledHandler,
+} from "../admin/users.ts";
 import { API_INFO, OPENAPI_PATH, registerApi } from "../api/definitions.ts";
 import { Auditor } from "../audit/events.ts";
 import { KeyStore } from "../crypto/keystore.ts";
@@ -205,7 +229,31 @@ export function createApp(deps: AppDeps) {
     if (c.req.path === BOOTSTRAP_PATH) return next();
     return requireAdmin(deps.clock)(c, next);
   });
-  app.get("/api/v1/admin/users", listUsersHandler(deps.clock));
+  const users = "/api/v1/admin/users";
+  app.get(users, listUsersHandler(deps.clock));
+  app.post(users, createUserHandler(deps.clock));
+  app.get(`${users}/:id`, getUserHandler(deps.clock));
+  app.patch(`${users}/:id`, patchUserHandler(deps.clock));
+  app.delete(`${users}/:id`, deleteUserHandler(deps.clock));
+  app.post(`${users}/:id/disable`, setDisabledHandler(deps.clock, true));
+  app.post(`${users}/:id/enable`, setDisabledHandler(deps.clock, false));
+  app.get(`${users}/:id/passkeys`, listPasskeysHandler(deps.clock));
+  app.delete(`${users}/:id/passkeys/:pid`, deletePasskeyHandler(deps.clock));
+  app.get(`${users}/:id/identities`, listIdentitiesHandler(deps.clock));
+  app.delete(`${users}/:id/identities/:iid`, deleteIdentityHandler(deps.clock));
+  app.get(`${users}/:id/sessions`, listSessionsHandler(deps.clock));
+  app.delete(`${users}/:id/sessions/:sid`, deleteSessionHandler(deps.clock));
+  app.delete(`${users}/:id/sessions`, deleteSessionsHandler(deps.clock));
+  app.get(`${users}/:id/refresh-families`, listFamiliesHandler(deps.clock));
+  app.delete(`${users}/:id/refresh-families/:fid`, deleteFamilyHandler(deps.clock));
+  app.delete(`${users}/:id/refresh-families`, deleteFamiliesOfClientHandler(deps.clock));
+  app.get(`${users}/:id/grants`, listGrantsHandler());
+  app.delete(`${users}/:id/grants/:client_id`, deleteGrantHandler(deps.clock));
+  app.get(`${users}/:id/events`, eventsNotImplemented);
+  app.post(`${users}/:id/invitations`, createRecoverInvitationHandler(deps.clock));
+  app.post(`${users}/:id/reindex`, reindexUserHandler(deps.clock));
+  app.get(`${users}/:id/export`, exportUserHandler(deps.clock));
+  app.post(`${users}/:id/restore`, restoreUserHandler(deps.clock));
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

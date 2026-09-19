@@ -192,6 +192,75 @@ export async function listUsers(
   return rows.results.map(decode);
 }
 
+// --- mirror maintenance (§4.6) --------------------------------------------------
+
+export interface UserMirror {
+  email: string | null;
+  email_norm: string | null;
+  email_verified: boolean;
+  display_name: string | null;
+}
+
+/** Statement rewriting the mirrored attributes of a row (profile update, reindex). */
+export function updateUserMirrorStatement(db: Db, id: string, mirror: UserMirror, now: number) {
+  return db
+    .prepare(
+      "UPDATE users SET email = ?, email_norm = ?, email_verified = ?, display_name = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(
+      mirror.email,
+      mirror.email_norm,
+      mirror.email_verified ? 1 : 0,
+      mirror.display_name,
+      now,
+      id,
+    );
+}
+
+/** Removes the row; index rows, memberships and bound invitations cascade (TIO-DATA-010). */
+export async function deleteUserRow(db: Db, id: string): Promise<boolean> {
+  const result = await db.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
+  return result.meta.changes === 1;
+}
+
+/** Statements replacing a user's `passkey_index` rows with `credentialIds` (reindex). */
+export function replacePasskeyIndexStatements(
+  db: Db,
+  userId: string,
+  credentialIds: string[],
+  now: number,
+) {
+  return [
+    db.prepare("DELETE FROM passkey_index WHERE user_id = ?").bind(userId),
+    ...credentialIds.map((credentialId) =>
+      db
+        .prepare(
+          "INSERT OR REPLACE INTO passkey_index (credential_id, user_id, created_at) VALUES (?, ?, ?)",
+        )
+        .bind(credentialId, userId, now),
+    ),
+  ];
+}
+
+/** Statements replacing a user's `identity_index` rows (reindex). */
+export function replaceIdentityIndexStatements(
+  db: Db,
+  userId: string,
+  identities: { issuer: string; subject: string }[],
+  now: number,
+) {
+  return [
+    db.prepare("DELETE FROM identity_index WHERE user_id = ?").bind(userId),
+    ...identities.map((identity) =>
+      db
+        .prepare(
+          "INSERT OR REPLACE INTO identity_index (issuer, subject, user_id, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind(identity.issuer, identity.subject, userId, now),
+    ),
+  ];
+}
+
 // --- passkey_index ----------------------------------------------------------
 
 /** The user holding a credential id, from the index; null when unknown. */

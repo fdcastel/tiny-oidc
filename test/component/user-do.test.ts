@@ -1300,3 +1300,54 @@ describe("UserDO disabled users and constructed inconsistencies", () => {
     });
   });
 });
+
+describe("UserDO administration (§9.4)", () => {
+  it("[TIO-DATA-008] updateProfile keeps what the patch leaves out, resets email_verified when the email changes unless told otherwise, and refuses on a destroyed object", async () => {
+    const { stub } = await newUser();
+    const trusted = await stub.updateProfile({ email_verified: true }, clock.now());
+    expect(trusted.ok && trusted.profile.email_verified).toBe(true);
+    const renamed = await stub.updateProfile({ display_name: "Renamed" }, clock.now());
+    expect(renamed.ok && renamed.profile).toMatchObject({
+      display_name: "Renamed",
+      email_verified: true,
+    });
+    const moved = await stub.updateProfile(
+      { email: "moved@example.com", email_norm: "moved@example.com" },
+      clock.now(),
+    );
+    expect(moved.ok && moved.profile).toMatchObject({
+      email: "moved@example.com",
+      email_norm: "moved@example.com",
+      email_verified: false,
+      display_name: "Renamed",
+    });
+    const same = await stub.updateProfile(
+      { email: "moved@example.com", email_norm: "moved@example.com" },
+      clock.now(),
+    );
+    expect(same.ok && same.profile.email_verified).toBe(false);
+    const verified = await stub.updateProfile({ email_verified: true }, clock.now());
+    expect(verified.ok && verified.profile.email_verified).toBe(true);
+    const cleared = await stub.updateProfile({ email: null, display_name: null }, clock.now());
+    expect(cleared.ok && cleared.profile).toMatchObject({
+      email: null,
+      email_norm: null,
+      email_verified: false,
+      display_name: null,
+    });
+    await stub.destroy();
+    expect(await stub.updateProfile({ display_name: "x" }, clock.now())).toEqual({
+      ok: false,
+      error: "user_destroyed",
+    });
+    for (const call of [
+      stub.listFamilies(clock.now()),
+      stub.revokeFamiliesOfClient("c", clock.now(), "admin"),
+      stub.counts(clock.now()),
+      stub.exportState(clock.now()),
+      stub.grantClientIds(),
+    ]) {
+      expect(await call).toEqual({ ok: false, error: "user_destroyed" });
+    }
+  });
+});
