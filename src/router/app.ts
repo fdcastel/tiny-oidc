@@ -7,6 +7,7 @@ import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } from "../env.ts";
 import { abortHandler, consentHandler, getInteractionHandler } from "../interaction/api.ts";
+import { completeHandler } from "../interaction/complete.ts";
 import { passkeyOptionsHandler, passkeyVerifyHandler } from "../interaction/passkey.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
@@ -168,7 +169,7 @@ export function createApp(deps: AppDeps) {
   app.post("/revoke", notImplemented);
   app.on(["GET", "POST"], "/logout", notImplemented);
   app.on(["GET", "POST"], "/federation/callback", notImplemented);
-  app.get("/interactions/:id/complete", notImplemented);
+  app.get("/interactions/:id/complete", completeHandler(deps.clock));
   // Interaction API (§7); the JSON APIs are documented from their route definitions.
   app.get("/api/v1/interactions/:id", getInteractionHandler(deps.clock));
   app.post("/api/v1/interactions/:id/consent", consentHandler(deps.clock));

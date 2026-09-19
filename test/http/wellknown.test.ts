@@ -226,7 +226,6 @@ describe("protocol endpoints before Phase 2", () => {
       ["POST", "/logout", true],
       ["GET", "/federation/callback", true],
       ["POST", "/federation/callback", true],
-      ["GET", "/interactions/abc/complete", true],
     ];
     for (const [method, path, navigation] of cases) {
       const res = await op(path, { method, headers: { Origin: "https://app.example.org" } });
