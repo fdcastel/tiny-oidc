@@ -2259,6 +2259,40 @@
           }
         },
         "additionalProperties": false
+      },
+      "ImportResult": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "unchanged",
+              "conflict",
+              "error"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invitation_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "line",
+          "status"
+        ]
       }
     },
     "parameters": {}
@@ -8530,6 +8564,102 @@
           },
           "403": {
             "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/import/users": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Import users from NDJSON (≤ 1,000 lines, ≤ 8 MB): one result line per input line, in order; idempotent per line, 50 creations in flight",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "type": "string",
+                "description": "One JSON object per line: { id?, email?, email_verified?, display_name?, groups?, identities?: [{issuer, subject, email?, email_verified?}], disabled?, created_at?, create_invitation?, invitation_expires_in? }"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One ImportResult per line, as NDJSON",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "payload_too_large",
             "content": {
               "application/json": {
                 "schema": {

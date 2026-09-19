@@ -201,6 +201,7 @@ function adminRoutes(): Route[] {
     ["POST", "maintenance/purge"],
     ["POST", "maintenance/rekey"],
     ["POST", "maintenance/reindex"],
+    ["POST", "import/users"],
   ];
   return operations.map(
     ([method, path]): Route => ({

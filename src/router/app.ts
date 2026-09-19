@@ -21,6 +21,7 @@ import {
   membershipHandler,
   patchGroupHandler,
 } from "../admin/groups.ts";
+import { importUsersHandler } from "../admin/import.ts";
 import {
   createInvitationHandler,
   deleteInvitationHandler,
@@ -336,6 +337,7 @@ export function createApp(deps: AppDeps) {
   app.post("/api/v1/admin/maintenance/purge", purgeHandler(deps.clock));
   app.post("/api/v1/admin/maintenance/rekey", rekeyHandler);
   app.post("/api/v1/admin/maintenance/reindex", reindexAllHandler(deps.clock));
+  app.post("/api/v1/admin/import/users", importUsersHandler(deps.clock));
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

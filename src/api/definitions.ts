@@ -1913,6 +1913,49 @@ export const ADMIN_SYSTEM_ROUTES = [
   adminMaintenanceReindexRoute,
 ] as const;
 
+// Bulk import (§9.4 Import, TIO-ADMIN-020)
+
+export const ImportResultSchema = z
+  .object({
+    line: z.int(),
+    status: z.enum(["created", "unchanged", "conflict", "error"]),
+    id: z.uuid().optional(),
+    invitation_url: z.string().nullable().optional(),
+    error: z.string().optional(),
+  })
+  .openapi("ImportResult");
+
+export const adminImportUsersRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/import/users",
+  tags: ["admin"],
+  summary:
+    "Import users from NDJSON (≤ 1,000 lines, ≤ 8 MB): one result line per input line, in order; idempotent per line, 50 creations in flight",
+  security: adminSecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/x-ndjson": {
+          schema: z.string().openapi({
+            description:
+              "One JSON object per line: { id?, email?, email_verified?, display_name?, groups?, identities?: [{issuer, subject, email?, email_verified?}], disabled?, created_at?, create_invitation?, invitation_expires_in? }",
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "One ImportResult per line, as NDJSON",
+      content: { "application/x-ndjson": { schema: ImportResultSchema } },
+    },
+    400: errorResponse("invalid_request"),
+    413: errorResponse("payload_too_large"),
+    ...ADMIN_ERRORS,
+  },
+});
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -1930,6 +1973,7 @@ export const API_ROUTES = [
   ...ADMIN_UPSTREAM_ROUTES,
   ...ADMIN_INVITATION_ROUTES,
   ...ADMIN_SYSTEM_ROUTES,
+  adminImportUsersRoute,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */
