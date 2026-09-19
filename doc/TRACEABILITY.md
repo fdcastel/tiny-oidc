@@ -52,7 +52,7 @@ Current phase: 7. Requirements: 283 (ci: 19, conformance: 2, covered: 240, load:
 | TIO-DATA-024 | §4.4 | withdrawn | — | withdrawn |  |
 | TIO-DATA-025 | §4.5 | test | 6 | covered | test/http/audit-sink.test.ts |
 | TIO-DATA-026 | §4.6 | test | 3 | covered | test/component/users.test.ts<br>test/http/admin-users.test.ts<br>test/http/federation.test.ts<br>test/http/passkey-interaction.test.ts |
-| TIO-DATA-027 | §4.6 | test | 3 | covered | test/http/admin-system.test.ts<br>test/http/admin-users.test.ts |
+| TIO-DATA-027 | §4.6 | test | 3 | covered | test/http/admin-import.test.ts<br>test/http/admin-system.test.ts<br>test/http/admin-users.test.ts |
 | TIO-HTTP-001 | §5.1 | test | 0 | covered | test/http/router.test.ts |
 | TIO-DISC-001 | §5.2 | test | 1 | covered | test/http/wellknown.test.ts |
 | TIO-DISC-002 | §5.2 | test | 1 | covered | test/http/wellknown.test.ts |
@@ -262,7 +262,7 @@ Current phase: 7. Requirements: 283 (ci: 19, conformance: 2, covered: 240, load:
 | TIO-DEPLOY-009 | §12.3 | review | — | review |  |
 | TIO-DEPLOY-010 | §12.3 | review | — | review |  |
 | TIO-DEPLOY-011 | §12.3 | ci | — | ci |  |
-| TIO-DEPLOY-003 | §12.3 | review | — | review | test/http/admin-users.test.ts |
+| TIO-DEPLOY-003 | §12.3 | review | — | review | test/http/admin-import.test.ts<br>test/http/admin-users.test.ts |
 | TIO-DEPLOY-004 | §12.3 | review | — | review |  |
 | TIO-CFG-010 | §12.4 | test | 3 | covered | test/component/maintenance.test.ts<br>test/http/admin-system.test.ts<br>test/http/scheduled.test.ts |
 | TIO-TEST-001 | §13.1 | ci | — | ci |  |

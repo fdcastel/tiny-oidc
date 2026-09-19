@@ -12,7 +12,7 @@ import { admin, adminSettings, adminUser } from "../support/admin.ts";
 import { harness, LOGIN_ORIGIN } from "../support/http.ts";
 import { testKeys } from "../support/keys.ts";
 import { env } from "../support/op.ts";
-import { newUser } from "../support/passkeys.ts";
+import { newUser, userWithPasskey } from "../support/passkeys.ts";
 import { brokenDoFor, failingD1, sabotageDo } from "./faults.ts";
 
 // Bulk import (spec §9.4 Import, TIO-ADMIN-020): NDJSON in, one result per
@@ -282,6 +282,58 @@ describe("comparison and edge cases", () => {
     expect(vanishing[0]).toMatchObject({
       status: "created",
       invitation_url: expect.stringContaining("invitation="),
+    });
+  });
+
+  it("[TIO-DEPLOY-003] [TIO-DATA-027] the D1 restore drill of the runbook: a user whose directory rows are gone is re-adopted by a line carrying its id, and a reindex rebuilds the mirror and the index rows from the object", async () => {
+    const lost = await userWithPasskey(clock, {
+      email: "Lost@Example.com",
+      email_verified: true,
+      display_name: "Lost",
+      groups: ["staff"],
+    });
+    const id = lost.profile.id;
+    await lost.stub.addIdentity(
+      {
+        id: new UuidV7(clock).next(),
+        issuer: "https://idp.example.com",
+        subject: "lost-at-idp",
+        email: null,
+        email_verified: null,
+        name: null,
+      },
+      clock.now(),
+    );
+    // The directory restored to a point before the creation: every row of the user is gone.
+    await db.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
+    expect(await getUser(db, id)).toBeNull();
+    const passkeyRows = () =>
+      db
+        .prepare("SELECT COUNT(*) AS n FROM passkey_index WHERE user_id = ?")
+        .bind(id)
+        .first<{ n: number }>();
+    expect((await passkeyRows())?.n).toBe(0);
+    // Step 1: an import line with the id alone re-creates the row; the object keeps its state.
+    const adopted = await results(await importLines([{ id }]));
+    expect(adopted[0]).toMatchObject({ status: "created", id });
+    expect(await getUser(db, id)).toMatchObject({ status: "active", email: null });
+    // Step 2: the reindex rebuilds the mirror and the indexes from the object.
+    const report = await admin(h, token, `users/${id}/reindex`, { method: "POST" });
+    expect(report.status).toBe(200);
+    expect(await report.json()).toMatchObject({ passkeys: 1, identities: 1, groups: 1 });
+    expect(await getUser(db, id)).toMatchObject({
+      status: "active",
+      email: "Lost@Example.com",
+      email_norm: "lost@example.com",
+      email_verified: true,
+      display_name: "Lost",
+    });
+    expect((await passkeyRows())?.n).toBe(1);
+    expect((await lookupIdentity(db, "https://idp.example.com", "lost-at-idp"))?.user_id).toBe(id);
+    const detail = await admin(h, token, `users/${id}`);
+    expect(await detail.json()).toMatchObject({
+      groups: ["staff"],
+      counts: { passkeys: 1, identities: 1 },
     });
   });
 });
