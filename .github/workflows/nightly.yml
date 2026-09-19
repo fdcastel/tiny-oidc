@@ -1,0 +1,49 @@
+# Nightly gates against staging (spec §13.9, §13.10, §13.1 mutation). Staging is
+# reached over HTTPS only; the URL and the admin credential for the conformance
+# and load runners are repository secrets set by the owner. No Cloudflare API
+# token exists in GitHub (TIO-DEPLOY-006). The jobs are enabled by the
+# repository variable NIGHTLY_ENABLED=true once Phase 7 wires them (P7-03, P7-04, P7-07).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: OpenID conformance suite (TIO-TEST-040, TIO-TEST-041)
+    if: ${{ vars.NIGHTLY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the conformance plans against staging
+        run: echo "conformance runner lands in P7-03" && exit 1
+
+  load:
+    name: k6 load thresholds (TIO-PERF-001, TIO-TEST-050..052)
+    if: ${{ vars.NIGHTLY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the k6 scenarios against staging
+        run: echo "k6 scenarios land in P7-04" && exit 1
+
+  mutation:
+    name: mutation testing baseline (report only)
+    if: ${{ vars.NIGHTLY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stryker
+        run: echo "mutation baseline lands in P7-07" && exit 1

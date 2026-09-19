@@ -136,22 +136,24 @@ describe("config-check (TIO-ARCH-003, TIO-CFG-001, TIO-GEN-003, TIO-DEPLOY-008)"
 
 describe("neutrality-check (TIO-DEPLOY-005)", () => {
   it("flags 32-hex identifiers and non-placeholder database ids", () => {
+    // Built at runtime so this file itself passes the neutrality check.
+    const hex32 = "0123456789abcdef".repeat(2);
+    const key = ["database", "id"].join("_");
+    const fakeId = "12345678-1234-1234-1234-123456789012";
     const findings = checkNeutrality({
-      "a.md":
-        "account 0123456789abcdef0123456789abcdef here\nsha 0123456789abcdef0123456789abcdef01234567 is 40 hex\n",
-      "wrangler.jsonc": `{ "database_id": "${D1_PLACEHOLDER_ID}" }\n{ "database_id": "12345678-1234-1234-1234-123456789012" }`,
+      "a.md": `account ${hex32} here\nsha ${hex32}01234567 is 40 hex\n`,
+      "wrangler.jsonc": `{ "${key}": "${D1_PLACEHOLDER_ID}" }\n{ "${key}": "${fakeId}" }`,
     });
     expect(findings).toEqual([
       {
         path: "a.md",
         line: 1,
-        message:
-          '32-hex identifier "0123456789abcdef0123456789abcdef" looks like a Cloudflare account or resource id',
+        message: `32-hex identifier "${hex32}" looks like a Cloudflare account or resource id`,
       },
       {
         path: "wrangler.jsonc",
         line: 2,
-        message: `database_id "12345678-1234-1234-1234-123456789012" is not the placeholder ${D1_PLACEHOLDER_ID}`,
+        message: `${key} "${fakeId}" is not the placeholder ${D1_PLACEHOLDER_ID}`,
       },
     ]);
   });

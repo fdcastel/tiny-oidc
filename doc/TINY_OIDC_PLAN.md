@@ -1,10 +1,10 @@
-# Tiny OIDC — Implementation Plan (living document)
+#undefinedundefinedundefined 🔧 IN PROGRESS | pending | 🔧. `secretsEqual` uses `crypto.subtle.timingSafeEqual` (workerd-only), so its test lives in `test/component`; envelope property tests run in Node with fast-check |IN PROGRESS | pending | 🔧. `http` ISSUER accepted only on loopback hosts (no environment flag, TIO-GEN-004); registrable domains approximated without a PSL (`src/util/domain.ts`); `SettingsLoader` 60 s TTL, 1 h stale-if-error |IN PROGRESS | pending | Tiny. Written; runs on the first push after P0-14. Nightly cannot run `deploy.ts` (no Cloudflare token in GitHub, TIO-DEPLOY-006): the real runs happen in Workers Builds on every push to `main`; nightly reaches staging over HTTPS only |OIDC — Implementation Plan (living document)
 
 | | |
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-19 |
-| **Current focus** | `P0-03` (CI workflows), `P0-06` (env, clock, settings). |
+| **Current focus** | `P0-08` (D1 repositories), `P0-09` (Durable Objects). |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated
@@ -255,3 +255,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | Recorded the plan's own commit hash in S-04. |
 | 2026-09-19 | P0-01 and P0-02 implemented (scaffold, toolchain, migration 0001, `resetStorage`); marked in progress until CI (P0-03) runs them. |
 | 2026-09-19 | P0-04 (trace tool, phase allow-list, `doc/TRACEABILITY.md`) and P0-05 (lint rules, ignore count, config, neutrality and bundle checks) implemented with unit tests; in progress until CI runs them. |
+| 2026-09-19 | P0-03 (workflows), P0-06 (env, config, settings loader), P0-07 (crypto: random, hash, master keys, envelope, uuid) implemented with tests; `test/support/clock.ts` and `keys.ts` from P0-13. |

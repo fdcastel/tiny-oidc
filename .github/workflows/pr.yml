@@ -1,0 +1,92 @@
+# Gate set (spec §13.1, TIO-TEST-001, TIO-DEPLOY-011). Runs on every push to main
+# and on pull requests. Deploys are Workers Builds, never this workflow, and no
+# Cloudflare credential exists in GitHub (TIO-DEPLOY-006).
+name: gates
+
+on:
+  push:
+    branches: [main, production]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: lint, types, dead code, config, trace, bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Biome and requirement lint rules (TIO-TEST-060, TIO-TEST-003)
+        run: pnpm lint
+      - name: Typecheck (build)
+        run: pnpm build
+      - name: Dead code and unused dependencies
+        run: pnpm exec knip
+      - name: Configuration and neutrality checks (TIO-ARCH-003, TIO-CFG-001, TIO-GEN-003, TIO-DEPLOY-005)
+        run: pnpm check
+      - name: Generated files are current (TIO-CFG-005, §5.1 OpenAPI)
+        run: |
+          pnpm gen:config
+          pnpm gen:openapi
+          git diff --exit-code -- doc/CONFIG.md .dev.vars.example doc/openapi.json
+      - name: Traceability (TIO-TEST-006)
+        run: |
+          pnpm trace
+          git diff --exit-code -- doc/TRACEABILITY.md
+      - name: Bundle budget and content (TIO-PERF-002, TIO-GEN-002)
+        run: pnpm check:bundle
+
+  tests:
+    name: unit and workers suites with coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm gen:types
+      - name: Vitest (unit + workers), 100% coverage on src/ (TIO-TEST-002)
+        run: pnpm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  e2e:
+    name: end-to-end (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright against wrangler dev and the reference login app
+        run: pnpm test:e2e --project chromium
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
