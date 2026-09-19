@@ -24,6 +24,7 @@ import { harness, RP_REDIRECT } from "../support/http.ts";
 import { testKeys } from "../support/keys.ts";
 import { env } from "../support/op.ts";
 import { type PasskeyUser, userWithPasskey } from "../support/passkeys.ts";
+import { brokenD1, brokenDoFor, failingD1, sabotageDo } from "./faults.ts";
 
 // The admin users endpoints (spec §9.4 Users): create, read, update, status,
 // delete and the sub-resources, each writing the Durable Object first (§4.6)
@@ -89,42 +90,6 @@ async function tokensFor(user: PasskeyUser, scope = "openid offline_access"): Pr
   });
   return (await res.json()) as Tokens;
 }
-
-const brokenD1 = {
-  prepare() {
-    throw new Error("D1 down");
-  },
-  batch() {
-    throw new Error("D1 down");
-  },
-} as unknown as D1Database;
-
-/** A D1 whose statements matching `pattern` fail; everything else runs for real. */
-const failingD1 = (pattern: RegExp, batchToo = false) =>
-  ({
-    prepare(sql: string) {
-      if (pattern.test(sql)) throw new Error("D1 down");
-      return env.DB.prepare(sql);
-    },
-    batch(statements: D1PreparedStatement[]) {
-      if (batchToo) throw new Error("D1 down");
-      return env.DB.batch(statements);
-    },
-  }) as unknown as D1Database;
-
-/** An environment where one user's object fails every call, as when it is unreachable; the administrator's own still answers. */
-const brokenDoFor = (userId: string): Env =>
-  ({
-    ...env,
-    USER_DO: {
-      idFromName: (name: string) => env.USER_DO.idFromName(name),
-      get: (id: DurableObjectId) =>
-        id.equals(env.USER_DO.idFromName(userId)) ||
-        (userId === "*" && !id.equals(env.USER_DO.idFromName(rootId)))
-          ? new Proxy({}, { get: () => () => Promise.reject(new Error("DO unavailable")) })
-          : env.USER_DO.get(id),
-    },
-  }) as unknown as Env;
 
 describe("POST /api/v1/admin/users and GET /users/{id}", () => {
   it("[TIO-ADMIN-002] [TIO-DATA-008] creates a user in the §4.6 order with groups and identities, audits it, and refuses duplicates, bad emails and unknown groups", async () => {
@@ -210,7 +175,7 @@ describe("POST /api/v1/admin/users and GET /users/{id}", () => {
     expect((await call("POST", "users", {}, { env: { ...env, DB: brokenD1 } as Env })).status).toBe(
       503,
     );
-    expect((await call("POST", "users", {}, { env: brokenDoFor("*") })).status).toBe(503);
+    expect((await call("POST", "users", {}, { env: brokenDoFor("*", [rootId]) })).status).toBe(503);
   });
 
   it("[TIO-DATA-026] answers 404 for a malformed, unknown, still-creating or deliberately inconsistent user (active row without an object), and 503 when the directory is down", async () => {
@@ -773,38 +738,6 @@ describe("sub-resources", () => {
   });
 });
 
-/**
- * An environment where the nth call of `method` on one user's object destroys
- * the object first, so the call answers as a vanished user would (TIO-DATA-021).
- */
-const sabotageDo = (userId: string, method: string, nth = 1): Env => {
-  let calls = 0;
-  return {
-    ...env,
-    USER_DO: {
-      idFromName: (name: string) => env.USER_DO.idFromName(name),
-      get: (id: DurableObjectId) => {
-        const real = env.USER_DO.get(id);
-        if (userId !== "*" && !id.equals(env.USER_DO.idFromName(userId))) return real;
-        return new Proxy(real, {
-          get(target, property) {
-            const value = Reflect.get(target, property) as unknown;
-            if (property !== method || typeof value !== "function") return value;
-            return async (...args: unknown[]) => {
-              calls++;
-              if (calls === nth) await target.destroy();
-              const method = (target as unknown as Record<string, (...a: unknown[]) => unknown>)[
-                property as string
-              ] as (...a: unknown[]) => unknown;
-              return method(...args);
-            };
-          },
-        });
-      },
-    },
-  } as unknown as Env;
-};
-
 describe("objects that vanish mid-request", () => {
   it("[TIO-DATA-021] every second call to an object that was destroyed in between answers user_not_found (or 503 at creation), never a half-applied change", async () => {
     const patch = { display_name: "late" };
@@ -882,7 +815,7 @@ describe("objects that vanish mid-request", () => {
       "POST",
       "users",
       { identities: [{ issuer: "https://idp.example.com", subject: "vanish" }] },
-      { env: sabotageDo("*", "addIdentity") },
+      { env: sabotageDo("*", "addIdentity", 1, [rootId]) },
     );
     expect(created.status).toBe(503);
   });

@@ -59,9 +59,10 @@ export function requireAdmin(clock: Clock): MiddlewareHandler<AppEnv> {
     const token = await verifyAccessToken(keys, presented, config.issuerUrl, clock, false);
     if (token === null) return invalidToken();
     if (!token.scopes.includes(ADMIN_SCOPE)) return insufficient("the admin scope is required");
-    // 600 per 60 s per token (§6.7), keyed by a prefix of its jti.
+    // 600 per 60 s per token (§6.7). The key is the whole jti: a prefix of a UUID v7 is
+    // its timestamp, shared by every token minted in the same millisecond.
     const jti = token.payload.jti as string;
-    if (await limited(c.env, "admin_token", jti.slice(0, 16))) return rateLimited(c);
+    if (await limited(c.env, "admin_token", jti)) return rateLimited(c);
 
     if (token.sub === token.client_id) {
       // A service client (client_credentials): the current record decides.

@@ -954,6 +954,216 @@ export const ADMIN_USER_ROUTES = [
   adminUserRestoreRoute,
 ] as const;
 
+// Admin groups (§9.4 Groups, §3.5)
+
+export const GroupIdParams = z.object({
+  id: z.uuid().openapi({ description: "Group id (UUID v7)" }),
+});
+
+export const AdminGroupSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    description: z.string().nullable(),
+    system: z.boolean(),
+    created_at: z.int(),
+    updated_at: z.int(),
+  })
+  .openapi("AdminGroup");
+
+export const AdminGroupDetailSchema = AdminGroupSchema.extend({
+  members: z.int().openapi({ description: "From the D1 mirror (TIO-DATA-013)" }),
+}).openapi("AdminGroupDetail");
+
+export const AdminGroupCreateSchema = z
+  .object({
+    name: z.string().regex(GROUP_NAME),
+    description: z.string().max(512).nullable().optional(),
+  })
+  .strict()
+  .openapi("AdminGroupCreate");
+
+export const AdminGroupPatchSchema = z
+  .object({
+    name: z.string().regex(GROUP_NAME).optional(),
+    description: z.string().max(512).nullable().optional(),
+  })
+  .strict()
+  .openapi("AdminGroupPatch");
+
+export const PropagationSchema = z
+  .object({
+    members: z.int(),
+    failed: z.array(z.string()).openapi({ description: "Members whose object was not updated" }),
+  })
+  .openapi("Propagation");
+
+export const AdminListQuerySchema = z
+  .object({
+    limit: z.string().optional().openapi({ description: "1..200, default 50" }),
+    cursor: z.string().optional().openapi({ description: "Opaque; from next_cursor" }),
+  })
+  .strict();
+
+export const MembershipResponseSchema = z
+  .object({
+    user_id: z.uuid(),
+    groups: z.array(z.string()),
+    changed: z.boolean(),
+    partial_failure: z.boolean(),
+  })
+  .openapi("Membership");
+
+const GROUP_PATH = "/api/v1/admin/groups/{id}";
+
+export const adminGroupsListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/groups",
+  tags: ["admin"],
+  summary: "List groups (keyset-paginated)",
+  security: adminSecurity,
+  request: { query: AdminListQuerySchema },
+  responses: {
+    200: {
+      description: "A page of groups",
+      content: { "application/json": { schema: pageSchema(AdminGroupSchema, "AdminGroupPage") } },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminGroupCreateRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/groups",
+  tags: ["admin"],
+  summary: "Create a group",
+  security: adminSecurity,
+  request: { body: jsonBody(AdminGroupCreateSchema) },
+  responses: {
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: AdminGroupDetailSchema } },
+    },
+    400: errorResponse("invalid_request"),
+    409: errorResponse("group_exists"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminGroupGetRoute = createRoute({
+  method: "get",
+  path: GROUP_PATH,
+  tags: ["admin"],
+  summary: "A group with its member count",
+  security: adminSecurity,
+  request: { params: GroupIdParams },
+  responses: {
+    200: {
+      description: "The group",
+      content: { "application/json": { schema: AdminGroupDetailSchema } },
+    },
+    404: errorResponse("group_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminGroupPatchRoute = createRoute({
+  method: "patch",
+  path: GROUP_PATH,
+  tags: ["admin"],
+  summary:
+    "Rename or describe a group; a rename is propagated to every member's object (at most 1,000 members per call)",
+  security: adminSecurity,
+  request: { params: GroupIdParams, body: jsonBody(AdminGroupPatchSchema) },
+  responses: {
+    200: {
+      description: "Updated; `propagation.failed` lists members to retry",
+      content: {
+        "application/json": {
+          schema: AdminGroupDetailSchema.extend({ propagation: PropagationSchema.nullable() }),
+        },
+      },
+    },
+    400: errorResponse("invalid_request"),
+    404: errorResponse("group_not_found"),
+    409: errorResponse("group_exists, system_group or group_too_large"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminGroupDeleteRoute = createRoute({
+  method: "delete",
+  path: GROUP_PATH,
+  tags: ["admin"],
+  summary:
+    "Delete a group; the name leaves every member's object first (at most 1,000 members per call)",
+  security: adminSecurity,
+  request: { params: GroupIdParams },
+  responses: {
+    200: {
+      description: "Deleted; `propagation.failed` lists members whose object kept the name",
+      content: { "application/json": { schema: z.object({ propagation: PropagationSchema }) } },
+    },
+    404: errorResponse("group_not_found"),
+    409: errorResponse("system_group or group_too_large"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminGroupMembersRoute = createRoute({
+  method: "get",
+  path: `${GROUP_PATH}/members`,
+  tags: ["admin"],
+  summary: "The group's members (users, keyset-paginated)",
+  security: adminSecurity,
+  request: { params: GroupIdParams, query: AdminListQuerySchema },
+  responses: {
+    200: {
+      description: "A page of users",
+      content: { "application/json": { schema: pageSchema(AdminUserSchema, "AdminMemberPage") } },
+    },
+    400: errorResponse("invalid_request"),
+    404: errorResponse("group_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+const membershipRoute = (method: "put" | "delete") =>
+  createRoute({
+    method,
+    path: `${GROUP_PATH}/members/{user_id}`,
+    tags: ["admin"],
+    summary:
+      method === "put"
+        ? "Add a user to the group (object first, then the mirror)"
+        : "Remove a user from the group (object first, then the mirror)",
+    security: adminSecurity,
+    request: { params: GroupIdParams.extend({ user_id: z.uuid() }) },
+    responses: {
+      200: {
+        description: "The user's groups after the change",
+        content: { "application/json": { schema: MembershipResponseSchema } },
+      },
+      404: errorResponse("group_not_found or user_not_found"),
+      ...ADMIN_ERRORS,
+    },
+  });
+
+export const adminGroupMemberAddRoute = membershipRoute("put");
+export const adminGroupMemberRemoveRoute = membershipRoute("delete");
+
+export const ADMIN_GROUP_ROUTES = [
+  adminGroupsListRoute,
+  adminGroupCreateRoute,
+  adminGroupGetRoute,
+  adminGroupPatchRoute,
+  adminGroupDeleteRoute,
+  adminGroupMembersRoute,
+  adminGroupMemberAddRoute,
+  adminGroupMemberRemoveRoute,
+] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -966,6 +1176,7 @@ export const API_ROUTES = [
   interactionAbortRoute,
   adminBootstrapRoute,
   ...ADMIN_USER_ROUTES,
+  ...ADMIN_GROUP_ROUTES,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */

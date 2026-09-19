@@ -36,9 +36,9 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 197, defer
 | TIO-DATA-008 | §3.3 | test | 3 | covered | test/component/user-do.test.ts<br>test/http/admin-users.test.ts |
 | TIO-DATA-009 | §3.4 | test | 3 | covered | test/component/user-do.test.ts<br>test/http/admin-users.test.ts |
 | TIO-DATA-010 | §3.4 | test | 3 | covered | test/http/admin-users.test.ts |
-| TIO-DATA-011 | §3.5 | test | 2 | covered | test/http/bootstrap.test.ts |
-| TIO-DATA-012 | §3.5 | test | 2 | covered | test/http/bootstrap.test.ts |
-| TIO-DATA-013 | §3.5 | test | 3 | covered | test/http/admin-users.test.ts<br>test/http/bootstrap.test.ts |
+| TIO-DATA-011 | §3.5 | test | 2 | covered | test/http/admin-groups.test.ts<br>test/http/bootstrap.test.ts |
+| TIO-DATA-012 | §3.5 | test | 2 | covered | test/component/groups.test.ts<br>test/http/admin-groups.test.ts<br>test/http/bootstrap.test.ts |
+| TIO-DATA-013 | §3.5 | test | 3 | covered | test/http/admin-groups.test.ts<br>test/http/admin-users.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-DATA-014 | §3.7 | test | 3 | covered | test/component/user-do.test.ts |
 | TIO-DATA-015 | §4.1 | test | 0 | covered | test/scripts/lint-rules.test.ts |
 | TIO-DATA-016 | §4.1 | test | 3 | covered | test/component/settings.test.ts |
@@ -46,7 +46,7 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 197, defer
 | TIO-DATA-018 | §4.2 | withdrawn | — | withdrawn |  |
 | TIO-DATA-019 | §4.2 | test | 0 | covered | test/component/durable-objects.test.ts |
 | TIO-DATA-020 | §4.2 | test | 2 | covered | test/concurrency/user-do.test.ts |
-| TIO-DATA-021 | §4.2 | test | 0 | covered | test/component/durable-objects.test.ts<br>test/component/user-do.test.ts<br>test/component/users.test.ts<br>test/http/admin-users.test.ts |
+| TIO-DATA-021 | §4.2 | test | 0 | covered | test/component/durable-objects.test.ts<br>test/component/user-do.test.ts<br>test/component/users.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-users.test.ts |
 | TIO-DATA-022 | §4.3 | test | 0 | covered | test/component/durable-objects.test.ts |
 | TIO-DATA-023 | §4.3 | test | 0 | covered | test/component/durable-objects.test.ts<br>test/unit/state-machine.test.ts |
 | TIO-DATA-024 | §4.4 | withdrawn | — | withdrawn |  |
@@ -220,7 +220,7 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 197, defer
 | TIO-ADMIN-001 | §9.1 | test | 3 | covered | test/http/admin-auth.test.ts |
 | TIO-ADMIN-002 | §9.1 | test | 3 | covered | test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
 | TIO-ADMIN-003 | §9.1 | test | 3 | covered | test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
-| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-users-list.test.ts |
+| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-users-list.test.ts |
 | TIO-ADMIN-010 | §9.3 | test | 2 | covered | test/http/bootstrap.test.ts |
 | TIO-ADMIN-011 | §9.3 | test | 2 | covered | test/http/admin-auth.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-020 | §9.4 | test | 3 | deferred |  |

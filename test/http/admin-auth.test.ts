@@ -105,9 +105,7 @@ describe("Admin API authorization", () => {
     const jti = JSON.parse(
       atob((limited.access_token.split(".")[1] as string).replace(/-/g, "+").replace(/_/g, "/")),
     ).jti as string;
-    while (
-      (await env.RL_CLIENT.limit({ key: limitKey("admin_token", jti.slice(0, 16)) })).success
-    ) {}
+    while ((await env.RL_CLIENT.limit({ key: limitKey("admin_token", jti) })).success) {}
     const throttled = await admin(h, limited.access_token, "users");
     expect(throttled.status).toBe(429);
     expect(throttled.headers.get("Retry-After")).toBe("10");

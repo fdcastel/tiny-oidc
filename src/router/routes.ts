@@ -166,6 +166,14 @@ function adminRoutes(): Route[] {
     ["POST", "users/:id/reindex"],
     ["GET", "users/:id/export"],
     ["POST", "users/:id/restore"],
+    ["GET", "groups"],
+    ["POST", "groups"],
+    ["GET", "groups/:id"],
+    ["PATCH", "groups/:id"],
+    ["DELETE", "groups/:id"],
+    ["GET", "groups/:id/members"],
+    ["PUT", "groups/:id/members/:user_id"],
+    ["DELETE", "groups/:id/members/:user_id"],
   ];
   return operations.map(
     ([method, path]): Route => ({

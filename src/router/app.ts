@@ -4,6 +4,15 @@ import { bodyLimit } from "hono/body-limit";
 import { requireAdmin } from "../admin/auth.ts";
 import { bootstrapHandler } from "../admin/bootstrap.ts";
 import {
+  createGroupHandler,
+  deleteGroupHandler,
+  getGroupHandler,
+  listGroupsHandler,
+  listMembersHandler,
+  membershipHandler,
+  patchGroupHandler,
+} from "../admin/groups.ts";
+import {
   createRecoverInvitationHandler,
   createUserHandler,
   deleteFamiliesOfClientHandler,
@@ -254,6 +263,15 @@ export function createApp(deps: AppDeps) {
   app.post(`${users}/:id/reindex`, reindexUserHandler(deps.clock));
   app.get(`${users}/:id/export`, exportUserHandler(deps.clock));
   app.post(`${users}/:id/restore`, restoreUserHandler(deps.clock));
+  const groups = "/api/v1/admin/groups";
+  app.get(groups, listGroupsHandler(deps.clock));
+  app.post(groups, createGroupHandler(deps.clock));
+  app.get(`${groups}/:id`, getGroupHandler);
+  app.patch(`${groups}/:id`, patchGroupHandler(deps.clock));
+  app.delete(`${groups}/:id`, deleteGroupHandler(deps.clock));
+  app.get(`${groups}/:id/members`, listMembersHandler(deps.clock));
+  app.put(`${groups}/:id/members/:user_id`, membershipHandler(deps.clock, true));
+  app.delete(`${groups}/:id/members/:user_id`, membershipHandler(deps.clock, false));
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

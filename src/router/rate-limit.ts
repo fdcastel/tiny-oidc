@@ -26,7 +26,7 @@ export const LIMIT_CLASSES = {
   client_auth_failed: { binding: "RL_CLIENT", prefix: "fail" },
   /** Successful `/token` calls per client id. */
   client_token: { binding: "RL_CLIENT", prefix: "tok" },
-  /** `/api/v1/admin/*` per admin token (`jti` prefix). */
+  /** `/api/v1/admin/*` per admin token (its `jti`). */
   admin_token: { binding: "RL_CLIENT", prefix: "adm" },
   /** Wrong bootstrap tokens per IP (TIO-ADMIN-010). */
   ip_bootstrap: { binding: "RL_IP", prefix: "boot" },

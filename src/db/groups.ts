@@ -110,3 +110,98 @@ export async function listGroups(db: Db): Promise<GroupRow[]> {
     .all<RawGroupRow>();
   return rows.results.map((row) => ({ ...row, system: row.system === 1 }));
 }
+
+export async function getGroupById(db: Db, id: string): Promise<GroupRow | null> {
+  const raw = await db
+    .prepare(
+      "SELECT id, name, description, system, created_at, updated_at FROM groups WHERE id = ?",
+    )
+    .bind(id)
+    .first<RawGroupRow>();
+  return raw === null ? null : { ...raw, system: raw.system === 1 };
+}
+
+export interface GroupPatch {
+  name?: string;
+  description?: string | null;
+}
+
+export type UpdateGroupResult = "changed" | "not_found" | "system_group" | "group_exists";
+
+/** Rewrites name and/or description; the name of a system group is fixed (TIO-DATA-012). */
+export async function updateGroup(
+  db: Db,
+  id: string,
+  patch: GroupPatch,
+  now: number,
+): Promise<UpdateGroupResult> {
+  const current = await getGroupById(db, id);
+  if (current === null) return "not_found";
+  if (patch.name !== undefined && patch.name !== current.name && current.system) {
+    return "system_group";
+  }
+  try {
+    await db
+      .prepare("UPDATE groups SET name = ?, description = ?, updated_at = ? WHERE id = ?")
+      .bind(
+        patch.name ?? current.name,
+        patch.description === undefined ? current.description : patch.description,
+        now,
+        id,
+      )
+      .run();
+  } catch (error) {
+    if (String(error).includes("UNIQUE")) return "group_exists";
+    throw error;
+  }
+  return "changed";
+}
+
+export interface GroupKeyset {
+  created_at: number;
+  id: string;
+}
+
+/** The keyset query behind `GET /admin/groups`, walking `groups_created`. */
+export function listGroupsStatement(db: Db, after: GroupKeyset | null, limit: number) {
+  const base = "SELECT id, name, description, system, created_at, updated_at FROM groups";
+  const order = " ORDER BY created_at, id LIMIT ?";
+  if (after === null) return db.prepare(base + order).bind(limit);
+  return db
+    .prepare(`${base} WHERE (created_at, id) > (?, ?)${order}`)
+    .bind(after.created_at, after.id, limit);
+}
+
+export async function listGroupsPage(
+  db: Db,
+  after: GroupKeyset | null,
+  limit: number,
+): Promise<GroupRow[]> {
+  const rows = await listGroupsStatement(db, after, limit).all<RawGroupRow>();
+  return rows.results.map((row) => ({ ...row, system: row.system === 1 }));
+}
+
+/** Up to `limit` member ids of a group, oldest membership first (rename and delete propagation). */
+export async function memberUserIds(db: Db, groupId: string, limit: number): Promise<string[]> {
+  const rows = await db
+    .prepare(
+      "SELECT user_id FROM group_members WHERE group_id = ? ORDER BY added_at, user_id LIMIT ?",
+    )
+    .bind(groupId, limit)
+    .all<{ user_id: string }>();
+  return rows.results.map((row) => row.user_id);
+}
+
+/** Statement adding one membership; a duplicate is ignored (the object already listed it). */
+export function insertMembershipStatement(db: Db, groupId: string, userId: string, now: number) {
+  return db
+    .prepare("INSERT OR IGNORE INTO group_members (group_id, user_id, added_at) VALUES (?, ?, ?)")
+    .bind(groupId, userId, now);
+}
+
+export async function deleteMembership(db: Db, groupId: string, userId: string): Promise<void> {
+  await db
+    .prepare("DELETE FROM group_members WHERE group_id = ? AND user_id = ?")
+    .bind(groupId, userId)
+    .run();
+}
