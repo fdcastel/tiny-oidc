@@ -4,7 +4,7 @@
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-19 |
-| **Current focus** | `P2-17` (Phase 2 exit, waiting on OP-01 for the staging nightly), `P3-01` (admin authorization model). |
+| **Current focus** | `P3-02` (users endpoints); `P2-17` waits on OP-01. |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated
@@ -133,8 +133,8 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 
 | ID | Task | Spec | Status | Commit | Notes |
 |---|---|---|---|---|---|
-| P3-01 | Admin authorization model (scope `admin`, `aud ∋ ISSUER`, live `admins` membership, service clients), audit of every mutation, secret-free responses, keyset pagination with signed cursors, conflict codes | TIO-ADMIN-001..004 | ❌ OPEN | — | |
-| P3-02 | Users endpoints: list/filter, create (D1 claim → DO init → activate), get, patch, disable/enable, delete, passkeys, identities, sessions, refresh families, grants, events (from `audit_hot`, view lands in P6-03), invitations, reindex, export, restore from DO bookmark | §9.4 Users, TIO-DATA-009, TIO-DATA-010, TIO-DATA-026, TIO-DATA-027, TIO-DEPLOY-003, TIO-PRIV-002 | ❌ OPEN | — | `events` row returns 501 until P6-03 |
+| P3-01 | Admin authorization model (scope `admin`, `aud ∋ ISSUER`, live `admins` membership, service clients), audit of every mutation, secret-free responses, keyset pagination with signed cursors, conflict codes | TIO-ADMIN-001..004 | ✅ DONE | pending | `src/admin/auth.ts` `requireAdmin` (401 `invalid_token` / 403 `insufficient_scope` with `WWW-Authenticate`, 429 per token jti, 503 on storage failure; a user's membership read from `UserDO.getProfile` every request, a service client's record from the cache); `src/audit/events.ts` `Auditor` (per-request §11.1 events, flushed to the log at request end; queue producer is P6-02) and `src/audit/diff.ts` `boundedDiff` (secret fields as `{changed: true}`); `src/admin/pagination.ts` (HMAC cursors under `tio/v1/cursor`, listing-bound, 1 h); `GET /admin/users` built here as the vehicle (`src/db/users.ts` `listUsersStatement`, row-value keyset on `users_created`; 10,000-row test asserts the plan and `rows_read ≤ limit + 1`). Conflict codes land with their endpoints. `test/support/admin.ts` obtains admin tokens through real logins |
+| P3-02 | Users endpoints: list/filter, create (D1 claim → DO init → activate), get, patch, disable/enable, delete, passkeys, identities, sessions, refresh families, grants, events (from `audit_hot`, view lands in P6-03), invitations, reindex, export, restore from DO bookmark | §9.4 Users, TIO-DATA-009, TIO-DATA-010, TIO-DATA-026, TIO-DATA-027, TIO-DEPLOY-003, TIO-PRIV-002 | ❌ OPEN | — | `events` row returns 501 until P6-03 `GET /users` (filters, paging) done in P3-01 |
 | P3-03 | Groups endpoints and membership with dual-write reporting (`partial_failure`) | §9.4 Groups, TIO-DATA-011..013 | ❌ OPEN | — | |
 | P3-04 | Clients endpoints: CRUD, rotate-secret (immediate), disable/enable, deletion with lazy cleanup test (delete, re-create same id) | §9.4 Clients, TIO-CLIENT-003..005 | ❌ OPEN | — | |
 | P3-05 | Upstreams endpoints: CRUD with discovery fetch and validation on create/update, secrets encrypted, `test` endpoint | §9.4 Upstreams, TIO-FED-001, TIO-FED-002 | ❌ OPEN | — | Login flow is Phase 4 |
@@ -280,3 +280,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | P2-15 interop (oauth4webapi) and e2e (Playwright, openid-client RP, real browsers with passkeys) suites; `test/support/virtual-authenticator.ts` types made portable to the Node type set so the e2e suite can reuse it. |
 | 2026-09-19 | P2-16 concurrency suite over HTTP (6 races). `InteractionDO` writes serialized with `blockConcurrencyWhile`; `/complete` claims the interaction before minting the code. Conflict recorded on the row: 20 parallel passkey verifications vs the 10-attempt limit. |
 | 2026-09-19 | Phase 2 exit (P2-17): trace phase 2, seven uncited identifiers given tests, TIO-CLIENT-004 lazy family revocation, P2-01/P2-05/P2-06/P2-08 closed. Phase 3 starts while the staging nightly waits on OP-01 (independent of it). |
+| 2026-09-19 | P3-01 admin authorization, audit emitter and diff, keyset cursors, `GET /admin/users`; the Admin API guard runs for every path under the prefix except bootstrap. |

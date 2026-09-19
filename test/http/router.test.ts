@@ -113,9 +113,9 @@ describe("HTTP conventions", () => {
     expect((await post("/token", 16 * 1024 + 1)).status).toBe(413);
     expect((await post("/token", 16 * 1024)).status).toBe(400);
     expect((await post("/api/v1/admin/users", 64 * 1024 + 1)).status).toBe(413);
-    expect((await post("/api/v1/admin/users", 64 * 1024)).status).toBe(404);
-    expect((await post("/api/v1/admin/import/users", 8 * 1024 * 1024 + 1)).status).toBe(413);
-    expect((await post("/api/v1/admin/import/users", 64 * 1024 + 1)).status).toBe(404);
+    // Within the limit the guard answers (no token), not the router.
+    expect((await post("/api/v1/admin/users", 64 * 1024)).status).toBe(401);
+    expect((await post("/api/v1/admin/import/users", 64 * 1024 + 1)).status).toBe(401);
     const tooLarge = await post("/token", 20_000);
     expect(await tooLarge.json()).toMatchObject({ error: "payload_too_large" });
     // A chunked body without Content-Length is limited while streaming.
@@ -351,6 +351,7 @@ describe("OpenAPI", () => {
       "/api/v1/interactions/{id}/consent",
       "/api/v1/interactions/{id}/abort",
       "/api/v1/admin/bootstrap",
+      "/api/v1/admin/users",
     ]);
   });
 });

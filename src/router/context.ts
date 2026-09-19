@@ -1,3 +1,5 @@
+import type { AdminActor } from "../admin/auth.ts";
+import type { Auditor } from "../audit/events.ts";
 import type { KeyStore } from "../crypto/keystore.ts";
 import type { Db } from "../db/db.ts";
 import type { Config, Env, Settings, SettingsLoader } from "../env.ts";
@@ -24,6 +26,10 @@ export interface Variables {
   keyStore: KeyStore;
   clients: ClientCache;
   jwks: RemoteJwksCache;
+  /** The request's audit events, flushed when it ends (§11.1). */
+  audit: Auditor;
+  /** Set by requireAdmin() on /api/v1/admin/* (TIO-ADMIN-001). */
+  admin?: AdminActor;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Variables };

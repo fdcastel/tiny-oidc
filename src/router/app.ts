@@ -1,8 +1,11 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Handler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { requireAdmin } from "../admin/auth.ts";
 import { bootstrapHandler } from "../admin/bootstrap.ts";
-import { API_INFO, API_ROUTES, OPENAPI_PATH } from "../api/definitions.ts";
+import { listUsersHandler } from "../admin/users.ts";
+import { API_INFO, OPENAPI_PATH, registerApi } from "../api/definitions.ts";
+import { Auditor } from "../audit/events.ts";
 import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
@@ -13,6 +16,7 @@ import { passkeyOptionsHandler, passkeyVerifyHandler } from "../interaction/pass
 import { registerOptionsHandler, registerVerifyHandler } from "../interaction/register.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
+import { sessionMetadata } from "../obs/request-meta.ts";
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
 import { ClientCache } from "../oidc/client-cache.ts";
 import { RemoteJwksCache } from "../oidc/jwks-cache.ts";
@@ -35,6 +39,7 @@ export interface AppDeps {
 
 const MAX_QUERY_BYTES = 8 * 1024;
 const HEALTH_PATH = "/api/v1/health";
+const BOOTSTRAP_PATH = "/api/v1/admin/bootstrap";
 
 /**
  * Builds the Worker's Hono application (spec §2.1, §5.14). One instance lives
@@ -108,7 +113,14 @@ export function createApp(deps: AppDeps) {
       c.res = c.json(errorBody(requestId, "server_error", "server misconfigured"), 500);
     } else {
       c.set("config", config.config);
+      const auditor = new Auditor(
+        { request_id: requestId, ...(await sessionMetadata(config.config.keys, c.req.raw)) },
+        uuids,
+        deps.clock,
+      );
+      c.set("audit", auditor);
       await next();
+      auditor.flush(logger);
     }
     const { template } = matchRoute(c.req.method, c.req.path);
     const contentLength = c.req.header("content-length");
@@ -188,8 +200,14 @@ export function createApp(deps: AppDeps) {
     app.post(`/api/v1/interactions/:id/${op}`, notImplemented);
   }
   app.post("/api/v1/admin/bootstrap", bootstrapHandler(deps.clock));
+  // Admin API (§9): every other path under the prefix needs an administrator's token.
+  app.use("/api/v1/admin/*", async (c, next) => {
+    if (c.req.path === BOOTSTRAP_PATH) return next();
+    return requireAdmin(deps.clock)(c, next);
+  });
+  app.get("/api/v1/admin/users", listUsersHandler(deps.clock));
   app.get("/login/*", loginAppHandler);
-  for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);
+  registerApi(app);
 
   app.use(OPENAPI_PATH, async (c, next) => {
     await next();

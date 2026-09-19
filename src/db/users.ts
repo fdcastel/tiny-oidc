@@ -110,6 +110,88 @@ export async function groupIdsByName(db: Db): Promise<Map<string, string>> {
   return new Map(rows.results.map((row) => [row.name, row.id]));
 }
 
+// --- listing (spec §9.2, TIO-ADMIN-004) ---------------------------------------
+
+/** Exact-match filters on indexed columns; `email` is the normalized form and matches verified emails only (TIO-DATA-007). */
+export interface UserFilters {
+  email_norm?: string;
+  status?: UserStatus;
+  group_id?: string;
+  created_after?: number;
+  created_before?: number;
+}
+
+export interface UserKeyset {
+  created_at: number;
+  id: string;
+}
+
+const USER_COLUMNS =
+  "users.id, users.email, users.email_norm, users.email_verified, users.display_name, users.status, users.created_at, users.updated_at";
+
+/**
+ * The keyset query behind `GET /admin/users`: rows after `(created_at, id)`
+ * in that order, `limit` of them, walking `users_created`. Rows in status
+ * `creating` are invisible unless asked for by status (§3.4).
+ */
+export function listUsersStatement(
+  db: Db,
+  filters: UserFilters,
+  after: UserKeyset | null,
+  limit: number,
+  explain = false,
+) {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (filters.email_norm !== undefined) {
+    where.push("users.email_norm = ? AND users.email_verified = 1");
+    binds.push(filters.email_norm);
+  }
+  if (filters.status !== undefined) {
+    where.push("users.status = ?");
+    binds.push(filters.status);
+  } else {
+    where.push("users.status <> 'creating'");
+  }
+  if (filters.group_id !== undefined) {
+    where.push("group_members.group_id = ?");
+    binds.push(filters.group_id);
+  }
+  if (filters.created_after !== undefined) {
+    where.push("users.created_at >= ?");
+    binds.push(filters.created_after);
+  }
+  if (filters.created_before !== undefined) {
+    where.push("users.created_at <= ?");
+    binds.push(filters.created_before);
+  }
+  if (after !== null) {
+    where.push("(users.created_at, users.id) > (?, ?)");
+    binds.push(after.created_at, after.id);
+  }
+  const join =
+    filters.group_id === undefined ? "" : " JOIN group_members ON group_members.user_id = users.id";
+  const sql =
+    "SELECT " +
+    USER_COLUMNS +
+    " FROM users" +
+    join +
+    " WHERE " +
+    where.join(" AND ") +
+    " ORDER BY users.created_at, users.id LIMIT ?";
+  return db.prepare((explain ? "EXPLAIN QUERY PLAN " : "") + sql).bind(...binds, limit);
+}
+
+export async function listUsers(
+  db: Db,
+  filters: UserFilters,
+  after: UserKeyset | null,
+  limit: number,
+): Promise<UserRow[]> {
+  const rows = await listUsersStatement(db, filters, after, limit).all<RawUserRow>();
+  return rows.results.map(decode);
+}
+
 // --- passkey_index ----------------------------------------------------------
 
 /** The user holding a credential id, from the index; null when unknown. */

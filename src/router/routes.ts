@@ -101,6 +101,7 @@ export const ROUTES: readonly Route[] = [
     cacheable: false,
   },
   ...interactionRoutes(),
+  ...adminRoutes(),
   {
     method: "GET",
     path: "/login/*",
@@ -136,6 +137,20 @@ function interactionRoutes(): Route[] {
       }),
     ),
   ];
+}
+
+/** The Admin API (§9.4): JSON under /api/v1/admin, bearer-protected, public CORS (TIO-HTTP-003). */
+function adminRoutes(): Route[] {
+  const operations: [Route["method"], string][] = [["GET", "users"]];
+  return operations.map(
+    ([method, path]): Route => ({
+      method,
+      path: `/api/v1/admin/${path}`,
+      cors: "public",
+      navigation: false,
+      cacheable: false,
+    }),
+  );
 }
 
 /** Body limit class of a path (TIO-HTTP-004): 8 MB for import, 64 KB for the JSON APIs, 16 KB elsewhere. */

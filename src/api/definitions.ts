@@ -358,6 +358,59 @@ export const adminBootstrapRoute = createRoute({
   },
 });
 
+// --- Admin API (§9) ----------------------------------------------------------
+
+export const USER_STATUSES = ["creating", "active", "disabled", "deleting"] as const;
+
+export const AdminUserSchema = z
+  .object({
+    id: z.uuid(),
+    email: z.string().nullable(),
+    email_verified: z.boolean(),
+    display_name: z.string().nullable(),
+    status: z.enum(USER_STATUSES),
+    created_at: z.int(),
+    updated_at: z.int(),
+  })
+  .openapi("AdminUser");
+
+export const AdminUserListQuerySchema = z
+  .object({
+    limit: z.string().optional().openapi({ description: "1..200, default 50" }),
+    cursor: z.string().optional().openapi({ description: "Opaque; from next_cursor" }),
+    email: z.string().optional().openapi({ description: "Exact match on the verified email" }),
+    status: z.enum(USER_STATUSES).optional(),
+    group: z.string().optional().openapi({ description: "Group name" }),
+    created_after: z.string().optional().openapi({ description: "Unix seconds, inclusive" }),
+    created_before: z.string().optional().openapi({ description: "Unix seconds, inclusive" }),
+  })
+  .strict();
+
+const pageSchema = <T extends z.ZodType>(item: T, name: string) =>
+  z.object({ items: z.array(item), next_cursor: z.string().nullable() }).openapi(name);
+
+const adminSecurity = [{ adminToken: [] }];
+
+export const adminUsersListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/users",
+  tags: ["admin"],
+  summary: "List users (keyset-paginated, exact-match filters)",
+  security: adminSecurity,
+  request: { query: AdminUserListQuerySchema },
+  responses: {
+    200: {
+      description: "A page of users",
+      content: { "application/json": { schema: pageSchema(AdminUserSchema, "AdminUserPage") } },
+    },
+    400: errorResponse("invalid_request"),
+    401: errorResponse("invalid_token"),
+    403: errorResponse("insufficient_scope"),
+    429: errorResponse("rate_limited"),
+    503: errorResponse("temporarily_unavailable"),
+  },
+});
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -369,11 +422,23 @@ export const API_ROUTES = [
   interactionConsentRoute,
   interactionAbortRoute,
   adminBootstrapRoute,
+  adminUsersListRoute,
 ] as const;
+
+/** Registers every route and the bearer scheme of the Admin API on an app's registry. */
+export function registerApi(app: Pick<OpenAPIHono, "openAPIRegistry">): void {
+  for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);
+  app.openAPIRegistry.registerComponent("securitySchemes", "adminToken", {
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "at+jwt",
+    description: "An access token with scope admin and the issuer in aud (§9.1)",
+  });
+}
 
 /** The OpenAPI 3.1 document built from the definitions alone (no handlers, no bindings). */
 export function openApiDocument(): Record<string, unknown> {
   const app = new OpenAPIHono();
-  for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);
+  registerApi(app);
   return app.getOpenAPI31Document(API_INFO) as unknown as Record<string, unknown>;
 }
