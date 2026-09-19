@@ -10,7 +10,7 @@ import type { Clock } from "../env.ts";
 import { utf8 } from "../util/base64url.ts";
 import { CAPABILITIES } from "./capabilities.ts";
 import { ClientsUnavailableError } from "./client-cache.ts";
-import type { Client } from "./clients.ts";
+import { CLIENT_ID_PATTERN, type Client } from "./clients.ts";
 import type { RemoteJwksCache } from "./jwks-cache.ts";
 
 // Client authentication for /token, /par and /revoke (spec §5.6.1). The
@@ -49,7 +49,11 @@ export type ClientAuthResult =
       error: "invalid_client";
       /** For the log line only; never contains a credential (TIO-TOKEN-004). */
       reason: string;
-      /** The client id the request named, for the failed-authentication rate limit (TIO-TOKEN-004). */
+      /**
+       * The client id the request named, for the failed-authentication rate limit (TIO-TOKEN-004);
+       * null unless it has the client-id shape, so no caller-chosen string reaches the log or the
+       * audit trail (TIO-AUDIT-002).
+       */
       client_id: string | null;
       /** Whether the 401 carries `WWW-Authenticate: Basic` (the request or the client used Basic). */
       basic_challenge: boolean;
@@ -112,7 +116,7 @@ export async function authenticateClient(
     ok: false,
     error: "invalid_client",
     reason,
-    client_id: clientId,
+    client_id: clientId !== null && CLIENT_ID_PATTERN.test(clientId) ? clientId : null,
     basic_challenge: basic,
   });
 
@@ -135,6 +139,8 @@ export async function authenticateClient(
   }
   const clientId = basic?.id ?? assertionIssuer ?? bodyId;
   if (clientId === null) return rejected("no client identification", null);
+  // No registered client can carry a malformed id (TIO-DATA-003): refused without a lookup.
+  if (!CLIENT_ID_PATTERN.test(clientId)) return rejected("malformed client_id", null);
 
   // 2. The registered client, failing closed when the directory is unreachable (TIO-ARCH-014).
   let client: Client | null;

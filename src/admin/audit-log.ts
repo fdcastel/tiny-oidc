@@ -1,7 +1,9 @@
 import type { Handler } from "hono";
 import { z } from "zod";
 import type { AuditEvent } from "../audit/events.ts";
+import { isUuid } from "../crypto/uuid.ts";
 import { type AuditFilters, type AuditKeyset, listAuditPage } from "../db/audit.ts";
+import { getUser } from "../db/users.ts";
 import { type Clock, dateOf } from "../env.ts";
 import type { AppContext } from "../interaction/api.ts";
 import type { AppEnv } from "../router/context.ts";
@@ -228,6 +230,21 @@ export async function userEvents(
   );
 }
 
+/** The Admin view: the user must exist, like every other sub-resource (the same 404 as the user). */
 export function userEventsHandler(clock: Clock): Handler<AppEnv> {
-  return (c) => userEvents(c, clock, c.req.param("id") as string, new URL(c.req.url).searchParams);
+  return async (c) => {
+    const id = c.req.param("id") as string;
+    if (isUuid(id)) {
+      let row: Awaited<ReturnType<typeof getUser>>;
+      try {
+        row = await getUser(c.get("db"), id);
+      } catch {
+        return errorResponse(c, 503, "temporarily_unavailable", "user directory unavailable");
+      }
+      if (row !== null && row.status !== "creating") {
+        return userEvents(c, clock, id, new URL(c.req.url).searchParams);
+      }
+    }
+    return errorResponse(c, 404, "user_not_found", "user not found");
+  };
 }

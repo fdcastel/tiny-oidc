@@ -301,6 +301,33 @@ describe("client authentication methods", () => {
   it("[TIO-TOKEN-002] [TIO-ERR-002] unknown and disabled clients fail like wrong credentials, and an unreachable directory is temporarily_unavailable", async () => {
     expectRejected(await auth({ client_id: "nobody" }), "nobody", false, "unknown client");
     expectRejected(await auth({}, basic("nobody", "x")), "nobody", true, "unknown client");
+    // An id no client could carry is refused before any lookup and reported as nobody (TIO-AUDIT-002).
+    let lookups = 0;
+    for (const malformed of [
+      "x",
+      "Upper",
+      "has space",
+      "a".repeat(65),
+      "eyJhbGciOiJub25lIn0.e30.",
+    ]) {
+      const result = await authenticateClient(
+        { params: form({ client_id: malformed }), authorization: null },
+        context({
+          lookup: async () => {
+            lookups++;
+            return null;
+          },
+        }),
+      );
+      expectRejected(result, null, false, "malformed client_id");
+    }
+    expectRejected(
+      await auth({ client_id: "x", client_secret: "s" }, basic("y", "z")),
+      null,
+      true,
+      "client_id differs between header and body",
+    );
+    expect(lookups).toBe(0);
     const { client, secret } = await confidential("client_secret_basic");
     const disabled = { ...client, disabled_at: clock.now() };
     const result = await authenticateClient(
@@ -310,7 +337,7 @@ describe("client authentication methods", () => {
     expectRejected(result, client.client_id, true, "client disabled");
     expect(
       await authenticateClient(
-        { params: form({ client_id: "x" }), authorization: null },
+        { params: form({ client_id: "xyz" }), authorization: null },
         context({
           lookup: async () => {
             throw new ClientsUnavailableError(new Error("D1 down"));
@@ -320,7 +347,7 @@ describe("client authentication methods", () => {
     ).toEqual({ ok: false, error: "temporarily_unavailable", reason: "clients unavailable" });
     await expect(
       authenticateClient(
-        { params: form({ client_id: "x" }), authorization: null },
+        { params: form({ client_id: "xyz" }), authorization: null },
         context({
           lookup: async () => {
             throw new TypeError("bug");

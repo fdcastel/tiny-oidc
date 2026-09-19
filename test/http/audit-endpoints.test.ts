@@ -5,6 +5,7 @@ import { archiveKey } from "../../src/audit/sink.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { Db } from "../../src/db/db.ts";
 import { writeSettings } from "../../src/db/settings.ts";
+import { setUserStatus } from "../../src/db/users.ts";
 import type { Env } from "../../src/env.ts";
 import { createQueue } from "../../src/queue/consumer.ts";
 import { admin, adminSettings, adminUser } from "../support/admin.ts";
@@ -302,6 +303,18 @@ describe("a person's events", () => {
     });
     expect(viaAdmin.items.some((e) => e["id"] === stale.id)).toBe(false);
     expect((await admin(h, token, `users/${alice.profile.id}/events?limit=x`)).status).toBe(400);
+    // The Admin view needs a user that exists and is visible, like every other sub-resource.
+    expect((await admin(h, token, "users/not-a-uuid/events")).status).toBe(404);
+    await setUserStatus(db, alice.profile.id, "creating", clock.now());
+    expect((await admin(h, token, `users/${alice.profile.id}/events`)).status).toBe(404);
+    await setUserStatus(db, alice.profile.id, "active", clock.now());
+    expect(
+      (
+        await admin(h, token, `users/${alice.profile.id}/events`, {
+          env: { ...env, DB: failingD1(/FROM users WHERE id/) } as Env,
+        })
+      ).status,
+    ).toBe(503);
     expect((await admin(h, token, `users/${alice.profile.id}/events?type=x`)).status).toBe(400);
     expect((await admin(h, token, `users/${alice.profile.id}/events?limit=1&limit=2`)).status).toBe(
       400,
