@@ -10,6 +10,7 @@
   "compatibility_date": "2026-09-01",
   "compatibility_flags": [],
   "keep_vars": true,
+  "minify": true,
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   "limits": { "cpu_ms": 30000 },
   "assets": { "directory": "examples/login-app", "binding": "ASSETS", "run_worker_first": true },

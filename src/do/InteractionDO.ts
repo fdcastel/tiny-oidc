@@ -49,7 +49,7 @@ export type InteractionDoError =
 
 const DOC_KEY = "doc";
 /** Completed and failed interactions stay readable for 60 s, then are deleted (TIO-IX-003). */
-export const TERMINAL_RETENTION_SECONDS = 60;
+const TERMINAL_RETENTION_SECONDS = 60;
 
 export class InteractionDO extends DurableObject<Env> {
   /** Creates the document with `expires_at = now + ttl` and arms the expiry alarm. */

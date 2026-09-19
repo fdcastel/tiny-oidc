@@ -1,5 +1,6 @@
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
+import testEnv from "./test/support/test-env.json" with { type: "json" };
 
 // Workers suites: run inside workerd with real D1, Durable Objects, Queues and R2.
 // Storage is isolated per test file (TIO-TEST-004); `test/support/setup.ts`
@@ -11,7 +12,8 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          // Test vars and secrets (issuer, RP id, master keys) shared with test/support/keys.ts.
+          bindings: { ...testEnv, TEST_MIGRATIONS: migrations },
         },
       }),
     ],

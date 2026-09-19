@@ -1,0 +1,10 @@
+{
+  "ISSUER": "https://auth.example.com",
+  "RP_ID": "example.com",
+  "RP_NAME": "Tiny OIDC Test",
+  "BUNDLED_LOGIN_APP": "false",
+  "LOG_LEVEL": "info",
+  "MASTER_KEYS": "{\"1\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\",\"2\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\"}",
+  "MASTER_KEY_ACTIVE": "1",
+  "ADMIN_BOOTSTRAP_TOKEN": "test-bootstrap-token-0123456789abcdef0123456789"
+}
