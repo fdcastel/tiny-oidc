@@ -25,8 +25,8 @@ requirement whose verification is not a test is named after a dash.
   The two routes the model did not name explicitly are covered by existing
   rows: `POST /admin/users/{id}/restore` (T21, an administrator-only recovery
   that touches one object, audited as `user.updated` with reason `restored`)
-  and `GET /admin/users/{id}/export` (T16: the export omits secret hashes;
-  like every other admin read it emits no audit event — see the open items).
+  and `GET /admin/users/{id}/export` (T16: the export omits secret hashes and,
+  alone among admin reads, emits `user.exported` — see the open items).
 - **Outbound.** The allow-list of TIO-ARCH-016 is asserted for every suite by
   `test/support/fetch-allowlist.ts` (T23).
 
@@ -112,13 +112,13 @@ and the row they belong to:
   verifications (P4-08) wait on OP-04. None of them changes a threat row, but
   T8 and T14 are not fully exercised against real providers and real load
   until they run.
-- Admin reads are not audited in v1, and `GET /admin/users/{id}/export` is a
-  read of one person's whole record. Recommendation for the owner: add a
-  `user.exported` event (an §11.2 table row plus a catalog entry) before the
-  export is used for data-portability requests, so that access to personal
-  data leaves a trace. Not a v1.0.0 blocker: the endpoint requires the
-  `admin` scope and every admin token is itself minted through an audited
-  sign-in.
+- Admin reads are not audited in v1, with one exception decided by this
+  review and accepted by the owner: `GET /admin/users/{id}/export` is a read
+  of one person's whole record, so it emits `user.exported` (§11.2 row,
+  catalog entry with the record's counts, no content; asserted in
+  `test/http/admin-users.test.ts`). Other admin reads stay unaudited: they
+  require the `admin` scope and every admin token is itself minted through an
+  audited sign-in.
 - The D1 restore procedure is drilled in a test at the API level
   (`test/http/admin-import.test.ts`); the `wrangler d1 time-travel` step
   itself is Cloudflare's and is only documented.

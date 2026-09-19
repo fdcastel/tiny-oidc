@@ -239,7 +239,7 @@ Current phase: 7. Requirements: 283 (ci: 19, conformance: 2, covered: 240, load:
 | TIO-KEYS-014 | §10.3 | test | 1 | covered | test/component/keystore.test.ts<br>test/concurrency/creation.test.ts |
 | TIO-KEYS-015 | §10.3 | test | 1 | covered | test/component/keystore.test.ts<br>test/unit/keystore-roles.test.ts |
 | TIO-CRYPTO-020 | §10.4 | test | 0 | covered | test/unit/crypto.test.ts |
-| TIO-AUDIT-001 | §11.2 | test | 6 | covered | test/component/maintenance.test.ts<br>test/http/audit-events.test.ts<br>test/scripts/audit-catalog.test.ts<br>test/unit/audit-redaction.test.ts |
+| TIO-AUDIT-001 | §11.2 | test | 6 | covered | test/component/maintenance.test.ts<br>test/http/admin-users.test.ts<br>test/http/audit-events.test.ts<br>test/scripts/audit-catalog.test.ts<br>test/unit/audit-redaction.test.ts |
 | TIO-AUDIT-002 | §11.2 | test | 6 | covered | test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts |
 | TIO-AUDIT-010 | §11.3 | test | 6 | covered | test/http/audit-endpoints.test.ts<br>test/http/audit-sink.test.ts |
 | TIO-AUDIT-011 | §11.3 | test | 6 | covered | test/http/audit-sink.test.ts |

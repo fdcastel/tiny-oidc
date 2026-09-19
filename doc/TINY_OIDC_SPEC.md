@@ -1892,7 +1892,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 | Type | Emitted when |
 |---|---|
-| `user.created`, `user.updated`, `user.disabled`, `user.enabled`, `user.deleted`, `user.reindexed` | Admin, import, registration, federation |
+| `user.created`, `user.updated`, `user.disabled`, `user.enabled`, `user.deleted`, `user.reindexed`, `user.exported` | Admin, import, registration, federation; `user.exported` is the one audited read: `GET /admin/users/{id}/export` hands over a person's whole record (threat-model review, ADR 0011) |
 | `user.group_added`, `user.group_removed` | Membership change |
 | `passkey.registered`, `passkey.renamed`, `passkey.deleted`, `passkey.auth_succeeded`, `passkey.auth_failed`, `passkey.clone_suspected` | §6.1 |
 | `identity.linked`, `identity.unlinked`, `identity.login_succeeded`, `identity.login_failed` | §6.4 |

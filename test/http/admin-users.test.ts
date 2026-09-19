@@ -374,7 +374,7 @@ describe("disable, enable and delete", () => {
     expect((await call("POST", `users/${id}/enable`)).status).toBe(404);
   });
 
-  it("[TIO-DATA-010] [TIO-PRIV-002] deleting revokes, destroys the object and removes every row referencing the user; the export before that carries no secrets", async () => {
+  it("[TIO-DATA-010] [TIO-PRIV-002] [TIO-AUDIT-001] deleting revokes, destroys the object and removes every row referencing the user; the export before that carries no secrets and is the one audited read", async () => {
     const user = await userWithPasskey(clock);
     const id = user.profile.id;
     await tokensFor(user);
@@ -410,6 +410,28 @@ describe("disable, enable and delete", () => {
     expect(body["grants"]).toHaveLength(1);
     const text = JSON.stringify(body);
     expect(text).not.toMatch(/secret|public_key|token|_hash":"/);
+    // Who took the record, and how much of it (ADR 0011); nothing from the record itself.
+    expect(lastEvent("user.exported")).toMatchObject({
+      outcome: "success",
+      actor: { kind: "admin", id: rootId },
+      user_id: id,
+      data: {
+        target: id,
+        passkeys: 1,
+        identities: 1,
+        sessions: 1,
+        refresh_families: 1,
+        grants: 1,
+      },
+    });
+    expect(Object.keys(lastEvent("user.exported").data).sort()).toEqual([
+      "grants",
+      "identities",
+      "passkeys",
+      "refresh_families",
+      "sessions",
+      "target",
+    ]);
     expect(text).toContain('"ip_hash":null');
     expect(body["sessions"]?.[0]).toMatchObject({ revoked_at: null, ua_family: null });
 

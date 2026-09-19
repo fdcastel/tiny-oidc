@@ -753,7 +753,21 @@ export function exportUserHandler(clock: Clock): Handler<AppEnv> {
     try {
       const exported = await user.stub.exportState(clock.now());
       if (!exported.ok) return notFound(c);
-      return c.json({ ...exported.export, status: user.row.status });
+      const record = exported.export;
+      // The one audited read (§11.2, ADR 0011): the export is a person's whole record.
+      auditAdmin(c, {
+        type: "user.exported",
+        target: user.row.id,
+        user_id: user.row.id,
+        data: {
+          passkeys: record.passkeys.length,
+          identities: record.identities.length,
+          sessions: record.sessions.length,
+          refresh_families: record.refresh_families.length,
+          grants: record.grants.length,
+        },
+      });
+      return c.json({ ...record, status: user.row.status });
     } catch {
       return unavailable(c);
     }

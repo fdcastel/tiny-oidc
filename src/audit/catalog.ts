@@ -14,6 +14,8 @@ export const AUDIT_CATALOG = {
   "user.enabled": [...ADMIN, "sessions_revoked"],
   "user.deleted": [...ADMIN, "sessions_revoked"],
   "user.reindexed": [...ADMIN, "passkeys", "identities", "groups", "unknown_groups"],
+  // The one audited read (ADR 0011): who took a person's whole record, and how much of it.
+  "user.exported": [...ADMIN, "passkeys", "identities", "sessions", "refresh_families", "grants"],
   "user.group_added": [...ADMIN, "group"],
   "user.group_removed": [...ADMIN, "group"],
   // Groups (§9.4; not in §11.2, recorded as a spec gap at P3-03)
