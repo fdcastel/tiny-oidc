@@ -5,7 +5,8 @@
     "test/e2e/**/*.spec.ts",
     "scripts/*.ts",
     "examples/rp-node/server.ts",
-    "scripts/perf/seed.ts"
+    "scripts/perf/seed.ts",
+    "test/support/fake-upstream/worker.ts"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "examples/**/*.ts"],
   "ignoreDependencies": ["cloudflare"],

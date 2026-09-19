@@ -3,6 +3,7 @@ import type { Auditor } from "../audit/events.ts";
 import type { KeyStore } from "../crypto/keystore.ts";
 import type { Db } from "../db/db.ts";
 import type { Config, Env, Settings, SettingsLoader } from "../env.ts";
+import type { UpstreamMetadataCache } from "../federation/metadata.ts";
 import type { Logger } from "../obs/log.ts";
 import type { ClientCache } from "../oidc/client-cache.ts";
 import type { RemoteJwksCache } from "../oidc/jwks-cache.ts";
@@ -26,6 +27,9 @@ export interface Variables {
   keyStore: KeyStore;
   clients: ClientCache;
   jwks: RemoteJwksCache;
+  /** Upstream discovery metadata and JWKS (§2.8). */
+  upstreamMetadata: UpstreamMetadataCache;
+  upstreamJwks: RemoteJwksCache;
   /** The request's audit events, flushed when it ends (§11.1). */
   audit: Auditor;
   /** Set by requireAdmin() on /api/v1/admin/* (TIO-ADMIN-001). */

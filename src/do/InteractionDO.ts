@@ -50,6 +50,8 @@ export interface FederationLeg {
   nonce: string;
   code_verifier: string;
   expires_at: number;
+  /** A register invitation presented with the request; consumed when the callback creates the user (TIO-FED-040). */
+  invitation_id: string | null;
 }
 
 export interface LinkCandidate {
@@ -283,6 +285,34 @@ export class InteractionDO extends DurableObject<Env> {
     const doc: InteractionDocument = { ...current.doc, completing: true };
     await this.ctx.storage.put(DOC_KEY, doc);
     return { ok: true, doc };
+  }
+
+  /**
+   * Takes the federation leg exactly once (TIO-FED-020): the state must match
+   * the stored hash and the leg must not have expired (TIO-FED-011); the leg is
+   * cleared so a second callback with the same state finds nothing.
+   */
+  consumeFederation(
+    stateHash: string,
+    now: number,
+  ): Promise<Outcome<{ doc: InteractionDocument; leg: FederationLeg }>> {
+    return this.exclusive(() => this.consumeFederationUnlocked(stateHash, now));
+  }
+
+  private async consumeFederationUnlocked(
+    stateHash: string,
+    now: number,
+  ): Promise<Outcome<{ doc: InteractionDocument; leg: FederationLeg }>> {
+    const current = await this.get(now);
+    if (!current.ok) return current;
+    const leg = current.doc.federation;
+    if (leg === null || leg.state_hash !== stateHash || leg.expires_at <= now) {
+      return fail("interaction_invalid_state");
+    }
+    if (current.doc.status !== "login_required") return fail("interaction_invalid_state");
+    const doc: InteractionDocument = { ...current.doc, federation: null };
+    await this.ctx.storage.put(DOC_KEY, doc);
+    return { ok: true, doc, leg };
   }
 
   /** Updates working fields without a status change; the document must be live and non-terminal. */

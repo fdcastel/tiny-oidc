@@ -58,7 +58,14 @@ export type UserDoError =
   | "passkey_limit_reached"
   | "passkey_verification_failed"
   | "passkey_counter_regression"
-  | "identity_exists";
+  | "identity_exists"
+  | "last_login_method";
+
+/**
+ * Who asks for a removal: the Admin API may remove any passkey or identity;
+ * a user keeps at least one way to sign in (TIO-PK-040, TIO-FED-051).
+ */
+export type RemovalActor = "admin" | "self";
 
 interface UserRow extends Record<string, SqlStorageValue> {
   id: string;
@@ -1401,11 +1408,32 @@ export class UserDO extends DurableObject<Env> {
     return { ok: true, passkeys: rows.map((r) => UserDO.passkeyRecord(r)) };
   }
 
-  removePasskey(id: string): DoResult<{ removed: boolean }, UserDoError> {
+  removePasskey(
+    id: string,
+    actor: RemovalActor = "admin",
+  ): DoResult<{ removed: boolean }, UserDoError> {
     const user = this.guard();
     if (typeof user === "string") return fail(user);
+    if (actor === "self" && this.isLastLoginMethod("passkey", id)) return fail("last_login_method");
     const removed = this.ctx.storage.sql.exec("DELETE FROM passkeys WHERE id = ?", id).rowsWritten;
     return { ok: true, removed: removed > 0 };
+  }
+
+  /** True when `id` exists and is the user's only passkey or identity (TIO-PK-040, TIO-FED-051). */
+  private isLastLoginMethod(kind: "passkey" | "identity", id: string): boolean {
+    const count = (statement: string, ...binds: SqlStorageValue[]): number =>
+      (this.ctx.storage.sql.exec<{ n: number }>(statement, ...binds).toArray()[0] as { n: number })
+        .n;
+    const present =
+      kind === "passkey"
+        ? count("SELECT COUNT(*) AS n FROM passkeys WHERE id = ?", id)
+        : count("SELECT COUNT(*) AS n FROM identities WHERE id = ?", id);
+    if (present !== 1) return false;
+    return (
+      count("SELECT COUNT(*) AS n FROM passkeys") +
+        count("SELECT COUNT(*) AS n FROM identities") ===
+      1
+    );
   }
 
   renamePasskey(id: string, name: string | null): DoResult<{ renamed: boolean }, UserDoError> {
@@ -1466,6 +1494,27 @@ export class UserDO extends DurableObject<Env> {
     });
   }
 
+  /** Records a federated login on an identity (TIO-FED-040 step 1); `found` is false when the pair is not linked. */
+  touchIdentity(
+    issuer: string,
+    subject: string,
+    claims: { email: string | null; email_verified: boolean; name: string | null },
+    now: number,
+  ): DoResult<{ found: boolean }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const written = this.ctx.storage.sql.exec(
+      "UPDATE identities SET email = ?, email_verified = ?, name = ?, last_login_at = ? WHERE issuer = ? AND subject = ?",
+      claims.email,
+      claims.email_verified ? 1 : 0,
+      claims.name,
+      now,
+      issuer,
+      subject,
+    ).rowsWritten;
+    return { ok: true, found: written > 0 };
+  }
+
   listIdentities(): DoResult<{ identities: IdentityRecord[] }, UserDoError> {
     const user = this.guard();
     if (typeof user === "string") return fail(user);
@@ -1475,9 +1524,14 @@ export class UserDO extends DurableObject<Env> {
     return { ok: true, identities: rows.map((r) => UserDO.identityRecord(r)) };
   }
 
-  removeIdentity(id: string): DoResult<{ removed: boolean }, UserDoError> {
+  removeIdentity(
+    id: string,
+    actor: RemovalActor = "admin",
+  ): DoResult<{ removed: boolean }, UserDoError> {
     const user = this.guard();
     if (typeof user === "string") return fail(user);
+    if (actor === "self" && this.isLastLoginMethod("identity", id))
+      return fail("last_login_method");
     const removed = this.ctx.storage.sql.exec(
       "DELETE FROM identities WHERE id = ?",
       id,

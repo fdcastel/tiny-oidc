@@ -250,6 +250,7 @@ export function patchUpstreamHandler(clock: Clock): Handler<AppEnv> {
       if (updated === "upstream_exists") {
         return errorResponse(c, 409, "upstream_exists", "another upstream has this issuer");
       }
+      c.get("upstreamMetadata").invalidate(upstream.alias);
       auditAdmin(c, {
         type: "upstream.updated",
         target: upstream.alias,
@@ -276,6 +277,7 @@ export const deleteUpstreamHandler: Handler<AppEnv> = async (c) => {
   } catch {
     return unavailable(c);
   }
+  c.get("upstreamMetadata").invalidate(upstream.alias);
   auditAdmin(c, {
     type: "upstream.deleted",
     target: upstream.alias,

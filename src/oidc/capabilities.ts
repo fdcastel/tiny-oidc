@@ -56,6 +56,9 @@ export const ACR = {
   federated: CAPABILITIES.acr_values_supported[1],
 } as const;
 
+/** Algorithms accepted on upstream ID tokens (TIO-FED-030); the OP itself signs with ES256 only. */
+export const UPSTREAM_ID_TOKEN_ALGORITHMS = ["RS256", "PS256", "ES256", "ES384", "EdDSA"] as const;
+
 /** Signing algorithm of every token the OP issues (§10.1). */
 export const SIGNING_ALG = CAPABILITIES.id_token_signing_alg_values_supported[0];
 

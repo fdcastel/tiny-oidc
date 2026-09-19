@@ -120,6 +120,26 @@ export async function openInvitationHandle(
   return { invitation_id: bytesToUuid(fields.invid), secret_hash: await sha256(fields.secret) };
 }
 
+/** `tio_fs`: the interaction id and the state secret of a federation leg (TIO-FED-010). */
+export async function sealFederationHandle(
+  keys: DerivedKeys,
+  interactionId: string,
+  secret: Uint8Array,
+): Promise<string> {
+  const ixid = decodeBase64Url(interactionId);
+  if (ixid?.length !== 32) throw new RangeError("not an interaction id");
+  return sealHandle(keys, "federation", { ixid, secret });
+}
+
+export async function openFederationHandle(
+  keys: DerivedKeys,
+  handle: string,
+): Promise<BindingRef | null> {
+  const fields = await openHandle(keys, "federation", handle);
+  if (!fields) return null;
+  return { interaction_id: encodeBase64Url(fields.ixid), secret_hash: await sha256(fields.secret) };
+}
+
 /** `tio_ix`: the 32 raw bytes of the interaction id and the binding secret. */
 export async function sealBindingHandle(
   keys: DerivedKeys,

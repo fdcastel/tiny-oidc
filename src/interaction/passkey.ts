@@ -7,9 +7,11 @@ import {
   CHALLENGE_TTL_SECONDS,
   newChallenge,
 } from "../auth/passkey.ts";
-import { bytesToUuid } from "../crypto/uuid.ts";
+import { bytesToUuid, UuidV7 } from "../crypto/uuid.ts";
+import { insertIdentityStatement, releaseIdentity } from "../db/identities.ts";
+import { getUpstream } from "../db/upstreams.ts";
 import { lookupCredential, releaseCredential } from "../db/users.ts";
-import type { InteractionAuth, InteractionDocument } from "../do/InteractionDO.ts";
+import type { InteractionAuth, InteractionDocument, LinkCandidate } from "../do/InteractionDO.ts";
 import type { PasskeyRecord, UserProfile } from "../do/UserDO.ts";
 import type { Clock } from "../env.ts";
 import { ACR } from "../oidc/capabilities.ts";
@@ -35,8 +37,9 @@ import {
 // interaction's challenge, verify consumes it before verification, and both
 // count as attempts (TIO-IX-030). Verification itself is UserDO.verifyAssertion.
 
-// `link_required` joins with account linking (TIO-IX-031, Phase 4).
-const PASSKEY_STATUSES = new Set(["login_required"]);
+// In `link_required` the assertion must come from the candidate user, whose
+// upstream identity is then linked (TIO-IX-031).
+const PASSKEY_STATUSES = new Set(["login_required", "link_required"]);
 
 const VerifyBody = z.object({ response: z.looseObject({}) });
 
@@ -146,11 +149,70 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
     }
     const client = await interactionClient(c, doc);
     if (!client) return errorResponse(c, 503, "temporarily_unavailable", "client unavailable");
+    if (doc.status === "link_required") {
+      const link = doc.link as LinkCandidate;
+      if (verified.profile.id !== link.candidate_uid) {
+        return errorResponse(c, 403, "link_wrong_user", "the assertion is not the candidate's");
+      }
+      const linked = await linkIdentity(c, verified.profile.id, link, clock);
+      if (!linked) return errorResponse(c, 503, "temporarily_unavailable", "linking failed");
+    }
     return c.json(
-      await authenticateInteraction(c, guarded, client, verified.profile, verified.passkey),
+      await authenticateInteraction(
+        c,
+        guarded,
+        client,
+        verified.profile,
+        passkeyAuthMethod(verified.passkey),
+        doc.status === "link_required" ? "link" : "authenticate",
+      ),
       200,
     );
   };
+}
+
+/** Links the upstream identity to the candidate: the D1 claim first, then the object (TIO-FED-041). */
+async function linkIdentity(
+  c: AppContext,
+  uid: string,
+  link: LinkCandidate,
+  clock: Clock,
+): Promise<boolean> {
+  const db = c.get("db");
+  const now = clock.now();
+  const upstream = await getUpstream(db, link.alias);
+  if (upstream === null) return false;
+  try {
+    await insertIdentityStatement(db, upstream.issuer, link.subject, uid, now).run();
+  } catch (error) {
+    if (!String(error).includes("UNIQUE")) throw error;
+    return false;
+  }
+  c.get("metrics").doCalls += 1;
+  const added = await userStub(c.env, uid).addIdentity(
+    {
+      id: new UuidV7(clock).next(),
+      issuer: upstream.issuer,
+      subject: link.subject,
+      email: link.claims.email,
+      email_verified: link.claims.email_verified,
+      name: link.claims.name,
+    },
+    now,
+  );
+  if (!added.ok) {
+    await releaseIdentity(db, upstream.issuer, link.subject);
+    return false;
+  }
+  c.get("audit").emit({
+    type: "identity.linked",
+    outcome: "success",
+    actor: { kind: "user", id: uid },
+    user_id: uid,
+    upstream: link.alias,
+    data: { issuer: upstream.issuer, via: "reauth" },
+  });
+  return true;
 }
 
 /**
@@ -159,18 +221,35 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
  * (TIO-PK-023, TIO-AUTHZ-017); otherwise consent is evaluated
  * (TIO-CONSENT-001) and the interaction becomes ready or consent_required.
  */
+/** How a passkey assertion is described in the session (TIO-PK-030): hardware- or software-bound key plus user presence. */
+export function passkeyAuthMethod(passkey: Pick<PasskeyRecord, "backup_eligible">): AuthMethod {
+  return {
+    amr: passkey.backup_eligible ? ["swk", "user"] : ["hwk", "user"],
+    acr: ACR.passkey,
+    upstream: null,
+  };
+}
+
+/** The authentication a login step establishes: its factors, class and (for federation) the upstream. */
+export interface AuthMethod {
+  amr: string[];
+  acr: string;
+  upstream: string | null;
+}
+
 export async function authenticateInteraction(
   c: AppContext,
   guarded: Guarded,
   client: Client,
   profile: UserProfile,
-  passkey: Pick<PasskeyRecord, "backup_eligible">,
+  method: AuthMethod,
+  operation: "authenticate" | "link" = "authenticate",
 ): Promise<InteractionStep> {
   const { doc, stub, now, id } = guarded;
   const fail = async (description: string): Promise<InteractionStep> => {
     c.get("metrics").doCalls += 1;
     await stub.apply(
-      "authenticate",
+      operation,
       "failed",
       { error: { error: "access_denied", error_description: description } },
       now,
@@ -188,17 +267,17 @@ export async function authenticateInteraction(
   }
   const auth: InteractionAuth = {
     uid: profile.id,
-    method: "passkey",
-    amr: passkey.backup_eligible ? ["swk", "user"] : ["hwk", "user"],
-    acr: ACR.passkey,
-    upstream: null,
+    method: method.upstream === null ? "passkey" : "federated",
+    amr: method.amr,
+    acr: method.acr,
+    upstream: method.upstream,
     auth_time: now,
     // The same user re-authenticating keeps the session; anyone else gets a new one (TIO-SESS-002).
     new_session: doc.existing_session?.uid !== profile.id,
   };
   const status = (await consentNeeded(c, doc, client, profile.id)) ? "consent_required" : "ready";
   c.get("metrics").doCalls += 1;
-  const applied = await stub.apply("authenticate", status, { auth }, now);
+  const applied = await stub.apply(operation, status, { auth }, now);
   // A concurrent request may have failed the interaction meanwhile (attempt limit).
   if (!applied.ok) return { status: "failed", redirect_to: redirectTo(c, id) };
   return { status, redirect_to: status === "ready" ? redirectTo(c, id) : null };

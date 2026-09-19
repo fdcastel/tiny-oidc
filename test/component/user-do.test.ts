@@ -1027,6 +1027,40 @@ describe("UserDO passkeys and identities storage", () => {
     expect(await stub.removeIdentity("i2")).toEqual({ ok: true, removed: false });
   });
 
+  it("[TIO-PK-040] [TIO-FED-051] a user keeps at least one way to sign in: the last passkey goes only next to a linked identity, the last identity only next to a passkey; the Admin API removes anything", async () => {
+    const { stub } = await newUser();
+    const identity = {
+      id: "i1",
+      issuer: "https://accounts.google.com",
+      subject: "only",
+      email: null,
+      email_verified: null,
+      name: null,
+    };
+    const last = { ok: false, error: "last_login_method" };
+    expect((await stub.addPasskey(passkey("p1", "cred-1"), clock.now(), 2)).ok).toBe(true);
+    expect(await stub.removePasskey("p1", "self")).toEqual(last);
+    expect(await stub.removePasskey("nope", "self")).toEqual({ ok: true, removed: false });
+    expect((await stub.addPasskey(passkey("p2", "cred-2"), clock.now(), 2)).ok).toBe(true);
+    expect(await stub.removePasskey("p1", "self")).toEqual({ ok: true, removed: true });
+    expect(await stub.removePasskey("p2", "self")).toEqual(last);
+    expect((await stub.addIdentity(identity, clock.now())).ok).toBe(true);
+    expect(await stub.removePasskey("p2", "self")).toEqual({ ok: true, removed: true });
+    expect(await stub.removeIdentity("i1", "self")).toEqual(last);
+    expect(await stub.removeIdentity("nope", "self")).toEqual({ ok: true, removed: false });
+    expect(
+      (await stub.addIdentity({ ...identity, id: "i2", subject: "two" }, clock.now())).ok,
+    ).toBe(true);
+    expect(await stub.removeIdentity("i1", "self")).toEqual({ ok: true, removed: true });
+    expect(await stub.removeIdentity("i2", "self")).toEqual(last);
+    expect((await stub.addPasskey(passkey("p3", "cred-3"), clock.now(), 2)).ok).toBe(true);
+    expect(await stub.removeIdentity("i2", "self")).toEqual({ ok: true, removed: true });
+    // The administrator is not held to the rule (§9.4, TIO-PK-040).
+    expect(await stub.removePasskey("p3")).toEqual({ ok: true, removed: true });
+    expect(await stub.listPasskeys()).toEqual({ ok: true, passkeys: [] });
+    expect(await stub.listIdentities()).toEqual({ ok: true, identities: [] });
+  });
+
   it("[TIO-DATA-021] every method refuses an uninitialized object", async () => {
     const stub = env.USER_DO.get(env.USER_DO.idFromName(unique("blank")));
     const notInit = { ok: false, error: "user_not_initialized" };

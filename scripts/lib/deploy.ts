@@ -12,6 +12,12 @@ export interface DeployEnv {
   TIO_RP_NAME?: string | undefined;
   /** Commit sha exposed by Workers Builds; reported by /api/v1/health as VERSION. */
   WORKERS_CI_COMMIT_SHA?: string | undefined;
+  /** The fake upstream's configuration (staging only, TIO-TEST-031). */
+  TIO_FAKE_ISSUER?: string | undefined;
+  TIO_FAKE_CLIENT_ID?: string | undefined;
+  TIO_FAKE_CLIENT_SECRET?: string | undefined;
+  /** Comma-separated redirect URIs the fake accepts (the OP's federation callback). */
+  TIO_FAKE_REDIRECT_URIS?: string | undefined;
 }
 
 export interface DeployIO {
@@ -95,6 +101,36 @@ export function assertDeployable(configText: string, profile: Profile): void {
 export interface DeployResult {
   profile: Profile;
   commands: string[][];
+}
+
+export const FAKE_UPSTREAM_CONFIG = "test/support/fake-upstream/wrangler.jsonc";
+
+/**
+ * Deploys the fake upstream Worker (TIO-TEST-031): staging only, its
+ * configuration from the deploy environment, nothing from the repository.
+ */
+export async function deployFakeUpstream(
+  env: DeployEnv,
+  io: Pick<DeployIO, "wrangler" | "readConfig" | "log">,
+): Promise<DeployResult> {
+  const profile = profileOf(env);
+  assertDeployable(io.readConfig(), profile);
+  if (profile !== "staging") throw new Error("the fake upstream may only be deployed to staging");
+  const vars: string[] = [];
+  const pairs: [string, string | undefined][] = [
+    ["FAKE_ISSUER", env.TIO_FAKE_ISSUER],
+    ["FAKE_CLIENT_ID", env.TIO_FAKE_CLIENT_ID],
+    ["FAKE_CLIENT_SECRET", env.TIO_FAKE_CLIENT_SECRET],
+    ["FAKE_REDIRECT_URIS", env.TIO_FAKE_REDIRECT_URIS],
+  ];
+  for (const [name, value] of pairs) {
+    if (!value) throw new Error(`TIO_${name} must be set to deploy the fake upstream`);
+    vars.push("--var", `${name}:${value}`);
+  }
+  const args = ["deploy", "--config", FAKE_UPSTREAM_CONFIG, ...vars];
+  io.log(`wrangler ${args.filter((a) => !a.startsWith("FAKE_CLIENT_SECRET:")).join(" ")}`);
+  await io.wrangler(args);
+  return { profile, commands: [args] };
 }
 
 export async function deploy(env: DeployEnv, io: DeployIO): Promise<DeployResult> {

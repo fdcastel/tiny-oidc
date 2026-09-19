@@ -6,6 +6,8 @@ import {
   type DeployIO,
   databaseName,
   deploy,
+  deployFakeUpstream,
+  FAKE_UPSTREAM_CONFIG,
   profileOf,
   resolveDatabaseId,
   varArgs,
@@ -190,6 +192,50 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
       assertDeployable('{ "name": "tiny-oidc-fake-upstream" }', "staging"),
     ).not.toThrow();
     expect(() => assertDeployable("{}", "button")).not.toThrow();
+  });
+
+  it("[TIO-TEST-031] the fake upstream deploys to staging only, with its issuer, client and redirect URIs from the environment and its secret kept out of the log", async () => {
+    const fakeConfig = readFileSync(FAKE_UPSTREAM_CONFIG, "utf8");
+    const { io, calls, logs } = fakeIo();
+    io.readConfig = () => fakeConfig;
+    const values = {
+      TIO_ENV: "staging",
+      TIO_FAKE_ISSUER: "https://idp.staging.example",
+      TIO_FAKE_CLIENT_ID: "tiny-oidc",
+      TIO_FAKE_CLIENT_SECRET: "s3cret",
+      TIO_FAKE_REDIRECT_URIS: "https://auth.staging.example/federation/callback",
+    };
+    const result = await deployFakeUpstream(values, io);
+    expect(result.profile).toBe("staging");
+    expect(calls).toEqual([
+      [
+        "deploy",
+        "--config",
+        FAKE_UPSTREAM_CONFIG,
+        "--var",
+        "FAKE_ISSUER:https://idp.staging.example",
+        "--var",
+        "FAKE_CLIENT_ID:tiny-oidc",
+        "--var",
+        "FAKE_CLIENT_SECRET:s3cret",
+        "--var",
+        "FAKE_REDIRECT_URIS:https://auth.staging.example/federation/callback",
+      ],
+    ]);
+    expect(logs.join(" ")).not.toContain("s3cret");
+    for (const profile of ["", "production"]) {
+      await expect(deployFakeUpstream({ ...values, TIO_ENV: profile }, io)).rejects.toThrow(
+        "only be deployed to staging",
+      );
+    }
+    await expect(
+      deployFakeUpstream({ ...values, TIO_FAKE_CLIENT_SECRET: undefined }, io),
+    ).rejects.toThrow("TIO_FAKE_CLIENT_SECRET must be set");
+    expect(calls).toHaveLength(1);
+    // The committed configuration names the fake and carries only placeholders.
+    const parsed = parse(fakeConfig) as { name: string; vars: Record<string, string> };
+    expect(parsed.name).toBe("tiny-oidc-fake-upstream");
+    expect(parsed.vars["FAKE_ISSUER"]).toContain("example");
   });
 });
 

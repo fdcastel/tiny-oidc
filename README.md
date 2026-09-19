@@ -4,7 +4,7 @@
 
 Tiny OIDC gives one organization a single, standards-compliant identity service for its own applications: OpenID Connect for relying parties, passkeys and upstream OIDC federation for users, JSON APIs for everything else. No servers, no containers, no external databases. Designed for one million users on one deployment.
 
-> **Status: pre-alpha, under construction.** The [specification](doc/TINY_OIDC_SPEC.md) is the contract for the build and the [implementation plan](doc/TINY_OIDC_PLAN.md) tracks progress phase by phase. Phases 0–3 are done: the core OIDC flow works end to end (discovery, JWKS, `/authorize`, PAR, `/token` with the three grants, `/userinfo`, `/revoke`, the Interaction API, passkey registration and sign-in, invitations, the bootstrap endpoint and the reference login app) and the Admin API covers users, groups, clients, upstreams, invitations, keys, settings, stats, maintenance and bulk import, with a cron that keeps the store tidy; everything is verified by unit, component, HTTP, interop (`oauth4webapi`), concurrency and Playwright suites. Still to come: upstream federation (Phase 4), logout and self-service (5), audit, rate limits and cron windows (6), hardening and release (7). The Deploy button below provisions a Worker you can bootstrap and sign in to, but the service is not ready for anything beyond evaluation.
+> **Status: pre-alpha, under construction.** The [specification](doc/TINY_OIDC_SPEC.md) is the contract for the build and the [implementation plan](doc/TINY_OIDC_PLAN.md) tracks progress phase by phase. Phases 0–4 are done: the core OIDC flow works end to end (discovery, JWKS, `/authorize`, PAR, `/token` with the three grants, `/userinfo`, `/revoke`, the Interaction API, passkey registration and sign-in, invitations, the bootstrap endpoint and the reference login app) and the Admin API covers users, groups, clients, upstreams, invitations, keys, settings, stats, maintenance and bulk import, with a cron that keeps the store tidy, and users can sign in through any OpenID Connect upstream (Google, Microsoft, …) with the account-resolution policy enforced; everything is verified by unit, component, HTTP, interop (`oauth4webapi`), concurrency and Playwright suites. Still to come: logout and self-service (Phase 5), audit, rate limits and cron windows (6), hardening and release (7). The Deploy button below provisions a Worker you can bootstrap and sign in to, but the service is not ready for anything beyond evaluation.
 
 ### Already on Cloudflare?
 
@@ -55,6 +55,8 @@ pnpm lint && pnpm build && pnpm check && pnpm trace
 ```
 
 Requires Node 24 and pnpm 10. Every push to `main` runs the full gate set in GitHub Actions; deployments are made by Cloudflare Workers Builds, never by CI.
+
+Staging also runs a fake upstream identity provider (`test/support/fake-upstream/`, the same module the tests mount) as its own Worker: `TIO_ENV=staging TIO_FAKE_ISSUER=… TIO_FAKE_CLIENT_ID=… TIO_FAKE_CLIENT_SECRET=… TIO_FAKE_REDIRECT_URIS=… pnpm run deploy:fake-upstream`. It refuses every other profile.
 
 ## License
 

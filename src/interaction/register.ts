@@ -22,7 +22,7 @@ import { openInvitation } from "../users/invitations.ts";
 import { registerPasskey } from "../users/passkeys.ts";
 import { readJsonBody } from "../util/json.ts";
 import { type AppContext, ATTEMPT_LIMIT, type Guarded, guard, interactionClient } from "./api.ts";
-import { authenticateInteraction } from "./passkey.ts";
+import { authenticateInteraction, passkeyAuthMethod } from "./passkey.ts";
 
 // The registration endpoints of the Interaction API (§7.4, §6.3): options
 // allocate a pending user and a challenge under the registration policy;
@@ -280,7 +280,13 @@ export function registerVerifyHandler(clock: Clock): Handler<AppEnv> {
     const client = await interactionClient(c, doc);
     if (!client) return errorResponse(c, 503, "temporarily_unavailable", "client unavailable");
     return c.json(
-      await authenticateInteraction(c, guarded, client, profile, registered.passkey),
+      await authenticateInteraction(
+        c,
+        guarded,
+        client,
+        profile,
+        passkeyAuthMethod(registered.passkey),
+      ),
       200,
     );
   };

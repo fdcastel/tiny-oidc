@@ -63,6 +63,7 @@ export const UpstreamInputSchema = z
     claims_map: ClaimsMapSchema.default({}),
     required_claims: z.record(z.string().max(64), scalar).default({}),
     extra_authorize_params: z.record(z.string().max(64), z.string().max(512)).default({}),
+    forward_login_hint: z.boolean().default(false),
     enabled: z.boolean().default(true),
   })
   .strict();
@@ -85,6 +86,7 @@ export interface Upstream {
   claims_map: z.infer<typeof ClaimsMapSchema>;
   required_claims: Record<string, string | number | boolean>;
   extra_authorize_params: Record<string, string>;
+  forward_login_hint: boolean;
   enabled: boolean;
   created_at: number;
   updated_at: number;

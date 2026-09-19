@@ -1,6 +1,6 @@
 {
   "$comment": "Traceability gate configuration (TIO-TEST-006, TIO-TEST-007). `phase` is the phase being implemented; a default-tag requirement mapped to a later phase may be uncovered. Sections map to phases per spec §14.2 and doc/TINY_OIDC_PLAN.md; `overrides` pin individual identifiers whose task lives in another phase than their section.",
-  "phase": 3,
+  "phase": 4,
   "phases": {
     "0": [
       "2.4",

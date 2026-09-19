@@ -78,6 +78,9 @@ import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } from "../env.ts";
+import { federationCallbackHandler } from "../federation/callback.ts";
+import { UPSTREAM_JWKS_COOLDOWN_MS, UpstreamMetadataCache } from "../federation/metadata.ts";
+import { upstreamHandler } from "../federation/outbound.ts";
 import { abortHandler, consentHandler, getInteractionHandler } from "../interaction/api.ts";
 import { completeHandler } from "../interaction/complete.ts";
 import { passkeyOptionsHandler, passkeyVerifyHandler } from "../interaction/passkey.ts";
@@ -120,6 +123,8 @@ export function createApp(deps: AppDeps) {
   const keyStore = new KeyStore(deps.clock);
   const clients = new ClientCache(deps.clock);
   const jwks = new RemoteJwksCache();
+  const upstreamMetadata = new UpstreamMetadataCache(deps.clock);
+  const upstreamJwks = new RemoteJwksCache({ cooldownMs: UPSTREAM_JWKS_COOLDOWN_MS });
   // Startup validation happens at the first request and is remembered for the
   // isolate's lifetime (TIO-CRYPTO-010, TIO-CFG-002).
   let startup: { fingerprint: string; result: ConfigResult } | undefined;
@@ -172,6 +177,8 @@ export function createApp(deps: AppDeps) {
     c.set("keyStore", keyStore);
     c.set("clients", clients);
     c.set("jwks", jwks);
+    c.set("upstreamMetadata", upstreamMetadata);
+    c.set("upstreamJwks", upstreamJwks);
     if (!config.ok) {
       // Fail every request closed until the configuration is fixed (TIO-ARCH-014).
       logger.log("error", "fatal: invalid configuration", {
@@ -254,7 +261,7 @@ export function createApp(deps: AppDeps) {
   app.on(["GET", "POST"], "/userinfo", userinfoHandler(deps.clock));
   app.post("/revoke", revokeHandler(deps.clock));
   app.on(["GET", "POST"], "/logout", notImplemented);
-  app.on(["GET", "POST"], "/federation/callback", notImplemented);
+  app.on(["GET", "POST"], "/federation/callback", federationCallbackHandler(deps.clock));
   app.get("/interactions/:id/complete", completeHandler(deps.clock));
   // Interaction API (§7); the JSON APIs are documented from their route definitions.
   app.get("/api/v1/interactions/:id", getInteractionHandler(deps.clock));
@@ -264,9 +271,8 @@ export function createApp(deps: AppDeps) {
   app.post("/api/v1/interactions/:id/passkey/verify", passkeyVerifyHandler(deps.clock));
   app.post("/api/v1/interactions/:id/register/options", registerOptionsHandler(deps.clock));
   app.post("/api/v1/interactions/:id/register/verify", registerVerifyHandler(deps.clock));
-  for (const op of ["upstream/:alias", "logout"]) {
-    app.post(`/api/v1/interactions/:id/${op}`, notImplemented);
-  }
+  app.post("/api/v1/interactions/:id/upstream/:alias", upstreamHandler(deps.clock));
+  app.post("/api/v1/interactions/:id/logout", notImplemented);
   app.post("/api/v1/admin/bootstrap", bootstrapHandler(deps.clock));
   // Admin API (§9): every other path under the prefix needs an administrator's token.
   app.use("/api/v1/admin/*", async (c, next) => {

@@ -21,6 +21,7 @@ interface RawUpstreamRow extends Record<string, unknown> {
   claims_map: string;
   required_claims: string;
   extra_authorize_params: string;
+  forward_login_hint: number;
   enabled: number;
   created_at: number;
   updated_at: number;
@@ -35,7 +36,7 @@ const Scalars = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(
 const Strings = z.record(z.string(), z.string());
 
 const COLUMNS =
-  "alias, issuer, display_name, client_id, token_endpoint_auth_method, client_secret_enc, client_jwk_enc, scopes, discovery, use_userinfo, trust_email_verified, claims_map, required_claims, extra_authorize_params, enabled, created_at, updated_at";
+  "alias, issuer, display_name, client_id, token_endpoint_auth_method, client_secret_enc, client_jwk_enc, scopes, discovery, use_userinfo, trust_email_verified, claims_map, required_claims, extra_authorize_params, forward_login_hint, enabled, created_at, updated_at";
 
 /** Decodes a row; null when a JSON column no longer parses (treated as absent, like clients). */
 export function decodeUpstreamRow(raw: RawUpstreamRow): Upstream | null {
@@ -60,6 +61,7 @@ export function decodeUpstreamRow(raw: RawUpstreamRow): Upstream | null {
     claims_map: claimsMap.value,
     required_claims: required.value,
     extra_authorize_params: extra.value,
+    forward_login_hint: raw.forward_login_hint === 1,
     enabled: raw.enabled === 1,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
@@ -81,7 +83,7 @@ export async function insertUpstream(db: Db, upstream: Upstream): Promise<Insert
   try {
     await db
       .prepare(
-        "INSERT INTO upstreams (alias, issuer, display_name, client_id, token_endpoint_auth_method, client_secret_enc, client_jwk_enc, scopes, discovery, use_userinfo, trust_email_verified, claims_map, required_claims, extra_authorize_params, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO upstreams (alias, issuer, display_name, client_id, token_endpoint_auth_method, client_secret_enc, client_jwk_enc, scopes, discovery, use_userinfo, trust_email_verified, claims_map, required_claims, extra_authorize_params, forward_login_hint, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .bind(...columnValues(upstream), upstream.created_at, upstream.updated_at)
       .run();
@@ -103,7 +105,7 @@ export async function updateUpstream(
   try {
     const result = await db
       .prepare(
-        "UPDATE upstreams SET issuer = ?, display_name = ?, client_id = ?, token_endpoint_auth_method = ?, client_secret_enc = ?, client_jwk_enc = ?, scopes = ?, discovery = ?, use_userinfo = ?, trust_email_verified = ?, claims_map = ?, required_claims = ?, extra_authorize_params = ?, enabled = ?, updated_at = ? WHERE alias = ?",
+        "UPDATE upstreams SET issuer = ?, display_name = ?, client_id = ?, token_endpoint_auth_method = ?, client_secret_enc = ?, client_jwk_enc = ?, scopes = ?, discovery = ?, use_userinfo = ?, trust_email_verified = ?, claims_map = ?, required_claims = ?, extra_authorize_params = ?, forward_login_hint = ?, enabled = ?, updated_at = ? WHERE alias = ?",
       )
       .bind(...columnValues(upstream).slice(1), now, upstream.alias)
       .run();
@@ -151,6 +153,16 @@ export async function listUpstreamsPage(
   }));
 }
 
+/** Every enabled upstream, for the login app's method list (§7.3) and the outbound request. */
+export async function listEnabledUpstreams(db: Db): Promise<Upstream[]> {
+  const rows = await db
+    .prepare(
+      ["SELECT", COLUMNS, "FROM upstreams WHERE enabled = 1 ORDER BY created_at, alias"].join(" "),
+    )
+    .all<RawUpstreamRow>();
+  return rows.results.map(decodeUpstreamRow).filter((u) => u !== null);
+}
+
 /** The bound values of every column from `alias` to `enabled`, in table order. */
 function columnValues(upstream: Upstream): unknown[] {
   return [
@@ -168,6 +180,7 @@ function columnValues(upstream: Upstream): unknown[] {
     JSON.stringify(upstream.claims_map),
     JSON.stringify(upstream.required_claims),
     JSON.stringify(upstream.extra_authorize_params),
+    upstream.forward_login_hint ? 1 : 0,
     upstream.enabled ? 1 : 0,
   ];
 }

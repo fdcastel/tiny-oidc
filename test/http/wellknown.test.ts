@@ -215,13 +215,11 @@ describe("WebAuthn related origins", () => {
   });
 });
 
-describe("protocol endpoints before Phase 2", () => {
+describe("protocol endpoints of a later phase", () => {
   it("answer 501 not_implemented on every route of the table that has no handler yet, with the right header class", async () => {
     const cases: [string, string, boolean][] = [
       ["GET", "/logout", true],
       ["POST", "/logout", true],
-      ["GET", "/federation/callback", true],
-      ["POST", "/federation/callback", true],
     ];
     for (const [method, path, navigation] of cases) {
       const res = await op(path, { method, headers: { Origin: "https://app.example.org" } });

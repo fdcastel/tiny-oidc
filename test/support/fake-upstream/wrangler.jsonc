@@ -1,0 +1,23 @@
+// The fake upstream as its own Worker, for staging only (TIO-TEST-031). The
+// values below are placeholders: `pnpm run deploy:fake-upstream` passes the real
+// issuer, client id, client secret and redirect URIs from the deploy
+// environment, and scripts/deploy-fake-upstream.ts refuses any profile but
+// staging.
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "tiny-oidc-fake-upstream",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-01",
+  "keep_vars": true,
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "vars": {
+    "FAKE_ISSUER": "https://fake-upstream.example.workers.dev",
+    "FAKE_CLIENT_ID": "tiny-oidc",
+    "FAKE_CLIENT_SECRET": "replace-me",
+    "FAKE_REDIRECT_URIS": "https://tiny-oidc.example.workers.dev/federation/callback"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "FAKE_UPSTREAM", "class_name": "FakeUpstreamObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FakeUpstreamObject"] }]
+}

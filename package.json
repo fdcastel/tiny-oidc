@@ -27,6 +27,7 @@
     "check": "node scripts/config-check.ts && node scripts/neutrality-check.ts",
     "check:bundle": "node scripts/bundle-check.ts",
     "deploy": "node scripts/deploy.ts",
+    "deploy:fake-upstream": "node scripts/deploy-fake-upstream.ts",
     "smoke": "node scripts/smoke.ts"
   },
   "dependencies": {

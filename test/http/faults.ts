@@ -1,3 +1,4 @@
+import type { InteractionDO } from "../../src/do/InteractionDO.ts";
 import type { Env } from "../../src/env.ts";
 import { env } from "../support/op.ts";
 
@@ -26,6 +27,22 @@ export const failingD1 = (pattern: RegExp, batchToo = false) =>
     },
     batch(statements: D1PreparedStatement[]) {
       if (batchToo) throw new Error("D1 down");
+      return env.DB.batch(statements);
+    },
+  }) as unknown as D1Database;
+
+/** A D1 whose statements matching `pattern` run nothing and report no row changed (a lost race). */
+export const zeroChangesD1 = (pattern: RegExp) =>
+  ({
+    prepare(sql: string) {
+      if (!pattern.test(sql)) return env.DB.prepare(sql);
+      const statement = {
+        bind: () => statement,
+        run: async () => ({ success: true, results: [], meta: { changes: 0 } }),
+      };
+      return statement;
+    },
+    batch(statements: D1PreparedStatement[]) {
       return env.DB.batch(statements);
     },
   }) as unknown as D1Database;
@@ -81,6 +98,41 @@ export function sabotageDo(userId: string, method: string, nth = 1, spare: strin
             return async (...args: unknown[]) => {
               calls++;
               if (calls === nth) await target.destroy();
+              const invoke = (target as unknown as Record<string, Method>)[property] as Method;
+              return invoke(...args);
+            };
+          },
+        });
+      },
+    },
+  } as unknown as Env;
+}
+
+/**
+ * An environment where, before the first call of `method` on any interaction
+ * object, `before` runs against the real stub (to move the interaction on
+ * under the handler's feet).
+ */
+export function sabotageInteraction(
+  method: string,
+  before: (stub: DurableObjectStub<InteractionDO>) => Promise<void>,
+): Env {
+  let done = false;
+  return {
+    ...env,
+    INTERACTION_DO: {
+      idFromName: (name: string) => env.INTERACTION_DO.idFromName(name),
+      get: (id: DurableObjectId) => {
+        const real = env.INTERACTION_DO.get(id);
+        return new Proxy(real, {
+          get(target, property) {
+            const value = Reflect.get(target, property) as unknown;
+            if (property !== method || typeof value !== "function") return value;
+            return async (...args: unknown[]) => {
+              if (!done) {
+                done = true;
+                await before(target);
+              }
               const invoke = (target as unknown as Record<string, Method>)[property] as Method;
               return invoke(...args);
             };

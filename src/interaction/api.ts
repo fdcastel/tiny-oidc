@@ -5,7 +5,8 @@ import {
   type InteractionDocumentBody,
   type InteractionStep,
 } from "../api/definitions.ts";
-import type { InteractionDO, InteractionDocument } from "../do/InteractionDO.ts";
+import { listEnabledUpstreams } from "../db/upstreams.ts";
+import type { InteractionDO, InteractionDocument, LinkCandidate } from "../do/InteractionDO.ts";
 import type { ClientRef } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
 import type { Client } from "../oidc/clients.ts";
@@ -145,6 +146,27 @@ export function interactionUid(doc: InteractionDocument): string | null {
 }
 
 /** GET /api/v1/interactions/{id} (§7.3, TIO-IX-020). */
+/** The enabled upstreams the login app may offer (§7.3); none when the directory is unreachable. */
+async function upstreamMethods(c: AppContext): Promise<{ alias: string; display_name: string }[]> {
+  try {
+    return (await listEnabledUpstreams(c.get("db"))).map((u) => ({
+      alias: u.alias,
+      display_name: u.display_name,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** The `link` section (§7.3): the candidate is shown a masked email, never the account (TIO-IX-021). */
+function linkSection(link: LinkCandidate) {
+  return {
+    upstream: link.alias,
+    email_masked: maskEmail(link.claims.email) as string,
+    display_name_hint: link.claims.name,
+  };
+}
+
 export function getInteractionHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
     const guarded = await guard(c, clock);
@@ -176,10 +198,14 @@ export function getInteractionHandler(clock: Clock): Handler<AppEnv> {
             acr_values: request.acr_values,
           }
         : null,
-      methods: { passkey: true, registration: settings["registration.mode"], upstreams: [] },
+      methods: {
+        passkey: true,
+        registration: settings["registration.mode"],
+        upstreams: await upstreamMethods(c),
+      },
       session_user: null,
       consent: null,
-      link: null,
+      link: doc.link === null ? null : linkSection(doc.link),
       logout: null,
       error: doc.error,
       attempts_remaining: Math.max(0, ATTEMPT_LIMIT - doc.attempts),

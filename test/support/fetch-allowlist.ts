@@ -11,6 +11,23 @@ export type FetchHandler = (request: Request) => Promise<Response> | Response;
 export const network = setupNetwork();
 network.configure({ onUnhandledFrame: "error" });
 
+export interface OutboundRequest {
+  method: string;
+  url: string;
+  /** False when no mounted origin answered, so the request was refused. */
+  handled: boolean;
+}
+
+/** Every outbound request the Worker attempted in this file, in order (TIO-ARCH-016). */
+export const outbound: OutboundRequest[] = [];
+network.events.on("request:start", (event) => {
+  outbound.push({ method: event.request.method, url: event.request.url, handled: true });
+});
+network.events.on("request:unhandled", (event) => {
+  const entry = outbound.findLast((r) => r.url === event.request.url);
+  if (entry !== undefined) entry.handled = false;
+});
+
 /** Rejects every outbound request that no mounted origin handles. Idempotent. */
 export function disableNetwork(): void {
   if (network.readyState !== 1) network.enable();
