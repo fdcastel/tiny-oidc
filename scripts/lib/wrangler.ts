@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 /** Absolute path of wrangler's CLI entry, run with the current Node binary (no shell, portable on Windows). */
-function wranglerBin(): string {
+export function wranglerBin(): string {
   const pkg = createRequire(import.meta.url).resolve("wrangler/package.json");
   return join(dirname(pkg), "bin", "wrangler.js");
 }

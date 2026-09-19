@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["test/**/*.test.ts"],
+  "entry": ["test/**/*.test.ts", "test/e2e/**/*.spec.ts", "scripts/*.ts"],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
   "ignoreDependencies": ["cloudflare"],
   "ignoreExportsUsedInFile": true

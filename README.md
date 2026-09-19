@@ -4,7 +4,7 @@
 
 Tiny OIDC gives one organization a single, standards-compliant identity service for its own applications: OpenID Connect for relying parties, passkeys and upstream OIDC federation for users, JSON APIs for everything else. No servers, no containers, no external databases. Designed for one million users on one deployment.
 
-> **Status: pre-alpha.** The [specification](doc/TINY_OIDC_SPEC.md) is complete and is the contract for the build. Implementation has not started. The Deploy button below is wired for the day it does.
+> **Status: pre-alpha, under construction.** The [specification](doc/TINY_OIDC_SPEC.md) is the contract for the build and the [implementation plan](doc/TINY_OIDC_PLAN.md) tracks progress phase by phase. Phase 0 (foundation: toolchain, CI gates, storage skeletons, health endpoint) is done; the OIDC endpoints arrive with Phases 1 and 2. The Deploy button below already provisions a Worker, but it does not sign anyone in yet.
 
 ### Already on Cloudflare?
 
@@ -30,7 +30,7 @@ The fastest path to a live instance is the Deploy to Cloudflare button above.
 
 1. **Click the button.** Cloudflare forks this repository into your GitHub account and opens the Workers Builds form pre-configured from [wrangler.jsonc](wrangler.jsonc).
 2. **Set `ISSUER` and `RP_ID`** to the URL and host your Worker will have, for example `https://tiny-oidc.<your-subdomain>.workers.dev` and `tiny-oidc.<your-subdomain>.workers.dev`.
-3. **Fill the secrets** `MASTER_KEYS` and `ADMIN_BOOTSTRAP_TOKEN`. The generator command is documented in the specification (§12.2).
+3. **Fill the secrets** `MASTER_KEYS`, `MASTER_KEY_ACTIVE` and `ADMIN_BOOTSTRAP_TOKEN`. Generate values with `pnpm gen:secrets` (or any tool that prints 32 random bytes as base64); every secret is described in [doc/CONFIG.md](doc/CONFIG.md).
 4. Click **Create and deploy.** D1, Durable Objects, Queues and R2 are provisioned for you; migrations run as part of the deploy command.
 5. **Bootstrap** your first administrator with one API call, then sign in with a passkey at `/login/` on your Worker.
 
@@ -39,6 +39,22 @@ Production deployments run with the bundled login app disabled and a custom doma
 ## Documents
 
 - [Specification](doc/TINY_OIDC_SPEC.md): architecture, protocol surface, APIs, storage, cryptography, testing strategy, implementation plan, threat model.
+- [Implementation plan](doc/TINY_OIDC_PLAN.md): the living task list, phase by phase.
+- [Configuration](doc/CONFIG.md): every variable, secret and setting (generated from the code).
+- [Traceability](doc/TRACEABILITY.md): which test proves which requirement (generated).
+
+## Developing
+
+```sh
+pnpm install
+pnpm gen:secrets --dev-vars   # writes .dev.vars for wrangler dev
+pnpm dev                      # http://localhost:8787/api/v1/health
+pnpm test                     # unit + workers suites, 100% coverage gate
+pnpm test:e2e                 # Playwright against wrangler dev
+pnpm lint && pnpm build && pnpm check && pnpm trace
+```
+
+Requires Node 24 and pnpm 10. Every push to `main` runs the full gate set in GitHub Actions; deployments are made by Cloudflare Workers Builds, never by CI.
 
 ## License
 
