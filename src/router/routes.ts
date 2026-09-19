@@ -91,7 +91,35 @@ export const ROUTES: readonly Route[] = [
     cacheable: true,
   },
   { method: "GET", path: "/api/v1/health", cors: "public", navigation: false, cacheable: false },
+  ...interactionRoutes(),
 ];
+
+/** The Interaction API (§7): one GET and the POST operations, all in the `interactions` CORS class. */
+function interactionRoutes(): Route[] {
+  const base = "/api/v1/interactions/:id";
+  const operations = [
+    "passkey/options",
+    "passkey/verify",
+    "register/options",
+    "register/verify",
+    "upstream/:alias",
+    "consent",
+    "abort",
+    "logout",
+  ];
+  return [
+    { method: "GET", path: base, cors: "interactions", navigation: false, cacheable: false },
+    ...operations.map(
+      (op): Route => ({
+        method: "POST",
+        path: `${base}/${op}`,
+        cors: "interactions",
+        navigation: false,
+        cacheable: false,
+      }),
+    ),
+  ];
+}
 
 /** Body limit class of a path (TIO-HTTP-004): 8 MB for import, 64 KB for the JSON APIs, 16 KB elsewhere. */
 export function bodyClass(path: string): BodyClass {

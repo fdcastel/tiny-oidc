@@ -341,6 +341,11 @@ describe("OpenAPI", () => {
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=300");
     const doc = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
     expect(doc.openapi).toBe("3.1.0");
-    expect(Object.keys(doc.paths)).toEqual(["/api/v1/health"]);
+    expect(Object.keys(doc.paths)).toEqual([
+      "/api/v1/health",
+      "/api/v1/interactions/{id}",
+      "/api/v1/interactions/{id}/consent",
+      "/api/v1/interactions/{id}/abort",
+    ]);
   });
 });

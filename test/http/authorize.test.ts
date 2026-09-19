@@ -7,7 +7,7 @@ import { setClientDisabled } from "../../src/db/clients.ts";
 import { Db } from "../../src/db/db.ts";
 import { writeSettings } from "../../src/db/settings.ts";
 import type { InteractionDocument } from "../../src/do/InteractionDO.ts";
-import type { ClientRef } from "../../src/do/UserDO.ts";
+import type { ClientRef, InitProfile } from "../../src/do/UserDO.ts";
 import type { Env } from "../../src/env.ts";
 import type { LogLine } from "../../src/obs/log.ts";
 import type { AuthorizeRequest } from "../../src/oidc/authorize.ts";
@@ -24,6 +24,7 @@ import { createTestClient, userProfile } from "../support/factories.ts";
 import { testKeys } from "../support/keys.ts";
 import { env, url } from "../support/op.ts";
 import { resetStorage } from "../support/reset.ts";
+import { loggedIn as loggedInUser } from "../support/sessions.ts";
 
 const ISSUER = "https://auth.example.com";
 const LOGIN_URL = "https://login.example.com/app";
@@ -79,34 +80,7 @@ let web: Client;
 let consentful: Client;
 let grouped: Client;
 
-const passkeyAuth = { amr: ["hwk", "user"], acr: ACR.passkey, upstream: null };
-
-/** A user with a live session and its cookie, created the way `/complete` will. */
-async function loggedIn(profile = userProfile(clock)) {
-  const stub = env.USER_DO.get(env.USER_DO.idFromName(profile.id));
-  await stub.init(profile, clock.now());
-  const secret = newSecret();
-  const sid = uuids.next();
-  const login = await stub.finalizeLogin({
-    now: clock.now(),
-    session: {
-      create: {
-        sid,
-        secret_hash: await sha256(secret),
-        auth: { ...passkeyAuth, auth_time: clock.now() },
-        metadata: { ip_hash: null, ua_family: null, country: null },
-        idle_ttl: 86_400,
-        absolute_ttl: 2_592_000,
-      },
-    },
-    code: null,
-    client: null,
-    session_idle_ttl: 86_400,
-  });
-  if (!login.ok) throw new Error(login.error);
-  const cookie = `${SESSION_COOKIE}=${await sealSessionHandle(keys, profile.id, sid, secret)}`;
-  return { stub, profile, sid, cookie, auth_time: clock.now() };
-}
+const loggedIn = (profile?: InitProfile) => loggedInUser(clock, profile);
 
 async function interactionDoc(id: string): Promise<InteractionDocument> {
   const got = await interactionStub(env, id).get(clock.now());

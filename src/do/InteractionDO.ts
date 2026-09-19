@@ -101,7 +101,13 @@ export type CreateInteraction = Pick<
 export type InteractionDoError =
   | "interaction_exists"
   | "interaction_not_found"
-  | "interaction_invalid_state";
+  | "interaction_invalid_state"
+  | "too_many_attempts";
+
+/** Fields a non-transition update may change (challenges, legs, counters). */
+export type InteractionPatch = Partial<
+  Pick<InteractionDocument, "passkey_challenge" | "federation" | "link" | "attempts">
+>;
 
 const DOC_KEY = "doc";
 /** Completed and failed interactions stay readable for 60 s, then are deleted (TIO-IX-003). */
@@ -207,6 +213,46 @@ export class InteractionDO extends DurableObject<Env> {
     await this.ctx.storage.put(DOC_KEY, doc);
     if (isTerminal(to)) await this.ctx.storage.setAlarm(doc.expires_at * 1000);
     return { ok: true, doc };
+  }
+
+  /** Updates working fields without a status change; the document must be live and non-terminal. */
+  async patch(
+    fields: InteractionPatch,
+    now: number,
+  ): Promise<DoResult<{ doc: InteractionDocument }, InteractionDoError>> {
+    const current = await this.get(now);
+    if (!current.ok) return current;
+    if (isTerminal(current.doc.status)) return fail("interaction_invalid_state");
+    const doc: InteractionDocument = { ...current.doc, ...fields };
+    await this.ctx.storage.put(DOC_KEY, doc);
+    return { ok: true, doc };
+  }
+
+  /**
+   * Counts one passkey or registration attempt (TIO-IX-030). The call that
+   * exceeds `limit` fails the interaction with `too_many_attempts`
+   * (TIO-RL-002) and is refused.
+   */
+  async attempt(
+    now: number,
+    limit: number,
+  ): Promise<DoResult<{ doc: InteractionDocument; remaining: number }, InteractionDoError>> {
+    const current = await this.get(now);
+    if (!current.ok) return current;
+    if (isTerminal(current.doc.status)) return fail("interaction_invalid_state");
+    const attempts = current.doc.attempts + 1;
+    if (attempts > limit) {
+      await this.apply(
+        "fail",
+        "failed",
+        { attempts, error: { error: "too_many_attempts", error_description: "too many attempts" } },
+        now,
+      );
+      return fail("too_many_attempts");
+    }
+    const doc: InteractionDocument = { ...current.doc, attempts };
+    await this.ctx.storage.put(DOC_KEY, doc);
+    return { ok: true, doc, remaining: limit - attempts };
   }
 
   /** Expiry: delete all storage (TIO-DATA-022). */

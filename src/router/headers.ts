@@ -3,8 +3,8 @@ import type { AppEnv } from "./context.ts";
 import { matchRoute, type Route } from "./routes.ts";
 
 // Security headers (TIO-HTTP-002) and the CORS matrix (TIO-HTTP-003), both
-// derived from the route table. The `interactions` class (Origin reflection
-// against `login_origins`) is added with the Interaction API in Phase 2.
+// derived from the route table. The `interactions` class reflects the request
+// Origin only when it is one of the effective `login_origins`, with credentials.
 
 const ALLOWED_HEADERS = "Authorization, Content-Type";
 const MAX_AGE = "600";
@@ -40,6 +40,30 @@ function publicCorsHeaders(methods: string[]): Record<string, string> {
   };
 }
 
+function loginOriginCorsHeaders(origin: string, methods: string[]): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": methods.join(", "),
+    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
+    "Access-Control-Max-Age": MAX_AGE,
+    Vary: "Origin",
+  };
+}
+
+/** Whether the request Origin is an effective login origin; unknown when settings cannot be read. */
+async function isLoginOrigin(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  origin: string,
+): Promise<boolean> {
+  try {
+    const settings = await c.get("settingsLoader").get(c.get("db"), c.get("config"));
+    return settings.login_origins?.includes(origin) ?? false;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * CORS per route class: preflights are answered here; actual responses get
  * the allow-origin header after the handler runs. Navigation endpoints and
@@ -47,10 +71,14 @@ function publicCorsHeaders(methods: string[]): Record<string, string> {
  */
 export const cors: MiddlewareHandler<AppEnv> = async (c, next) => {
   const path = c.req.path;
+  const origin = c.req.header("Origin") ?? null;
   if (c.req.method === "OPTIONS") {
     const requested = c.req.header("Access-Control-Request-Method") ?? "GET";
     const { route, methods } = matchRoute(requested, path);
     if (route?.cors === "public") return c.body(null, 204, publicCorsHeaders(methods));
+    if (route?.cors === "interactions" && origin !== null && (await isLoginOrigin(c, origin))) {
+      return c.body(null, 204, loginOriginCorsHeaders(origin, methods));
+    }
     return c.body(null, 204);
   }
   await next();
@@ -58,5 +86,14 @@ export const cors: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (route?.cors === "public") {
     c.res.headers.set("Access-Control-Allow-Origin", "*");
     c.res.headers.set("Access-Control-Expose-Headers", "X-Request-Id");
+  } else if (
+    route?.cors === "interactions" &&
+    origin !== null &&
+    (await isLoginOrigin(c, origin))
+  ) {
+    c.res.headers.set("Access-Control-Allow-Origin", origin);
+    c.res.headers.set("Access-Control-Allow-Credentials", "true");
+    c.res.headers.set("Access-Control-Expose-Headers", "X-Request-Id");
+    c.res.headers.set("Vary", "Origin");
   }
 };

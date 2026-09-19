@@ -47,6 +47,385 @@
           "d1",
           "time"
         ]
+      },
+      "InteractionDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "authorize",
+              "logout"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "login_required",
+              "link_required",
+              "consent_required",
+              "ready",
+              "completed",
+              "failed"
+            ]
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientSummary"
+          },
+          "request": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "prompt": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "login",
+                    "consent",
+                    "select_account"
+                  ]
+                }
+              },
+              "max_age": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "login_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ui_locales": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "acr_values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "scopes",
+              "prompt",
+              "max_age",
+              "login_hint",
+              "ui_locales",
+              "acr_values"
+            ]
+          },
+          "methods": {
+            "type": "object",
+            "properties": {
+              "passkey": {
+                "type": "boolean"
+              },
+              "registration": {
+                "type": "string",
+                "enum": [
+                  "closed",
+                  "invite",
+                  "open"
+                ]
+              },
+              "upstreams": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "alias": {
+                      "type": "string"
+                    },
+                    "display_name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "alias",
+                    "display_name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "passkey",
+              "registration",
+              "upstreams"
+            ]
+          },
+          "session_user": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "email_masked": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "display_name",
+              "email_masked"
+            ]
+          },
+          "consent": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "granted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "granted"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "scopes"
+            ]
+          },
+          "link": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "upstream": {
+                "type": "string"
+              },
+              "email_masked": {
+                "type": "string"
+              },
+              "display_name_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "upstream",
+              "email_masked",
+              "display_name_hint"
+            ]
+          },
+          "logout": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "client": {
+                "$ref": "#/components/schemas/ClientSummary"
+              },
+              "post_logout_redirect_uri_registered": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "client",
+              "post_logout_redirect_uri_registered"
+            ]
+          },
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "error_description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "error",
+              "error_description"
+            ]
+          },
+          "attempts_remaining": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "expires_at",
+          "client",
+          "request",
+          "methods",
+          "session_user",
+          "consent",
+          "link",
+          "logout",
+          "error",
+          "attempts_remaining"
+        ]
+      },
+      "ClientSummary": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "client_name": {
+            "type": "string"
+          },
+          "client_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "logo_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "client_uri",
+          "logo_uri"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "error_description": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "error_description",
+          "request_id"
+        ]
+      },
+      "InteractionStep": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "consent_required",
+              "failed"
+            ]
+          },
+          "redirect_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "redirect_to"
+        ]
+      },
+      "ConsentDecision": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "grant"
+                ]
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "decision",
+              "scopes"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "deny"
+                ]
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          }
+        ]
       }
     },
     "parameters": {}
@@ -75,6 +454,248 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}": {
+      "get": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "The interaction document for the login app (§7.3)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionDocument"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/consent": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Grant or deny consent (§7.5)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ready or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionStep"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/abort": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Abort the interaction with access_denied (§7.5)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionStep"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
