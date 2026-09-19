@@ -252,7 +252,7 @@ describe("health and observability", () => {
     expect(lines.filter((l) => l.msg === "request")).toHaveLength(2);
   });
 
-  it("[TIO-OBS-002] writes one data point per request and one per audit event when metrics are bound", async () => {
+  it("[TIO-OBS-002] writes one data point per request and one per audit event type and outcome when metrics are bound, and a refused write never fails the request", async () => {
     const points: { blobs: string[]; doubles: number[]; indexes: string[] }[] = [];
     const metrics = {
       writeDataPoint: (p: { blobs: string[]; doubles: number[]; indexes: string[] }) =>
@@ -278,6 +278,19 @@ describe("health and observability", () => {
         indexes: ["token.client_auth_failed"],
       },
     ]);
+    // The binding refuses (its per-invocation write limit): logged, and the request still answers.
+    const refusing = {
+      writeDataPoint: () => {
+        throw new Error("Analytics Engine write limit exceeded.");
+      },
+    } as unknown as AnalyticsEngineDataset;
+    const overLimit = harness({ METRICS: refusing });
+    expect((await overLimit.fetch(url("/api/v1/health"))).status).toBe(200);
+    expect(overLimit.lines.at(-1)).toMatchObject({
+      level: "warn",
+      msg: "metrics write failed",
+      reason: "Analytics Engine write limit exceeded.",
+    });
   });
 
   it("[TIO-OBS-001] log lines below the configured level are dropped and metrics are written only when the binding exists", async () => {

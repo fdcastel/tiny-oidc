@@ -1926,7 +1926,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-001]** Every request SHALL produce exactly one structured JSON log line with `request_id`, `route` (template, not raw path), `method`, `status`, `duration_ms`, `cpu_ms` if available, `do_calls`, `d1_reads`, `d1_writes`, `client_id` if known, `error` code if any. No query strings, no bodies, no headers except `content-length`.
 
-**[TIO-OBS-002]** When the `METRICS` binding exists, the OP SHALL write one Analytics Engine data point per request (`blobs: [route, status, error]`, `doubles: [duration_ms]`) and one per audit event (`blobs: [type, outcome]`).
+**[TIO-OBS-002]** When the `METRICS` binding exists, the OP SHALL write one Analytics Engine data point per request (`blobs: [route, status, error]`, `doubles: [duration_ms]`) and one per audit event type and outcome the request emitted (`blobs: [type, outcome]`, `doubles: [count]`), so that a request emitting thousands of events (a bulk import) stays within the binding's per-invocation write limit. A refused write SHALL be logged and SHALL never fail the request.
 
 **[TIO-OBS-003]** `GET /api/v1/health` SHALL return `{ "status": "ok" | "degraded", "version": "<git sha>", "active_kid": "…", "d1": "ok" | "error", "time": <now> }` with status 200 for `ok` and 503 for `degraded`; it SHALL touch no Durable Object.
 

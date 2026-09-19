@@ -98,6 +98,7 @@ import {
   type RequestLog,
   serverTiming,
 } from "../obs/log.ts";
+import { metricPoints, writeMetrics } from "../obs/metrics.ts";
 import { sessionMetadata } from "../obs/request-meta.ts";
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
 import { ClientCache } from "../oidc/client-cache.ts";
@@ -228,18 +229,15 @@ export function createApp(deps: AppDeps) {
     const error = c.get("error");
     if (error !== undefined) line.error = error;
     logger.log("info", "request", { ...line });
-    // One data point per request and one per audit event when metrics are bound (TIO-OBS-002).
-    c.env.METRICS?.writeDataPoint({
-      blobs: [line.route, String(line.status), line.error ?? ""],
-      doubles: [line.duration_ms],
-      indexes: [line.route],
-    });
-    for (const event of c.get("audit")?.events ?? []) {
-      c.env.METRICS?.writeDataPoint({
-        blobs: [event.type, event.outcome],
-        doubles: [1],
-        indexes: [event.type],
-      });
+    // One data point per request and one per audit event type and outcome, with the count, when
+    // metrics are bound (TIO-OBS-002); a refused write is logged, never surfaced.
+    if (c.env.METRICS) {
+      writeMetrics(
+        c.env.METRICS,
+        metricPoints(line, c.get("audit")?.events ?? []),
+        logger,
+        requestId,
+      );
     }
     c.res.headers.set("X-Request-Id", requestId);
     c.res.headers.set("Server-Timing", serverTiming(line));
