@@ -1,0 +1,16 @@
+# Secrets of a Tiny OIDC deployment. Copy to .dev.vars for `wrangler dev`;
+# the Deploy-to-Cloudflare form renders one field per entry. Generate values
+# with `pnpm gen:secrets`. Generated from src/env.ts by `pnpm gen:config`.
+
+# JSON object of master-key versions: `{"1":"<base64 of 32 random bytes>"}`. Generate with `pnpm gen:secrets`.
+MASTER_KEYS=
+
+# Version of MASTER_KEYS used for new encryptions, for example `1`.
+MASTER_KEY_ACTIVE=
+
+# Bearer token accepted once by `POST /api/v1/admin/bootstrap`; may be deleted after bootstrap. (optional)
+ADMIN_BOOTSTRAP_TOKEN=
+
+# Local development only: point the issuer at wrangler dev (uncomment).
+# ISSUER=http://localhost:8787
+# RP_ID=localhost

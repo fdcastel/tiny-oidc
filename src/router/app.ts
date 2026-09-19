@@ -1,9 +1,10 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
+import { API_INFO, healthRoute, OPENAPI_PATH } from "../api/definitions.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } from "../env.ts";
-import { healthHandler, healthRoute } from "../obs/health.ts";
+import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
 import type { AppEnv } from "./context.ts";
 import { errorBody, errorResponse } from "./errors.ts";
@@ -17,7 +18,6 @@ export interface AppDeps {
 }
 
 const MAX_QUERY_BYTES = 8 * 1024;
-const OPENAPI_PATH = "/api/v1/openapi.json";
 const HEALTH_PATH = "/api/v1/health";
 
 /**
@@ -143,15 +143,7 @@ export function createApp(deps: AppDeps) {
     await next();
     c.res.headers.set("Cache-Control", "public, max-age=300");
   });
-  app.doc31(OPENAPI_PATH, {
-    openapi: "3.1.0",
-    info: {
-      title: "Tiny OIDC JSON APIs",
-      version: "1.0.0",
-      description:
-        "Interaction, Self-service and Admin APIs of Tiny OIDC. The OIDC protocol endpoints are described by the discovery document.",
-    },
-  });
+  app.doc31(OPENAPI_PATH, API_INFO);
 
   // 4. Unknown paths are 404; known paths with an unlisted method are 405 with Allow (TIO-HTTP-001).
   app.notFound((c) => {
