@@ -1,11 +1,14 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+import type { Handler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { API_INFO, healthRoute, OPENAPI_PATH } from "../api/definitions.ts";
+import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } from "../env.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
+import { discoveryHandler, jwksHandler, webauthnHandler } from "../oidc/wellknown.ts";
 import type { AppEnv } from "./context.ts";
 import { errorBody, errorResponse } from "./errors.ts";
 import { cors, securityHeaders } from "./headers.ts";
@@ -28,6 +31,7 @@ export function createApp(deps: AppDeps) {
   const sink = deps.sink ?? consoleSink;
   const uuids = new UuidV7(deps.clock);
   const settingsLoader = new SettingsLoader(deps.clock);
+  const keyStore = new KeyStore(deps.clock);
   // Startup validation happens at the first request and is remembered for the
   // isolate's lifetime (TIO-CRYPTO-010, TIO-CFG-002).
   let startup: { fingerprint: string; result: ConfigResult } | undefined;
@@ -77,6 +81,7 @@ export function createApp(deps: AppDeps) {
     const db = Db.from(c.env.DB);
     c.set("db", db);
     c.set("settingsLoader", settingsLoader);
+    c.set("keyStore", keyStore);
     if (!config.ok) {
       // Fail every request closed until the configuration is fixed (TIO-ARCH-014).
       logger.log("error", "fatal: invalid configuration", {
@@ -137,7 +142,23 @@ export function createApp(deps: AppDeps) {
   });
 
   // Routes
+  app.get("/.well-known/openid-configuration", discoveryHandler);
+  app.get("/.well-known/oauth-authorization-server", discoveryHandler);
+  app.get("/.well-known/jwks.json", jwksHandler);
+  app.get("/.well-known/webauthn", webauthnHandler);
   app.openapi(healthRoute, healthHandler(deps.clock));
+  // Protocol endpoints arrive with Phase 2; until then they answer 501 so the
+  // route table, discovery and the header matrix already agree (TIO-DISC-002).
+  const notImplemented: Handler<AppEnv> = (c) =>
+    errorResponse(c, 501, "not_implemented", "this endpoint arrives with a later phase");
+  app.get("/authorize", notImplemented);
+  app.post("/par", notImplemented);
+  app.post("/token", notImplemented);
+  app.on(["GET", "POST"], "/userinfo", notImplemented);
+  app.post("/revoke", notImplemented);
+  app.on(["GET", "POST"], "/logout", notImplemented);
+  app.on(["GET", "POST"], "/federation/callback", notImplemented);
+  app.get("/interactions/:id/complete", notImplemented);
 
   app.use(OPENAPI_PATH, async (c, next) => {
     await next();

@@ -9,5 +9,6 @@ describe("systemClock", () => {
     vi.setSystemTime(new Date(1_790_000_000_500));
     expect(systemClock.nowMs()).toBe(1_790_000_000_500);
     expect(systemClock.now()).toBe(1_790_000_000);
+    expect(systemClock.nowDate().getTime()).toBe(1_790_000_000_500);
   });
 });

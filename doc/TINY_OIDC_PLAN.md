@@ -4,7 +4,7 @@
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-19 |
-| **Current focus** | Phase 0 complete. Next: `P1-01` (key store). |
+| **Current focus** | Phase 1 complete. Next: `P2-01` (clients). |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated
@@ -79,7 +79,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 
 ---
 
-## Phase 1 — Keys and discovery
+## Phase 1 — Keys and discovery (complete)
 
 **Goal:** the OP can publish JWKS and discovery and can sign and verify its own tokens.
 
@@ -87,13 +87,13 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 
 | ID | Task | Spec | Status | Commit | Notes |
 |---|---|---|---|---|---|
-| P1-01 | Key store: `src/crypto/keystore.ts` generating ES256 keys, exporting the JWK once, encrypting `private_jwk_enc` under the keystore key, importing non-extractable at runtime; `kid` = RFC 7638 thumbprint; first-key bootstrap guarded by `INSERT ... WHERE NOT EXISTS` | TIO-KEYS-010, TIO-KEYS-011, TIO-KEYS-014 | ❌ OPEN | — | |
-| P1-02 | Key roles derived from `activates_at`/`retired_at`; rotation creates (with `immediate`), cron retires superseded keys after `retire_after_seconds`, deletes retired rows after 90 days; fail closed when no active key; three-key lifetime test with the injected clock | TIO-KEYS-012, TIO-KEYS-013, TIO-CFG-010 (key steps) | ❌ OPEN | — | Admin endpoints for keys arrive in P3-07 |
-| P1-03 | JWKS endpoint publishing every unretired key, no `d` member under any state, `Cache-Control: public, max-age=300`, served through `caches.default` | TIO-KEYS-001, TIO-KEYS-002 | ❌ OPEN | — | |
-| P1-04 | `src/oidc/capabilities.ts` constant; discovery documents for both well-known paths; deep-equality test against the constant; route-table comparison test; `/.well-known/webauthn` from `webauthn_origins` with the 5-label validation | TIO-DISC-001..004, TIO-PK-001 | ❌ OPEN | — | Validators import the same constant in Phase 2 |
-| P1-05 | JWT service (`src/crypto/jwt.ts` over jose): sign with header `alg`/`typ`/`kid` only and a 512-byte header test; verify own tokens against unretired keys with `iss`, `exp` (0 s leeway), `typ`; ID token builder (claims table, null omission, `at_hash`); `at+jwt` builder with `aud` from `audiences`; logout token builder | TIO-KEYS-015, TIO-TOKEN-030..034, TIO-LOGOUT-010 | ❌ OPEN | — | |
-| P1-06 | Master-key rotation: re-encrypt keystore rows under the active version in cron chunks; handles under retired versions rejected; three-phase test | TIO-CRYPTO-011, TIO-ARCH-008 | ❌ OPEN | — | `POST /maintenance/rekey` endpoint in P3-07 |
-| P1-07 | Phase 1 exit: trace shows §5.2, §5.3, §10 covered | §14.2 | ❌ OPEN | — | |
+| P1-01 | Key store: `src/crypto/keystore.ts` generating ES256 keys, exporting the JWK once, encrypting `private_jwk_enc` under the keystore key, importing non-extractable at runtime; `kid` = RFC 7638 thumbprint; first-key bootstrap guarded by `INSERT ... WHERE NOT EXISTS` | TIO-KEYS-010, TIO-KEYS-011, TIO-KEYS-014 | ✅ DONE | pending | |. `src/crypto/secretbox.ts` seals private JWKs (and, later, upstream secrets) under the keystore key with the master-key version in the blob |
+| P1-02 | Key roles derived from `activates_at`/`retired_at`; rotation creates (with `immediate`), cron retires superseded keys after `retire_after_seconds`, deletes retired rows after 90 days; fail closed when no active key; three-key lifetime test with the injected clock | TIO-KEYS-012, TIO-KEYS-013, TIO-CFG-010 (key steps) | ✅ DONE | pending | Admin endpoints for keys arrive in P3-07. `maintainSigningKeys()` is the cron body; `scheduled()` wires it in P3-10. Key cache TTL is 60 s (spec §2.8 said 5 min; TIO-ARCH-011 wins and §2.8 was aligned). Same-second ties between active keys resolve to the newest row, then the greater kid |
+| P1-03 | JWKS endpoint publishing every unretired key, no `d` member under any state, `Cache-Control: public, max-age=300`, served through `caches.default` | TIO-KEYS-001, TIO-KEYS-002 | ✅ DONE | pending | |. Served through `caches.default`; cache hits are copied so the header middleware can decorate them |
+| P1-04 | `src/oidc/capabilities.ts` constant; discovery documents for both well-known paths; deep-equality test against the constant; route-table comparison test; `/.well-known/webauthn` from `webauthn_origins` with the 5-label validation | TIO-DISC-001..004, TIO-PK-001 | ✅ DONE | pending | Validators import the same constant in Phase 2. The protocol endpoints (`/authorize`, `/par`, `/token`, `/userinfo`, `/revoke`, `/logout`, `/federation/callback`, `/interactions/{id}/complete`) are in the route table now with a 501 `not_implemented` handler until Phase 2, so the discovery-vs-route-table test holds |
+| P1-05 | JWT service (`src/crypto/jwt.ts` over jose): sign with header `alg`/`typ`/`kid` only and a 512-byte header test; verify own tokens against unretired keys with `iss`, `exp` (0 s leeway), `typ`; ID token builder (claims table, null omission, `at_hash`); `at+jwt` builder with `aud` from `audiences`; logout token builder | TIO-KEYS-015, TIO-TOKEN-030..034, TIO-LOGOUT-010 | ✅ DONE | pending | |. Header sizes pinned at 106/110/115 bytes for JWT, at+jwt and logout+jwt; `ignoreExpiry` re-verifies an expired hint with the clock set to its `iat` |
+| P1-06 | Master-key rotation: re-encrypt keystore rows under the active version in cron chunks; handles under retired versions rejected; three-phase test | TIO-CRYPTO-011, TIO-ARCH-008 | ✅ DONE | pending | `POST /maintenance/rekey` endpoint in P3-07. `rekeySigningKeys(db, keys, limit)`; rows sealed under a version no longer in the secret are reported as unrecoverable, never modified |
+| P1-07 | Phase 1 exit: trace shows §5.2, §5.3, §10 covered | §14.2 | ✅ DONE | pending | |. `trace.config.json` phase = 1; 59 identifiers covered |
 
 ---
 
@@ -262,3 +262,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | P0-12 (deploy and smoke scripts with a fake wrangler) and P0-13 (clock, keys, factories, outbound guard) implemented. Spec draft.2: `fetchMock` replaced by `@msw/cloudflare` in TIO-ARCH-016, TIO-TEST-031 and §13.1; dev dependency list in §14.1 extended. |
 | 2026-09-19 | Phase 0 complete: P0-01..P0-14 done; e2e smoke suite with Playwright `webServer` starting `wrangler dev`; README status updated. Chromium for Playwright had to be installed by hand on the workstation (Node's downloader times out against the CDN; curl works). |
 | 2026-09-19 | First CI run green on `main` (e561660). OP-01 requested from the owner. |
+| 2026-09-19 | Phase 1 complete (P1-01..P1-07): key store, roles, rotation, JWKS, discovery, capabilities, JWT service, token builders, master-key rotation. Spec §2.8 key cache aligned to 60 s per TIO-ARCH-011. Smoke test now checks discovery, JWKS and health. |

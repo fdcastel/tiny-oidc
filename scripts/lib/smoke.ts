@@ -1,7 +1,11 @@
 // Smoke test of a deployment (TIO-DEPLOY-007): discovery, JWKS and health must
-// answer. Discovery and JWKS join the list in Phase 1.
+// answer with 200 JSON, and health must report ok.
 
-export const SMOKE_PATHS = ["/api/v1/health"] as const;
+export const SMOKE_PATHS = [
+  "/.well-known/openid-configuration",
+  "/.well-known/jwks.json",
+  "/api/v1/health",
+] as const;
 
 export interface SmokeFailure {
   path: string;

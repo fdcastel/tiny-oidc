@@ -1,3 +1,4 @@
+import type { KeyStore } from "../crypto/keystore.ts";
 import type { Db } from "../db/db.ts";
 import type { Config, Env, Settings, SettingsLoader } from "../env.ts";
 import type { Logger } from "../obs/log.ts";
@@ -18,6 +19,7 @@ export interface Variables {
   /** Effective settings, loaded lazily by routes that need them. */
   settings?: Settings;
   settingsLoader: SettingsLoader;
+  keyStore: KeyStore;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Variables };

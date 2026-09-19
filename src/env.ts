@@ -48,11 +48,14 @@ export interface Clock {
   now(): number;
   /** Milliseconds since the Unix epoch, for UUID v7 timestamps. */
   nowMs(): number;
+  /** The current instant as a Date, for libraries that take one (jose). */
+  nowDate(): Date;
 }
 
 export const systemClock: Clock = {
   nowMs: () => Date.now(),
   now: () => Math.floor(Date.now() / 1000),
+  nowDate: () => new Date(),
 };
 
 export { EnvVarsSchema, SecretsSchema, SettingsSchema } from "./config/schema.ts";

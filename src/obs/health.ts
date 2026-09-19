@@ -11,11 +11,20 @@ export function healthHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
     const config = c.get("config");
     const d1 = await pingDb(c.get("db"));
+    // The signing key bootstraps on the first request of an empty store (TIO-KEYS-010);
+    // any failure to load it is reported as a missing kid, never as a crash.
+    let activeKid: string | null = null;
+    if (d1) {
+      try {
+        activeKid = (await c.get("keyStore").get(c.get("db"), config.keys)).signing.kid;
+      } catch {
+        activeKid = null;
+      }
+    }
     const body: Health = {
       status: d1 ? "ok" : "degraded",
       version: config.version,
-      // Filled in Phase 1 when the key store exists.
-      active_kid: null,
+      active_kid: activeKid,
       d1: d1 ? "ok" : "error",
       time: clock.now(),
     };

@@ -16,6 +16,10 @@ export class FakeClock implements Clock {
     return this.ms;
   }
 
+  nowDate(): Date {
+    return new Date(this.ms);
+  }
+
   /** Moves the clock forward by `seconds` (may be fractional). */
   advance(seconds: number): void {
     this.ms += Math.round(seconds * 1000);

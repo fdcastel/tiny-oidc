@@ -224,7 +224,7 @@ The rule: **a user's Durable Object is the source of truth for everything about 
 | Interaction state (authorize params, challenge, upstream state, link candidate) | `InteractionDO` | Exists before the user is known; ten-minute lifetime; self-deletes. |
 | PAR request | `InteractionDO` (same object becomes the interaction) | One-minute lifetime. |
 | Clients, upstreams, groups, settings, invitations | D1 | Global configuration. Low write rate. Isolate-cached reads. |
-| Signing keys (public + encrypted private) | D1 | Global. Cached in isolates for 5 minutes. |
+| Signing keys (public + encrypted private) | D1 | Global. Cached in isolates for 60 seconds. |
 | Audit events | `TASKS` queue → D1 `audit_hot` (30 days) + R2 archive (indefinite) | Volume is unbounded; D1 cannot hold it. |
 
 **[TIO-ARCH-004]** The authorization-code exchange, refresh-token rotation, passkey assertion verification and session validation paths SHALL perform no D1 write. Component tests wrap the D1 binding in a spy and assert zero write statements.
@@ -449,7 +449,7 @@ The D1 directory is the first ceiling. Its size is dominated by `audit_hot` rete
 | Discovery document, JWKS | Cloudflare edge cache via `Cache-Control: public, max-age=300` + Worker `caches.default` | 5 min | — | Time |
 | Client record | Isolate memory (LRU 1,000) | 60 s | up to 1 h | Time |
 | Settings | Isolate memory | 60 s | up to 1 h | Time |
-| Signing keys (public and decrypted private) | Isolate memory | 5 min | up to 1 h | Time |
+| Signing keys (public and decrypted private) | Isolate memory | 60 s (so that retirement meets TIO-ARCH-011) | up to 1 h | Time |
 | Upstream discovery metadata | Isolate memory | 1 h | up to 24 h | Time |
 | Upstream JWKS | `jose` remote JWK set (isolate) | 1 h; refetch on unknown `kid` at most once per 5 min | up to 24 h | `kid` miss |
 

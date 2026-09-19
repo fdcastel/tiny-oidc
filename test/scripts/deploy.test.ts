@@ -202,27 +202,43 @@ describe("smoke test", () => {
     }) as typeof fetch;
 
   it("passes when every path answers 200 and health is ok, and reports each failure otherwise", async () => {
-    expect(SMOKE_PATHS).toEqual(["/api/v1/health"]);
-    const ok = respond({ "/api/v1/health": () => Response.json({ status: "ok" }) });
+    expect(SMOKE_PATHS).toEqual([
+      "/.well-known/openid-configuration",
+      "/.well-known/jwks.json",
+      "/api/v1/health",
+    ]);
+    const documents = {
+      "/.well-known/openid-configuration": () => Response.json({ issuer: "https://op.example" }),
+      "/.well-known/jwks.json": () => Response.json({ keys: [] }),
+    };
+    const ok = respond({ ...documents, "/api/v1/health": () => Response.json({ status: "ok" }) });
     expect(await smoke("https://op.example/", ok)).toEqual([]);
-    const degraded = respond({ "/api/v1/health": () => Response.json({ status: "degraded" }) });
+    const degraded = respond({
+      ...documents,
+      "/api/v1/health": () => Response.json({ status: "degraded" }),
+    });
     expect(await smoke("https://op.example", degraded)).toEqual([
       { path: "/api/v1/health", reason: 'health reports {"status":"degraded"}' },
     ]);
     expect(await smoke("https://op.example", respond({}))).toEqual([
+      { path: "/.well-known/openid-configuration", reason: "status 404" },
+      { path: "/.well-known/jwks.json", reason: "status 404" },
       { path: "/api/v1/health", reason: "status 404" },
     ]);
     const throwing = (async () => {
       throw new Error("connection refused");
     }) as typeof fetch;
-    expect(await smoke("https://op.example", throwing)).toEqual([
-      { path: "/api/v1/health", reason: "connection refused" },
+    expect((await smoke("https://op.example", throwing)).map((f) => f.reason)).toEqual([
+      "connection refused",
+      "connection refused",
+      "connection refused",
     ]);
     const throwingValue = (async () => {
       throw "boom";
     }) as typeof fetch;
-    expect(await smoke("https://op.example", throwingValue)).toEqual([
-      { path: "/api/v1/health", reason: "boom" },
-    ]);
+    expect((await smoke("https://op.example", throwingValue))[0]).toEqual({
+      path: "/.well-known/openid-configuration",
+      reason: "boom",
+    });
   });
 });

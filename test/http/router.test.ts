@@ -111,7 +111,7 @@ describe("HTTP conventions", () => {
         headers: { "content-type": "text/plain" },
       });
     expect((await post("/token", 16 * 1024 + 1)).status).toBe(413);
-    expect((await post("/token", 16 * 1024)).status).toBe(404);
+    expect((await post("/token", 16 * 1024)).status).toBe(501);
     expect((await post("/api/v1/admin/users", 64 * 1024 + 1)).status).toBe(413);
     expect((await post("/api/v1/admin/users", 64 * 1024)).status).toBe(404);
     expect((await post("/api/v1/admin/import/users", 8 * 1024 * 1024 + 1)).status).toBe(413);
@@ -186,13 +186,14 @@ describe("health and observability", () => {
     expect(await res.json()).toEqual({
       status: "ok",
       version: "abc1234",
-      active_kid: null,
+      // The first request on an empty key store creates the signing key (TIO-KEYS-010).
+      active_kid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       d1: "ok",
       time: clock.now(),
     });
     const line = lines.find((l) => l.msg === "request") as LogLine;
     expect(line["do_calls"]).toBe(0);
-    expect(line["d1_reads"]).toBe(1);
+    expect(line["d1_reads"]).toBeGreaterThanOrEqual(1);
     const dev = await op(url("/api/v1/health"));
     expect(await dev.json()).toMatchObject({ version: "dev" });
   });
@@ -217,6 +218,9 @@ describe("health and observability", () => {
 
   it("[TIO-OBS-001] every request produces exactly one structured log line with the route template and counters, and no query string or body", async () => {
     const { fetch, lines } = harness({ LOG_LEVEL: "debug" });
+    // First call bootstraps the signing key; the line under test is the second, cached one.
+    await fetch(url("/api/v1/health"));
+    lines.length = 0;
     const res = await fetch(url("/api/v1/health?secret=1"), { headers: { "content-length": "0" } });
     expect(res.status).toBe(200);
     const requests = lines.filter((l) => l.msg === "request");
