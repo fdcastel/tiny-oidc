@@ -47,6 +47,8 @@ export const CAPABILITIES = {
 } as const;
 
 export type Scope = (typeof CAPABILITIES.scopes_supported)[number];
+export type TokenEndpointAuthMethod =
+  (typeof CAPABILITIES.token_endpoint_auth_methods_supported)[number];
 export type AcrValue = (typeof CAPABILITIES.acr_values_supported)[number];
 
 export const ACR = {

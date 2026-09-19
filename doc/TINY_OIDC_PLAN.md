@@ -4,7 +4,7 @@
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-19 |
-| **Current focus** | Phase 1 complete. Next: `P2-01` (clients). |
+| **Current focus** | `P2-01` (clients), `P2-08` (UserDO core). |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated
@@ -93,7 +93,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | P1-04 | `src/oidc/capabilities.ts` constant; discovery documents for both well-known paths; deep-equality test against the constant; route-table comparison test; `/.well-known/webauthn` from `webauthn_origins` with the 5-label validation | TIO-DISC-001..004, TIO-PK-001 | ✅ DONE | add37f6 | Validators import the same constant in Phase 2. The protocol endpoints (`/authorize`, `/par`, `/token`, `/userinfo`, `/revoke`, `/logout`, `/federation/callback`, `/interactions/{id}/complete`) are in the route table now with a 501 `not_implemented` handler until Phase 2, so the discovery-vs-route-table test holds |
 | P1-05 | JWT service (`src/crypto/jwt.ts` over jose): sign with header `alg`/`typ`/`kid` only and a 512-byte header test; verify own tokens against unretired keys with `iss`, `exp` (0 s leeway), `typ`; ID token builder (claims table, null omission, `at_hash`); `at+jwt` builder with `aud` from `audiences`; logout token builder | TIO-KEYS-015, TIO-TOKEN-030..034, TIO-LOGOUT-010 | ✅ DONE | add37f6 | |. Header sizes pinned at 106/110/115 bytes for JWT, at+jwt and logout+jwt; `ignoreExpiry` re-verifies an expired hint with the clock set to its `iat` |
 | P1-06 | Master-key rotation: re-encrypt keystore rows under the active version in cron chunks; handles under retired versions rejected; three-phase test | TIO-CRYPTO-011, TIO-ARCH-008 | ✅ DONE | add37f6 | `POST /maintenance/rekey` endpoint in P3-07. `rekeySigningKeys(db, keys, limit)`; rows sealed under a version no longer in the secret are reported as unrecoverable, never modified |
-| P1-07 | Phase 1 exit: trace shows §5.2, §5.3, §10 covered | §14.2 | ✅ DONE | pending | |. `trace.config.json` phase = 1; 59 identifiers covered |
+| P1-07 | Phase 1 exit: trace shows §5.2, §5.3, §10 covered | §14.2 | ✅ DONE | 353b088 | |. `trace.config.json` phase = 1; 59 identifiers covered |
 
 ---
 
@@ -105,7 +105,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 
 | ID | Task | Spec | Status | Commit | Notes |
 |---|---|---|---|---|---|
-| P2-01 | Clients: repository, validation rules (redirect URI rules incl. loopback exception, grant/auth-method combinations, `audiences`, TTL bounds), secret generation and hashing, isolate cache with stale-if-error, disable semantics | TIO-CLIENT-001..004, TIO-CLIENT-010, TIO-CLIENT-011, TIO-ARCH-011 | ❌ OPEN | — | |
+| P2-01 | Clients: repository, validation rules (redirect URI rules incl. loopback exception, grant/auth-method combinations, `audiences`, TTL bounds), secret generation and hashing, isolate cache with stale-if-error, disable semantics | TIO-CLIENT-001..004, TIO-CLIENT-010, TIO-CLIENT-011, TIO-ARCH-011 | 🔧 IN PROGRESS | pending | |. Phase 2 factories create clients through the OP's service layer (`src/oidc/clients.ts` + repository), the same functions the Admin API calls in P3-04, never raw SQL; TIO-TEST-032 is read that way until the Admin API exists. Validation, repository, cache and `createClient` done with tests; the disable semantics at `/token`, `/par` and refresh land with those endpoints. Spec TIO-DATA-003 reworded: generated ids use `[a-z0-9]` because base64url violates the lowercase pattern |
 | P2-02 | Client authentication for `/token`, `/par`, `/revoke`: `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt` (jose against `jwks`/`jwks_uri`, 60-second assertion window with mandatory `iat`); strict method enforcement; failed-auth rate-limit keys | TIO-TOKEN-002, TIO-TOKEN-003, TIO-TOKEN-004 | ❌ OPEN | — | No replay cache by decision (Appendix B #28) |
 | P2-03 | `/authorize` validation pipeline in spec order, non-redirectable errors to `login_url`, redirectable errors with `iss`, `prompt`/`max_age`/`login_hint` handling, session evaluation, stale-parameter rule, `prompt=none` never touching the session, `allowed_groups` outcome | TIO-AUTHZ-001..024 (013 withdrawn) | ❌ OPEN | — | Depends on P2-08 for `authorizeWithSession` |
 | P2-04 | PAR endpoint: client auth, validation reuse, `request_uri` single use and 60 s expiry stored in `InteractionDO`, `require_par` enforcement | TIO-PAR-001..004 | ❌ OPEN | — | |
@@ -263,3 +263,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | Phase 0 complete: P0-01..P0-14 done; e2e smoke suite with Playwright `webServer` starting `wrangler dev`; README status updated. Chromium for Playwright had to be installed by hand on the workstation (Node's downloader times out against the CDN; curl works). |
 | 2026-09-19 | First CI run green on `main` (e561660). OP-01 requested from the owner. |
 | 2026-09-19 | Phase 1 complete (P1-01..P1-07): key store, roles, rotation, JWKS, discovery, capabilities, JWT service, token builders, master-key rotation. Spec §2.8 key cache aligned to 60 s per TIO-ARCH-011. Smoke test now checks discovery, JWKS and health. |
+| 2026-09-19 | P2-01 client model: TIO-DATA-003 reworded (generated client ids `c_` + 22 chars of `[a-z0-9]`, since base64url contradicts the lowercase pattern). |

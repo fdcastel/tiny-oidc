@@ -504,7 +504,7 @@ SigningKey    ES256 key with lifecycle next → active → retiring → retired
 
 **[TIO-DATA-002]** Session ids (`sid`), refresh-family ids, invitation ids, event ids and audit ids SHALL be UUID version 7. Interaction ids SHALL be 32 random bytes, base64url-encoded (43 characters).
 
-**[TIO-DATA-003]** Client ids SHALL match `^[a-z0-9][a-z0-9._-]{2,63}$`. When not supplied by the administrator, the OP generates `c_` followed by 22 base64url characters. Group names SHALL match `^[a-z0-9][a-z0-9._-]{0,63}$`. Upstream aliases SHALL match `^[a-z0-9][a-z0-9_-]{0,31}$`.
+**[TIO-DATA-003]** Client ids SHALL match `^[a-z0-9][a-z0-9._-]{2,63}$`. When not supplied by the administrator, the OP generates `c_` followed by 22 characters of `[a-z0-9]` (base64url would violate the pattern's lowercase rule). Group names SHALL match `^[a-z0-9][a-z0-9._-]{0,63}$`. Upstream aliases SHALL match `^[a-z0-9][a-z0-9_-]{0,31}$`.
 
 **[TIO-DATA-004]** Timestamps SHALL be integers, seconds since the Unix epoch, in storage and in every API. Durations in APIs are seconds.
 

@@ -4,8 +4,11 @@
 // added by the phases that introduce their endpoints, and the software
 // WebAuthn authenticator (TIO-TEST-030) arrives with the passkey ceremonies.
 import { UuidV7 } from "../../src/crypto/uuid.ts";
+import type { Db } from "../../src/db/db.ts";
 import type { InitProfile } from "../../src/do/UserDO.ts";
 import type { Clock } from "../../src/env.ts";
+import { type Client, createClient, type ValidationContext } from "../../src/oidc/clients.ts";
+import { TEST_ENV } from "./keys.ts";
 
 let counter = 0;
 
@@ -27,4 +30,32 @@ export function userProfile(clock: Clock, overrides: Partial<InitProfile> = {}):
     groups: [],
     ...overrides,
   };
+}
+
+/** Creates a client through the OP's own service layer (the Admin API's path), with sensible defaults. */
+export async function createTestClient(
+  db: Db,
+  clock: Clock,
+  overrides: Record<string, unknown> = {},
+  context: Partial<ValidationContext> = {},
+): Promise<{ client: Client; secret: string | null }> {
+  const result = await createClient(
+    db,
+    {
+      client_id: unique("client"),
+      client_name: "Test Client",
+      redirect_uris: ["https://rp.example.com/callback"],
+      grant_types: ["authorization_code", "refresh_token"],
+      token_endpoint_auth_method: "none",
+      scopes_allowed: ["openid", "profile", "email", "groups", "offline_access"],
+      ...overrides,
+    },
+    { issuer: TEST_ENV.ISSUER, actorHasAdmin: true, existingGroups: new Set(), ...context },
+    clock.now(),
+  );
+  if (!result.ok)
+    throw new Error(
+      `createTestClient: ${result.error} ${"violations" in result ? result.violations.join("; ") : ""}`,
+    );
+  return { client: result.client, secret: result.secret };
 }
