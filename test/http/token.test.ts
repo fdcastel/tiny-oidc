@@ -2,6 +2,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { describe, expect, it } from "vitest";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
+import { setClientDisabled } from "../../src/db/clients.ts";
 import { Db } from "../../src/db/db.ts";
 import { insertGroup } from "../../src/db/groups.ts";
 import { writeSettings } from "../../src/db/settings.ts";
@@ -647,5 +648,111 @@ describe("admin scope", () => {
     expect(await (await exchange(adminClient, late.code)).json()).toMatchObject({
       error: "invalid_grant",
     });
+  });
+});
+
+describe("disabled clients", () => {
+  it("[TIO-CLIENT-004] [TIO-ARCH-011] a disabled client fails at /par, the code, client-credentials and refresh grants within 60 s; its refresh families are revoked on use and stay dead after the client is enabled again", async () => {
+    const created = await createTestClient(db, clock, {
+      redirect_uris: [RP_REDIRECT],
+      skip_consent: true,
+    });
+    const client = created.client;
+    const user = await userWithPasskey(clock);
+    const { code } = await login(client, user, { scope: "openid" });
+    const first = (await (await exchange(client, code)).json()) as TokenBody;
+    const survivor = (await (
+      await exchange(client, (await login(client, user, { scope: "openid" })).code)
+    ).json()) as TokenBody;
+    const parBody = {
+      client_id: client.client_id,
+      redirect_uri: RP_REDIRECT,
+      response_type: "code",
+      scope: "openid",
+      state: "s",
+      code_challenge: CHALLENGE,
+      code_challenge_method: "S256",
+    };
+    const par = () =>
+      h.send("/par", {
+        method: "POST",
+        origin: null,
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(parBody).toString(),
+      });
+    expect((await par()).status).toBe(201);
+
+    await setClientDisabled(db, client.client_id, clock.now(), clock.now());
+    // The isolate cache still says enabled for up to 60 s (TIO-ARCH-011).
+    expect((await par()).status).toBe(201);
+    clock.advance(60);
+    const pushed = await par();
+    expect(pushed.status).toBe(401);
+    expect(await pushed.json()).toMatchObject({ error: "invalid_client" });
+    const pending = await login(client, user, { scope: "openid" }).catch(() => null);
+    expect(pending).toBeNull();
+    const credentials = await token({
+      grant_type: "client_credentials",
+      client_id: client.client_id,
+    });
+    expect(credentials.status).toBe(401);
+    // The refresh grant answers invalid_grant and revokes the family it presents.
+    const rotated = await refresh(client, first.refresh_token as string);
+    expect(rotated.status).toBe(400);
+    expect(await rotated.json()).toMatchObject({
+      error: "invalid_grant",
+      error_description: "client is disabled",
+    });
+    for (const body of [
+      { grant_type: "refresh_token", client_id: client.client_id, refresh_token: "tio_rt_x" },
+      { grant_type: "refresh_token", client_id: client.client_id },
+    ]) {
+      const garbage = await token(body);
+      expect(garbage.status).toBe(400);
+      expect(await garbage.json()).toMatchObject({
+        error: "invalid_grant",
+        error_description: "refresh_token is invalid",
+      });
+    }
+    const brokenDo = {
+      ...env,
+      USER_DO: {
+        idFromName: () => ({}) as DurableObjectId,
+        get: () => {
+          throw new Error("DO unavailable");
+        },
+      },
+    } as unknown as Env;
+    const down = await token(
+      {
+        grant_type: "refresh_token",
+        client_id: client.client_id,
+        refresh_token: survivor.refresh_token as string,
+      },
+      { env: brokenDo },
+    );
+    expect(down.status).toBe(503);
+
+    await setClientDisabled(db, client.client_id, null, clock.now());
+    clock.advance(60);
+    expect((await par()).status).toBe(201);
+    // The family used while disabled is gone for good; the untouched one still rotates.
+    const dead = await refresh(client, first.refresh_token as string);
+    expect(dead.status).toBe(400);
+    expect(await dead.json()).toMatchObject({
+      error: "invalid_grant",
+      error_description: "refresh_token is invalid, expired or revoked",
+    });
+    expect((await refresh(client, survivor.refresh_token as string)).status).toBe(200);
+    const reasons = await runInDurableObject(user.stub, (_instance: UserDO, state) =>
+      state.storage.sql
+        .exec<{ revoke_reason: string | null }>("SELECT revoke_reason FROM refresh_families")
+        .toArray()
+        .map((row) => row.revoke_reason)
+        .sort(),
+    );
+    expect(reasons).toHaveLength(2);
+    expect(reasons).toContain("client_disabled");
+    expect(reasons).toContain(null);
   });
 });

@@ -16,6 +16,7 @@ import { bindingCookieName, parseCookies } from "../router/cookies.ts";
 import { errorResponse } from "../router/errors.ts";
 import { ipKey, limited, rateLimited } from "../router/rate-limit.ts";
 import { BODY_LIMITS } from "../router/routes.ts";
+import { userStub } from "../users/create.ts";
 import { encodeBase64Url } from "../util/base64url.ts";
 import { readJsonBody } from "../util/json.ts";
 import { isTerminal } from "./state-machine.ts";
@@ -185,7 +186,7 @@ export function getInteractionHandler(clock: Clock): Handler<AppEnv> {
     };
     const uid = interactionUid(doc);
     if (doc.status === "consent_required" && client && request && uid !== null) {
-      const stub = c.env.USER_DO.get(c.env.USER_DO.idFromName(uid));
+      const stub = userStub(c.env, uid);
       c.get("metrics").doCalls += 1;
       const granted = grantedScopes(await stub.listGrants([clientRef(client)]));
       body.consent = {
@@ -258,7 +259,7 @@ export function consentHandler(clock: Clock): Handler<AppEnv> {
     const client = await interactionClient(c, doc);
     if (!client) return errorResponse(c, 503, "temporarily_unavailable", "client unavailable");
     const uid = interactionUid(doc) as string;
-    const user = c.env.USER_DO.get(c.env.USER_DO.idFromName(uid));
+    const user = userStub(c.env, uid);
     c.get("metrics").doCalls += 1;
     const granted = await user.grantConsent(clientRef(client), scopes, now);
     if (!granted.ok) return errorResponse(c, 403, "access_denied", granted.error);

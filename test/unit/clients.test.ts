@@ -150,7 +150,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ).toEqual([]);
   });
 
-  it("redirect_uris: 1–32 registrable, unique entries when authorization_code is granted, empty otherwise", () => {
+  it("[TIO-CLIENT-002] redirect_uris: 1–32 registrable, unique entries when authorization_code is granted, empty otherwise", () => {
     expect(violations({ redirect_uris: [] })).toEqual([
       "redirect_uris: required for authorization_code",
     ]);
@@ -174,7 +174,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ).toEqual(["redirect_uris: must be empty without authorization_code"]);
   });
 
-  it("post_logout_redirect_uris and backchannel_logout_uri follow the URI rules", () => {
+  it("[TIO-CLIENT-002] post_logout_redirect_uris and backchannel_logout_uri follow the URI rules", () => {
     expect(
       violations({
         post_logout_redirect_uris: ["https://a.example.com/x", "https://a.example.com/x"],
@@ -191,7 +191,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ]);
   });
 
-  it("grant_types: non-empty subset; refresh_token requires authorization_code; client_credentials needs a confidential method", () => {
+  it("[TIO-CLIENT-002] grant_types: non-empty subset; refresh_token requires authorization_code; client_credentials needs a confidential method", () => {
     expect(violations({ grant_types: [] })).toEqual(["schema:grant_types"]);
     expect(violations({ grant_types: ["password"] })).toEqual(["schema:grant_types.0"]);
     expect(violations({ grant_types: ["authorization_code", "authorization_code"] })).toEqual([
@@ -207,7 +207,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ]);
   });
 
-  it("token_endpoint_auth_method: keys only for private_key_jwt, exactly one of jwks or jwks_uri", () => {
+  it("[TIO-CLIENT-002] token_endpoint_auth_method: keys only for private_key_jwt, exactly one of jwks or jwks_uri", () => {
     expect(violations({ token_endpoint_auth_method: "private_key_jwt" })).toEqual([
       "jwks: private_key_jwt requires exactly one of jwks or jwks_uri",
     ]);
@@ -258,7 +258,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ).toEqual(["schema:jwks_uri"]);
   });
 
-  it("scopes_allowed: non-empty, known, unique; admin only from an administrator", () => {
+  it("[TIO-CLIENT-002] scopes_allowed: non-empty, known, unique; admin only from an administrator", () => {
     expect(violations({ scopes_allowed: [] })).toEqual(["schema:scopes_allowed"]);
     expect(violations({ scopes_allowed: ["openid", "read:all"] })).toEqual([
       "schema:scopes_allowed.1",
@@ -274,7 +274,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     );
   });
 
-  it("audiences: 0–16 unique https URIs or URNs without fragments, never the issuer", () => {
+  it("[TIO-CLIENT-002] audiences: 0–16 unique https URIs or URNs without fragments, never the issuer", () => {
     expect(
       violations({ audiences: ["https://api.example.com", "https://api.example.com"] }),
     ).toEqual(["audiences: duplicates"]);
@@ -297,7 +297,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ).toEqual(["schema:audiences"]);
   });
 
-  it("allowed_groups: null or existing, unique group names", () => {
+  it("[TIO-CLIENT-002] allowed_groups: null or existing, unique group names", () => {
     expect(violations({ allowed_groups: ["staff", "staff"] })).toEqual([
       "allowed_groups: duplicates",
     ]);
@@ -307,7 +307,7 @@ describe("client validation (TIO-CLIENT-002)", () => {
     expect(violations({ allowed_groups: null })).toEqual([]);
   });
 
-  it("TTL overrides stay within §5.7.4 and unknown fields are rejected", () => {
+  it("[TIO-CLIENT-002] TTL overrides stay within §5.7.4 and unknown fields are rejected", () => {
     expect(TTL_BOUNDS.access_token_ttl).toEqual([60, 3_600]);
     expect(violations({ access_token_ttl: 59 })).toEqual(["schema:access_token_ttl"]);
     expect(violations({ id_token_ttl: 3_601 })).toEqual(["schema:id_token_ttl"]);

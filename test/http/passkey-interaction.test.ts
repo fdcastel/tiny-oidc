@@ -58,7 +58,7 @@ async function signIn(
 const completion = (id: string) => `${ISSUER}/interactions/${id}/complete`;
 
 describe("passkey sign-in through the Interaction API", () => {
-  it("[TIO-PK-020] [TIO-IX-030] options carry a fresh 32-byte challenge each time, stored on the interaction for 300 s, replacing the previous one and counting as attempts", async () => {
+  it("[TIO-PK-011] [TIO-PK-020] [TIO-IX-030] options carry a fresh 32-byte challenge each time, stored on the interaction for 300 s, replacing the previous one and counting as attempts", async () => {
     await writeSettings(
       db,
       { login_url: `${LOGIN_ORIGIN}/`, login_origins: [LOGIN_ORIGIN] },
@@ -325,7 +325,7 @@ describe("passkey sign-in through the Interaction API", () => {
     expect(disabledDoc.ok && disabledDoc.doc.error?.error_description).not.toContain("disabled");
   });
 
-  it("[TIO-IX-011] [TIO-IX-030] the user of an interaction is fixed by the first authentication; later ceremonies and options in other states are refused; challenges expire after 300 s", async () => {
+  it("[TIO-PK-011] [TIO-IX-011] [TIO-IX-030] the user of an interaction is fixed by the first authentication; later ceremonies and options in other states are refused; challenges expire after 300 s", async () => {
     const user = await userWithPasskey(clock);
     const other = await userWithPasskey(clock);
     const started = await h.start(web);

@@ -99,6 +99,9 @@ function patternRule(
   };
 }
 
+/** The only modules that turn an entity id into a Durable Object stub (TIO-ARCH-002). */
+const DO_STUB_FILES = new Set(["src/users/create.ts", "src/oidc/interactions.ts"]);
+
 /** Strings that only src/oidc/capabilities.ts may place in an array literal (TIO-DISC-004). */
 const CAPABILITY_LITERALS = [
   "openid",
@@ -298,6 +301,44 @@ export const RULES: Rule[] = [
     (p) => inSrc(p) && isTs(p) && p !== "src/util/json.ts",
     /\bJSON\.parse\s*\(|\.json\s*\(\s*\)/,
     "parse JSON through src/util/json.ts with a zod schema",
+  ),
+  {
+    // Durable Object namespaces are addressed only through the two stubs that take an
+    // entity id (a user id, an interaction id); nothing shared by all users or clients.
+    id: "do-addressed-by-entity-id",
+    spec: ["TIO-ARCH-002", "TIO-TEST-060"],
+    appliesTo: (p) => inSrc(p) && isTs(p) && !p.startsWith("src/generated/"),
+    check(path, source) {
+      const violations: Violation[] = [];
+      const stripped = stripCommentsAndStrings(source);
+      const addressing = /\.(?:idFromName|idFromString|newUniqueId|getByName)\s*\(/g;
+      for (const match of stripped.matchAll(addressing)) {
+        const line = lineOf(stripped, match.index);
+        if (!DO_STUB_FILES.has(path)) {
+          violations.push({
+            rule: "do-addressed-by-entity-id",
+            path,
+            line,
+            message: "address Durable Objects through userStub() or interactionStub() only",
+          });
+        } else if (/^\s*["'`]/.test(stripped.slice(match.index + match[0].length))) {
+          violations.push({
+            rule: "do-addressed-by-entity-id",
+            path,
+            line,
+            message: "a Durable Object is never addressed by a constant name",
+          });
+        }
+      }
+      return violations;
+    },
+  },
+  patternRule(
+    "factories-through-public-apis",
+    ["TIO-TEST-032", "TIO-TEST-060"],
+    (p) => p.startsWith("test/support/") && isTs(p),
+    /\brunInDurableObject\b|\bstorage\s*\.\s*(?:put|delete|deleteAll|transaction|sql)\b|\.(?:prepare|exec|batch)\s*\(|\bINSERT\s+INTO\b|\bUPDATE\s+\w+\s+SET\b/,
+    "test/support builds state through public APIs and Durable Object methods, never by writing storage",
   ),
   patternRule(
     "no-test-only-paths",

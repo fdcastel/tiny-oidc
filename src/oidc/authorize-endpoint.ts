@@ -8,6 +8,7 @@ import type { AppEnv } from "../router/context.ts";
 import { clearCookie, parseCookies, SESSION_COOKIE } from "../router/cookies.ts";
 import { errorResponse, sanitizeDescription } from "../router/errors.ts";
 import { uniqueParams } from "../router/form.ts";
+import { userStub } from "../users/create.ts";
 import {
   type AuthorizeErrorCode,
   type AuthorizeRequest,
@@ -255,7 +256,7 @@ async function evaluateSession(
   const ref: SessionRef | null = await openSessionHandle(config.keys, cookie);
   if (ref === null) return { ...none, clear: true };
   const secret = newSecret();
-  const stub = c.env.USER_DO.get(c.env.USER_DO.idFromName(ref.uid));
+  const stub = userStub(c.env, ref.uid);
   c.get("metrics").doCalls += 1;
   const result: AuthorizeOutcome = await stub.authorizeWithSession({
     sid: ref.sid,

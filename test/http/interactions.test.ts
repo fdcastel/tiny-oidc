@@ -13,6 +13,7 @@ import { interactionStub, startInteraction } from "../../src/oidc/interactions.t
 import { createApp } from "../../src/router/app.ts";
 import { bindingCookieName } from "../../src/router/cookies.ts";
 import { limitKey } from "../../src/router/rate-limit.ts";
+import { ROUTES } from "../../src/router/routes.ts";
 import { FakeClock } from "../support/clock.ts";
 import { createTestClient, userProfile } from "../support/factories.ts";
 import { testKeys } from "../support/keys.ts";
@@ -726,5 +727,52 @@ describe("attempt counting", () => {
       ok: false,
       error: "interaction_not_found",
     });
+  });
+});
+
+describe("API surface", () => {
+  it("[TIO-ARCH-010] the Interaction API is exactly the operations of §7, and none of them marks an interaction authenticated on a claim alone: only a verified assertion or upstream token does", async () => {
+    const surface = ROUTES.filter((r) => r.path.startsWith("/api/v1/interactions")).map(
+      (r) => `${r.method} ${r.path}`,
+    );
+    expect(surface).toEqual([
+      "GET /api/v1/interactions/:id",
+      "POST /api/v1/interactions/:id/passkey/options",
+      "POST /api/v1/interactions/:id/passkey/verify",
+      "POST /api/v1/interactions/:id/register/options",
+      "POST /api/v1/interactions/:id/register/verify",
+      "POST /api/v1/interactions/:id/upstream/:alias",
+      "POST /api/v1/interactions/:id/consent",
+      "POST /api/v1/interactions/:id/abort",
+      "POST /api/v1/interactions/:id/logout",
+    ]);
+    // Every operation is fed a body that claims an authenticated user; the document never
+    // gains an auth section and never leaves login_required except through abort.
+    const user = await loggedIn(clock);
+    const claim = {
+      status: "ready",
+      auth: { uid: user.profile.id, method: "passkey", amr: ["hwk", "user"] },
+      user_id: user.profile.id,
+      sub: user.profile.id,
+      email: user.profile.email,
+      response: { id: "x", rawId: "x", type: "public-key", response: {} },
+      invitation: "tio_iv_forged",
+      scopes: ["openid"],
+      decision: "confirm",
+    };
+    for (const op of surface.filter((s) => s.startsWith("POST"))) {
+      const started = await start(web);
+      const path = op.slice("POST /api/v1/interactions/:id/".length).replace(":alias", "google");
+      const res = await post(started, path, claim);
+      expect(res.status, op).not.toBe(500);
+      const after = await doc(started.id);
+      expect(after.auth, op).toBeNull();
+      expect(after.status, op).toBe(path === "abort" ? "failed" : "login_required");
+    }
+    const started = await start(web);
+    expect((await get(started, { headers: { "x-tio-auth": JSON.stringify(claim) } })).status).toBe(
+      200,
+    );
+    expect((await doc(started.id)).auth).toBeNull();
   });
 });

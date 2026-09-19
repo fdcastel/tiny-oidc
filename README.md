@@ -4,7 +4,7 @@
 
 Tiny OIDC gives one organization a single, standards-compliant identity service for its own applications: OpenID Connect for relying parties, passkeys and upstream OIDC federation for users, JSON APIs for everything else. No servers, no containers, no external databases. Designed for one million users on one deployment.
 
-> **Status: pre-alpha, under construction.** The [specification](doc/TINY_OIDC_SPEC.md) is the contract for the build and the [implementation plan](doc/TINY_OIDC_PLAN.md) tracks progress phase by phase. Phase 0 (foundation: toolchain, CI gates, storage skeletons, health endpoint) is done; the OIDC endpoints arrive with Phases 1 and 2. The Deploy button below already provisions a Worker, but it does not sign anyone in yet.
+> **Status: pre-alpha, under construction.** The [specification](doc/TINY_OIDC_SPEC.md) is the contract for the build and the [implementation plan](doc/TINY_OIDC_PLAN.md) tracks progress phase by phase. Phases 0–2 are done: the core OIDC flow works end to end (discovery, JWKS, `/authorize`, PAR, `/token` with the three grants, `/userinfo`, `/revoke`, the Interaction API, passkey registration and sign-in, invitations, the bootstrap endpoint and the reference login app), verified by unit, component, HTTP, interop (`oauth4webapi`), concurrency and Playwright suites. Still to come: the Admin API (Phase 3), upstream federation (4), logout and self-service (5), audit, rate limits and cron (6), hardening and release (7). The Deploy button below provisions a Worker you can bootstrap and sign in to, but the service is not ready for anything beyond evaluation.
 
 ### Already on Cloudflare?
 

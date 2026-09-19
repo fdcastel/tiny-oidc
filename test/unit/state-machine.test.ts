@@ -8,7 +8,7 @@ import {
 } from "../../src/interaction/state-machine.ts";
 
 describe("interaction state machine (§7.2)", () => {
-  it("[TIO-DATA-023] permits exactly the transitions of the diagram and nothing else", () => {
+  it("[TIO-IX-010] [TIO-DATA-023] permits exactly the transitions of the diagram and nothing else: every (state, operation) pair is table-driven", () => {
     const permitted = permittedTransitions().map((t) => `${t.from} --${t.operation}--> ${t.to}`);
     expect(permitted).toEqual([
       "pushed --consume_par--> login_required",

@@ -31,7 +31,10 @@ export async function authenticateFormClient(
   c: AppContext,
   params: ReadonlyMap<string, string>,
   clock: Clock,
-): Promise<{ ok: true; client: Client } | { ok: false; response: Response }> {
+): Promise<
+  | { ok: true; client: Client }
+  | { ok: false; response: Response; disabled_client_id: string | null }
+> {
   const config = c.get("config");
   const result = await authenticateClient(
     { params, authorization: c.req.header("authorization") ?? null },
@@ -48,20 +51,25 @@ export async function authenticateFormClient(
     return {
       ok: false,
       response: errorResponse(c, 503, "temporarily_unavailable", "client directory unavailable"),
+      disabled_client_id: null,
     };
   }
+  // A disabled client is refused before its credentials are looked at (TIO-CLIENT-004); the
+  // caller may still act on the handle it presented (the refresh grant revokes the family).
+  const disabledClientId = result.reason === "client disabled" ? result.client_id : null;
   c.get("logger").log("warn", "client authentication failed", {
     request_id: c.get("requestId"),
     client_id: result.client_id,
     reason: result.reason,
   });
   if (result.client_id !== null && (await limited(c.env, "client_auth_failed", result.client_id))) {
-    return { ok: false, response: rateLimited(c) };
+    return { ok: false, response: rateLimited(c), disabled_client_id: disabledClientId };
   }
   const headers: Record<string, string> = {};
   if (result.basic_challenge) headers["WWW-Authenticate"] = BASIC_CHALLENGE;
   return {
     ok: false,
     response: errorResponse(c, 401, "invalid_client", "client authentication failed", headers),
+    disabled_client_id: disabledClientId,
   };
 }

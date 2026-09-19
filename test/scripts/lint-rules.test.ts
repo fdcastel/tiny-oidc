@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readAll } from "../../scripts/lib/files.ts";
 import {
   findIstanbulIgnores,
   MAX_ISTANBUL_IGNORES,
@@ -169,6 +170,51 @@ describe("lint rules (TIO-TEST-060)", () => {
     expect(rulesHit({ "src/a.ts": "// TIO-TEST-060 is the rule\nconst TIO_TEST = 1;" })).toEqual(
       [],
     );
+  });
+
+  it("[TIO-ARCH-002] Durable Object namespaces are addressed only by an entity id, through userStub() and interactionStub(); the real tree complies", () => {
+    expect(
+      rulesHit({
+        "src/oidc/x.ts": "env.USER_DO.get(env.USER_DO.idFromName(uid));",
+        "src/do/y.ts": "env.INTERACTION_DO.getByName(id);\nenv.USER_DO.newUniqueId();",
+        "src/users/create.ts": 'env.USER_DO.get(env.USER_DO.idFromName("singleton"));',
+        "src/oidc/interactions.ts": "env.INTERACTION_DO.get(env.INTERACTION_DO.idFromName(id));",
+        "src/generated/worker-configuration.d.ts": "idFromName(name: string): DurableObjectId;",
+        "test/a.ts": 'env.USER_DO.idFromName("fixed")',
+      }),
+    ).toEqual([
+      "src/do/y.ts:1:do-addressed-by-entity-id",
+      "src/do/y.ts:2:do-addressed-by-entity-id",
+      "src/oidc/x.ts:1:do-addressed-by-entity-id",
+      "src/users/create.ts:1:do-addressed-by-entity-id",
+    ]);
+    const tree = readAll("src", (p) => p.endsWith(".ts"));
+    const addressing = Object.entries(tree)
+      .filter(([p]) => !p.startsWith("src/generated/"))
+      .filter(([, source]) => /\.(?:idFromName|idFromString|newUniqueId|getByName)\(/.test(source))
+      .map(([p]) => p)
+      .sort();
+    expect(addressing).toEqual(["src/oidc/interactions.ts", "src/users/create.ts"]);
+    expect(runRules(tree).filter((v) => v.rule === "do-addressed-by-entity-id")).toEqual([]);
+  });
+
+  it("[TIO-TEST-032] test/support builds state through public APIs and Durable Object methods, never by writing storage; the real tree complies", () => {
+    expect(
+      rulesHit({
+        "test/support/a.ts":
+          "await runInDurableObject(stub, (i) => i.ctx.storage.put('k', 1));\ndb.prepare('INSERT INTO users').run();\nawait env.DB.exec('UPDATE users SET x = 1');",
+        "test/support/b.ts": "// storage.put is documented here\nconst rows = await listUsers(db);",
+        "test/component/c.ts": "await runInDurableObject(stub, (i) => i.ctx.storage.put('k', 1));",
+      }),
+    ).toEqual([
+      "test/support/a.ts:1:factories-through-public-apis",
+      "test/support/a.ts:1:factories-through-public-apis",
+      "test/support/a.ts:2:factories-through-public-apis",
+      "test/support/a.ts:3:factories-through-public-apis",
+    ]);
+    const support = readAll("test/support", (p) => p.endsWith(".ts"));
+    expect(Object.keys(support)).toContain("test/support/factories.ts");
+    expect(runRules(support).filter((v) => v.rule === "factories-through-public-apis")).toEqual([]);
   });
 });
 

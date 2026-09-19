@@ -13,7 +13,7 @@ import { userStub } from "../users/create.ts";
 import { CAPABILITIES, isScope, type Scope } from "./capabilities.ts";
 import type { Client } from "./clients.ts";
 import { openCodeHandle, openRefreshHandle, sealRefreshHandle } from "./handles.ts";
-import { authenticateFormClient, protocolForm } from "./token-common.ts";
+import { type AppContext, authenticateFormClient, protocolForm } from "./token-common.ts";
 import { accessTokenClaims, idTokenClaims, type UserContext } from "./tokens.ts";
 
 // POST /token (spec §5.6): the three grants over one Durable Object round
@@ -119,6 +119,33 @@ async function userTokens(
   return response;
 }
 
+/**
+ * The refresh grant of a disabled client (TIO-CLIENT-004): the family it
+ * presents is revoked on this use, so it stays dead if the client is enabled
+ * again, and the answer is invalid_grant rather than invalid_client.
+ */
+async function disabledClientRefresh(
+  c: AppContext,
+  params: ReadonlyMap<string, string>,
+  clientId: string,
+  clock: Clock,
+): Promise<Response> {
+  const refresh = await openRefreshHandle(c.get("config").keys, params.get("refresh_token") ?? "");
+  if (refresh === null) return errorResponse(c, 400, "invalid_grant", "refresh_token is invalid");
+  try {
+    c.get("metrics").doCalls += 1;
+    await userStub(c.env, refresh.uid).revokeFamilyById(
+      refresh.family_id,
+      clock.now(),
+      "client_disabled",
+      clientId,
+    );
+  } catch {
+    return errorResponse(c, 503, "temporarily_unavailable", "storage unavailable");
+  }
+  return errorResponse(c, 400, "invalid_grant", "client is disabled");
+}
+
 export function tokenHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
     if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c);
@@ -126,7 +153,12 @@ export function tokenHandler(clock: Clock): Handler<AppEnv> {
     if (!form.ok) return form.response;
     const params = form.params;
     const auth = await authenticateFormClient(c, params, clock);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      if (auth.disabled_client_id !== null && params.get("grant_type") === "refresh_token") {
+        return disabledClientRefresh(c, params, auth.disabled_client_id, clock);
+      }
+      return auth.response;
+    }
     const client = auth.client;
     if (await limited(c.env, "client_token", client.client_id)) return rateLimited(c);
     const grantType = params.get("grant_type") ?? "";

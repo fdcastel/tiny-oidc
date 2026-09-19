@@ -270,7 +270,7 @@ describe("InteractionDO", () => {
     expect(docOf(done).expires_at).toBe(now + 600);
   });
 
-  it("[TIO-DATA-023] validates every transition against §7.2 and leaves the document unchanged on an invalid one", async () => {
+  it("[TIO-IX-010] [TIO-DATA-023] validates every transition against §7.2 and leaves the document unchanged on an invalid one (interaction_invalid_state)", async () => {
     const stub = interactionStub("transitions");
     const now = 1_790_000_000;
     await create(stub, now);
