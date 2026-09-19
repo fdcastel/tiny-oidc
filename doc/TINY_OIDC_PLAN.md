@@ -4,7 +4,7 @@
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-19 |
-| **Current focus** | `P3-08` (bulk import); `P2-17` waits on OP-01. |
+| **Current focus** | `P3-08` (bulk import), `P3-09` (OpenAPI drift check); `P2-17` waits on OP-01. |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated
@@ -142,7 +142,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | P3-07 | Keys endpoints (`GET /keys` with derived role, `POST /keys/rotate` with `immediate`, `DELETE /keys/{kid}` with `last_active_key` refusal), settings endpoints, `/stats`, maintenance (`reindex`, `purge`, `rekey`) | §9.4 Keys/Settings/Maintenance, TIO-KEYS-012, TIO-KEYS-013, TIO-CFG-003, TIO-CRYPTO-011 | ✅ DONE | 6a00e56 | `src/admin/system.ts`. The cron body lives in `src/maintenance/run.ts` (`runMaintenance`: audit purge ≤ 10 × 1,000 rows, expired invitations beyond 30 d, `creating` repair after 60 s / drop after 1 h, `deleting` completion, key rotation and retirement, a rekey chunk of 50 signing keys and 50 upstreams; wall-time budget checked between steps and per row; `system.cron_run` event; `system.last_cron_run` in the settings table for `/stats`) so P3-10 only wires `scheduled()`. `GET /settings` is `name → {value, source}`; `PATCH` takes `null` for a default, refuses `bootstrapped_at`, validates the merged whole (`invalid_settings`), invalidates the isolate cache. `DELETE /keys/{kid}` retires; a token signed by a retired key is refused at once (tested). `rolesByKid` added to the keystore. `maintenance/reindex` walks the registry keyset 100 per call with a `reindex` cursor |
 | P3-08 | Bulk import `POST /import/users` (NDJSON, idempotent per line, 50 concurrent creations) and `perf/seed.ts`; measure on staging | TIO-ADMIN-020, TIO-ADMIN-021 | ❌ OPEN | — | Target time verified in P7-04 |
 | P3-09 | OpenAPI 3.1 generation with `@hono/zod-openapi` (`doc31`), served at `/api/v1/openapi.json`, committed snapshot `doc/openapi.json`, drift check | §5.1, §14.1 | ❌ OPEN | — | |
-| P3-10 | `scheduled()` handler: audit purge placeholder, invitation cleanup, `creating` repair, `deleting` completion, key rotation and retirement, rekey chunk, retired-key deletion, `system.cron_run`; tests with `createScheduledController` | TIO-CFG-010, §4.6 | ❌ OPEN | — | |
+| P3-10 | `scheduled()` handler: audit purge placeholder, invitation cleanup, `creating` repair, `deleting` completion, key rotation and retirement, rekey chunk, retired-key deletion, `system.cron_run`; tests with `createScheduledController` | TIO-CFG-010, §4.6 | ✅ DONE | pending | `src/maintenance/scheduled.ts` `createScheduled` wraps `runMaintenance` (P3-07) with a system-actor auditor and its own settings loader; the default export of `src/index.ts` carries it. The audit purge is real, not a placeholder: `audit_hot` rows beyond `audit.hot_retention_days` go in batches of 1,000 (P6-04 keeps only the verification of the windows). Invalid configuration and storage failures are logged, never thrown |
 | P3-11 | Phase 3 exit: trace shows §9 covered | §14.2 | ❌ OPEN | — | |
 
 ---
@@ -287,3 +287,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | P3-05 upstreams endpoints with discovery validation, sealed secrets and the test endpoint. |
 | 2026-09-19 | P3-06 invitations endpoints (create, list, get, revoke). |
 | 2026-09-19 | P3-07 keys, settings, stats and maintenance endpoints; the cron body (`src/maintenance/run.ts`) built here for P3-10 to schedule. |
+| 2026-09-19 | P3-10 `scheduled()` wired over the maintenance body, done ahead of P3-08/P3-09 because the body already existed. |

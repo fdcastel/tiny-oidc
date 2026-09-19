@@ -264,7 +264,7 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 200, defer
 | TIO-DEPLOY-011 | §12.3 | ci | — | ci |  |
 | TIO-DEPLOY-003 | §12.3 | review | — | review | test/http/admin-users.test.ts |
 | TIO-DEPLOY-004 | §12.3 | review | — | review |  |
-| TIO-CFG-010 | §12.4 | test | 3 | covered | test/component/maintenance.test.ts<br>test/http/admin-system.test.ts |
+| TIO-CFG-010 | §12.4 | test | 3 | covered | test/component/maintenance.test.ts<br>test/http/admin-system.test.ts<br>test/http/scheduled.test.ts |
 | TIO-TEST-001 | §13.1 | ci | — | ci |  |
 | TIO-TEST-002 | §13.2 | ci | — | ci |  |
 | TIO-TEST-003 | §13.2 | ci | — | ci |  |
