@@ -182,6 +182,12 @@ function adminRoutes(): Route[] {
     ["POST", "clients/:id/rotate-secret"],
     ["POST", "clients/:id/disable"],
     ["POST", "clients/:id/enable"],
+    ["GET", "upstreams"],
+    ["POST", "upstreams"],
+    ["GET", "upstreams/:alias"],
+    ["PATCH", "upstreams/:alias"],
+    ["DELETE", "upstreams/:alias"],
+    ["POST", "upstreams/:alias/test"],
   ];
   return operations.map(
     ([method, path]): Route => ({

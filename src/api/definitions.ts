@@ -1358,6 +1358,193 @@ export const ADMIN_CLIENT_ROUTES = [
   adminClientEnableRoute,
 ] as const;
 
+// Admin upstreams (§9.4 Upstreams, §6.4.1)
+
+export const UpstreamAliasParams = z.object({
+  alias: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,31}$/)
+    .openapi({ description: "Upstream alias" }),
+});
+
+export const AdminUpstreamSchema = z
+  .looseObject({
+    alias: z.string(),
+    issuer: z.string(),
+    display_name: z.string(),
+    client_id: z.string(),
+    token_endpoint_auth_method: z.string(),
+    has_client_secret: z.boolean(),
+    has_client_jwk: z.boolean(),
+    redirect_uri: z
+      .string()
+      .openapi({ description: "The issuer URL followed by /federation/callback (TIO-FED-002)" }),
+    enabled: z.boolean(),
+    created_at: z.int(),
+    updated_at: z.int(),
+  })
+  .openapi("AdminUpstream", {
+    description: "The upstream record without its secret or private key (TIO-ADMIN-003)",
+  });
+
+export const AdminUpstreamInputSchema = z
+  .looseObject({
+    alias: z.string(),
+    issuer: z.string(),
+    display_name: z.string(),
+    client_id: z.string(),
+    token_endpoint_auth_method: z.string(),
+    client_secret: z.string().optional().openapi({ description: "Write-only; stored encrypted" }),
+    client_jwk: z
+      .looseObject({})
+      .optional()
+      .openapi({ description: "Write-only private JWK for private_key_jwt" }),
+  })
+  .openapi("AdminUpstreamInput", {
+    description: "The create body; every field of §4.1 upstreams is accepted",
+  });
+
+export const AdminUpstreamPatchInputSchema = z
+  .looseObject({})
+  .openapi("AdminUpstreamPatch", { description: "Any subset of the create body except alias" });
+
+export const UpstreamTestReportSchema = z
+  .object({
+    discovery: z.object({
+      ok: z.boolean(),
+      reason: z.string().nullable(),
+      metadata: z
+        .object({
+          authorization_endpoint: z.string(),
+          token_endpoint: z.string(),
+          jwks_uri: z.string(),
+          userinfo_endpoint: z.string().nullable(),
+        })
+        .nullable(),
+    }),
+    jwks: z.object({ ok: z.boolean(), reason: z.string().nullable(), keys: z.int().nullable() }),
+  })
+  .openapi("UpstreamTestReport");
+
+const UPSTREAM_PATH = "/api/v1/admin/upstreams/{alias}";
+
+export const adminUpstreamsListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/upstreams",
+  tags: ["admin"],
+  summary: "List upstreams (keyset-paginated)",
+  security: adminSecurity,
+  request: { query: AdminListQuerySchema },
+  responses: {
+    200: {
+      description: "A page of upstreams",
+      content: {
+        "application/json": { schema: pageSchema(AdminUpstreamSchema, "AdminUpstreamPage") },
+      },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminUpstreamCreateRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/upstreams",
+  tags: ["admin"],
+  summary:
+    "Create an upstream; with discovery.mode auto the provider's document is fetched and checked (TIO-FED-001)",
+  security: adminSecurity,
+  request: { body: jsonBody(AdminUpstreamInputSchema) },
+  responses: {
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: AdminUpstreamSchema } },
+    },
+    400: errorResponse(
+      "invalid_upstream (violations in error_description) or upstream_discovery_failed",
+    ),
+    409: errorResponse("upstream_exists (alias or issuer)"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminUpstreamGetRoute = createRoute({
+  method: "get",
+  path: UPSTREAM_PATH,
+  tags: ["admin"],
+  summary: "An upstream record",
+  security: adminSecurity,
+  request: { params: UpstreamAliasParams },
+  responses: {
+    200: {
+      description: "The upstream",
+      content: { "application/json": { schema: AdminUpstreamSchema } },
+    },
+    404: errorResponse("upstream_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminUpstreamPatchRoute = createRoute({
+  method: "patch",
+  path: UPSTREAM_PATH,
+  tags: ["admin"],
+  summary:
+    "Update an upstream; the merged record is validated as a whole and auto discovery is fetched again",
+  security: adminSecurity,
+  request: { params: UpstreamAliasParams, body: jsonBody(AdminUpstreamPatchInputSchema) },
+  responses: {
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: AdminUpstreamSchema } },
+    },
+    400: errorResponse("invalid_request, invalid_upstream or upstream_discovery_failed"),
+    404: errorResponse("upstream_not_found"),
+    409: errorResponse("upstream_exists (issuer)"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminUpstreamDeleteRoute = createRoute({
+  method: "delete",
+  path: UPSTREAM_PATH,
+  tags: ["admin"],
+  summary: "Delete an upstream; linked identities stay on their users",
+  security: adminSecurity,
+  request: { params: UpstreamAliasParams },
+  responses: {
+    204: { description: "Deleted" },
+    404: errorResponse("upstream_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminUpstreamTestRoute = createRoute({
+  method: "post",
+  path: `${UPSTREAM_PATH}/test`,
+  tags: ["admin"],
+  summary: "Refetch the discovery document and the JWKS and report (TIO-FED-001)",
+  security: adminSecurity,
+  request: { params: UpstreamAliasParams },
+  responses: {
+    200: {
+      description: "The report; each part says whether it succeeded",
+      content: { "application/json": { schema: UpstreamTestReportSchema } },
+    },
+    404: errorResponse("upstream_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const ADMIN_UPSTREAM_ROUTES = [
+  adminUpstreamsListRoute,
+  adminUpstreamCreateRoute,
+  adminUpstreamGetRoute,
+  adminUpstreamPatchRoute,
+  adminUpstreamDeleteRoute,
+  adminUpstreamTestRoute,
+] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -1372,6 +1559,7 @@ export const API_ROUTES = [
   ...ADMIN_USER_ROUTES,
   ...ADMIN_GROUP_ROUTES,
   ...ADMIN_CLIENT_ROUTES,
+  ...ADMIN_UPSTREAM_ROUTES,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */

@@ -1613,6 +1613,208 @@
           "client_secret",
           "rotated_at"
         ]
+      },
+      "AdminUpstreamPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUpstream"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "AdminUpstream": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "token_endpoint_auth_method": {
+            "type": "string"
+          },
+          "has_client_secret": {
+            "type": "boolean"
+          },
+          "has_client_jwk": {
+            "type": "boolean"
+          },
+          "redirect_uri": {
+            "type": "string",
+            "description": "The issuer URL followed by /federation/callback (TIO-FED-002)"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "alias",
+          "issuer",
+          "display_name",
+          "client_id",
+          "token_endpoint_auth_method",
+          "has_client_secret",
+          "has_client_jwk",
+          "redirect_uri",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": {},
+        "description": "The upstream record without its secret or private key (TIO-ADMIN-003)"
+      },
+      "AdminUpstreamInput": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "token_endpoint_auth_method": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string",
+            "description": "Write-only; stored encrypted"
+          },
+          "client_jwk": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "Write-only private JWK for private_key_jwt"
+          }
+        },
+        "required": [
+          "alias",
+          "issuer",
+          "display_name",
+          "client_id",
+          "token_endpoint_auth_method"
+        ],
+        "additionalProperties": {},
+        "description": "The create body; every field of §4.1 upstreams is accepted"
+      },
+      "AdminUpstreamPatch": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {},
+        "description": "Any subset of the create body except alias"
+      },
+      "UpstreamTestReport": {
+        "type": "object",
+        "properties": {
+          "discovery": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "metadata": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "authorization_endpoint": {
+                    "type": "string"
+                  },
+                  "token_endpoint": {
+                    "type": "string"
+                  },
+                  "jwks_uri": {
+                    "type": "string"
+                  },
+                  "userinfo_endpoint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "authorization_endpoint",
+                  "token_endpoint",
+                  "jwks_uri",
+                  "userinfo_endpoint"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "reason",
+              "metadata"
+            ]
+          },
+          "jwks": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "keys": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "reason",
+              "keys"
+            ]
+          }
+        },
+        "required": [
+          "discovery",
+          "jwks"
+        ]
       }
     },
     "parameters": {}
@@ -6267,6 +6469,567 @@
           },
           "404": {
             "description": "client_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/upstreams": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List upstreams (keyset-paginated)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "1..200, default 50"
+            },
+            "required": false,
+            "description": "1..200, default 50",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque; from next_cursor"
+            },
+            "required": false,
+            "description": "Opaque; from next_cursor",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of upstreams",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUpstreamPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create an upstream; with discovery.mode auto the provider's document is fetched and checked (TIO-FED-001)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUpstreamInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUpstream"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_upstream (violations in error_description) or upstream_discovery_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "upstream_exists (alias or issuer)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/upstreams/{alias}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "An upstream record",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+              "description": "Upstream alias"
+            },
+            "required": true,
+            "description": "Upstream alias",
+            "name": "alias",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The upstream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUpstream"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "upstream_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update an upstream; the merged record is validated as a whole and auto discovery is fetched again",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+              "description": "Upstream alias"
+            },
+            "required": true,
+            "description": "Upstream alias",
+            "name": "alias",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUpstreamPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUpstream"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, invalid_upstream or upstream_discovery_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "upstream_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "upstream_exists (issuer)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete an upstream; linked identities stay on their users",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+              "description": "Upstream alias"
+            },
+            "required": true,
+            "description": "Upstream alias",
+            "name": "alias",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "upstream_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/upstreams/{alias}/test": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Refetch the discovery document and the JWKS and report (TIO-FED-001)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+              "description": "Upstream alias"
+            },
+            "required": true,
+            "description": "Upstream alias",
+            "name": "alias",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report; each part says whether it succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamTestReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "upstream_not_found",
             "content": {
               "application/json": {
                 "schema": {

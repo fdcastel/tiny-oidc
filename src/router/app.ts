@@ -22,6 +22,14 @@ import {
   patchGroupHandler,
 } from "../admin/groups.ts";
 import {
+  createUpstreamHandler,
+  deleteUpstreamHandler,
+  getUpstreamHandler,
+  listUpstreamsHandler,
+  patchUpstreamHandler,
+  testUpstreamHandler,
+} from "../admin/upstreams.ts";
+import {
   createRecoverInvitationHandler,
   createUserHandler,
   deleteFamiliesOfClientHandler,
@@ -290,6 +298,13 @@ export function createApp(deps: AppDeps) {
   app.post(`${clientsPath}/:id/rotate-secret`, rotateSecretHandler(deps.clock));
   app.post(`${clientsPath}/:id/disable`, setClientDisabledHandler(deps.clock, true));
   app.post(`${clientsPath}/:id/enable`, setClientDisabledHandler(deps.clock, false));
+  const upstreams = "/api/v1/admin/upstreams";
+  app.get(upstreams, listUpstreamsHandler(deps.clock));
+  app.post(upstreams, createUpstreamHandler(deps.clock));
+  app.get(`${upstreams}/:alias`, getUpstreamHandler);
+  app.patch(`${upstreams}/:alias`, patchUpstreamHandler(deps.clock));
+  app.delete(`${upstreams}/:alias`, deleteUpstreamHandler);
+  app.post(`${upstreams}/:alias/test`, testUpstreamHandler);
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 
