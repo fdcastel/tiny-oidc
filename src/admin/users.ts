@@ -13,7 +13,6 @@ import { releaseIdentity } from "../db/identities.ts";
 import { getUser, listUsers, type UserFilters, type UserRow } from "../db/users.ts";
 import type { ClientRef, PasskeyRecord, UserCounts, UserDO, UserProfile } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
-import { withQuery } from "../oidc/interactions.ts";
 import type { AppContext } from "../oidc/token-common.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
@@ -34,6 +33,7 @@ import { unregisterPasskey } from "../users/passkeys.ts";
 import { readJsonBody } from "../util/json.ts";
 import { auditAdmin } from "./audit.ts";
 import type { AdminActor } from "./auth.ts";
+import { invitationUrl, publicInvitation } from "./invitations.ts";
 import { openCursor, page, parseLimit, sealCursor } from "./pagination.ts";
 
 // Admin users endpoints (spec §9.4). The list reads the D1 mirror with
@@ -697,20 +697,11 @@ export function createRecoverInvitationHandler(clock: Clock): Handler<AppEnv> {
         user_id: user.row.id,
         data: { kind: "recover", expires_at: created.invitation.expires_at },
       });
-      const {
-        token_hash: _hash,
-        used_at: _used,
-        used_by_user_id: _by,
-        ...invitation
-      } = created.invitation;
       return c.json(
         {
-          ...invitation,
+          ...publicInvitation(created.invitation),
           token: created.token,
-          url:
-            settings.login_url === null
-              ? null
-              : withQuery(settings.login_url, { invitation: created.token }),
+          url: invitationUrl(settings, created.token),
         },
         201,
       );

@@ -165,7 +165,7 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 199, defer
 | TIO-SESS-005 | §6.2 | test | 2 | covered | test/http/complete.test.ts |
 | TIO-SESS-006 | §6.2 | test | 2 | covered | test/component/user-do.test.ts |
 | TIO-REG-001 | §6.3 | test | 2 | covered | test/http/register.test.ts |
-| TIO-REG-002 | §6.3 | test | 2 | covered | test/concurrency/http.test.ts<br>test/http/register.test.ts |
+| TIO-REG-002 | §6.3 | test | 2 | covered | test/concurrency/http.test.ts<br>test/http/admin-invitations.test.ts<br>test/http/register.test.ts |
 | TIO-REG-003 | §6.3 | test | 2 | covered | test/http/register.test.ts |
 | TIO-REG-004 | §6.3 | test | 2 | covered | test/http/admin-users.test.ts<br>test/http/register.test.ts |
 | TIO-REG-005 | §6.3 | test | 2 | covered | test/http/register.test.ts |
@@ -220,7 +220,7 @@ Current phase: 2. Requirements: 283 (ci: 19, conformance: 2, covered: 199, defer
 | TIO-ADMIN-001 | §9.1 | test | 3 | covered | test/http/admin-auth.test.ts |
 | TIO-ADMIN-002 | §9.1 | test | 3 | covered | test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
 | TIO-ADMIN-003 | §9.1 | test | 3 | covered | test/http/admin-clients.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
-| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-clients.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/admin-users-list.test.ts |
+| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-clients.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-invitations.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/admin-users-list.test.ts |
 | TIO-ADMIN-010 | §9.3 | test | 2 | covered | test/http/bootstrap.test.ts |
 | TIO-ADMIN-011 | §9.3 | test | 2 | covered | test/http/admin-auth.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-020 | §9.4 | test | 3 | deferred |  |

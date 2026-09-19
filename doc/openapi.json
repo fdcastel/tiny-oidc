@@ -1815,6 +1815,151 @@
           "discovery",
           "jwks"
         ]
+      },
+      "AdminInvitationPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminInvitation"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "AdminInvitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "register",
+              "recover"
+            ]
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "used_at": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "used_by_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "user_id",
+          "email",
+          "email_verified",
+          "display_name",
+          "groups",
+          "expires_at",
+          "used_at",
+          "used_by_user_id",
+          "created_by",
+          "created_at"
+        ]
+      },
+      "AdminInvitationCreate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "register"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 254
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            },
+            "maxItems": 64
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "Seconds, 1 h – 90 d; default 7 d"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -7030,6 +7175,370 @@
           },
           "404": {
             "description": "upstream_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/invitations": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List invitations (keyset-paginated; filters kind, user_id)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "register",
+                "recover"
+              ]
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "user_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of invitations (never their tokens)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInvitationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create a register invitation; the token and URL are returned once (TIO-REG-002)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminInvitationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The invitation with its one-time token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, email_invalid, group_unknown or expires_in_out_of_bounds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/invitations/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "An invitation record (never its token)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invitation id (UUID v7)"
+            },
+            "required": true,
+            "description": "Invitation id (UUID v7)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The invitation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInvitation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "invitation_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Revoke an invitation: its token stops working at once",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invitation id (UUID v7)"
+            },
+            "required": true,
+            "description": "Invitation id (UUID v7)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "invitation_not_found",
             "content": {
               "application/json": {
                 "schema": {

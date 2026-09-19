@@ -22,6 +22,12 @@ import {
   patchGroupHandler,
 } from "../admin/groups.ts";
 import {
+  createInvitationHandler,
+  deleteInvitationHandler,
+  getInvitationHandler,
+  listInvitationsHandler,
+} from "../admin/invitations.ts";
+import {
   createUpstreamHandler,
   deleteUpstreamHandler,
   getUpstreamHandler,
@@ -305,6 +311,11 @@ export function createApp(deps: AppDeps) {
   app.patch(`${upstreams}/:alias`, patchUpstreamHandler(deps.clock));
   app.delete(`${upstreams}/:alias`, deleteUpstreamHandler);
   app.post(`${upstreams}/:alias/test`, testUpstreamHandler);
+  const invitations = "/api/v1/admin/invitations";
+  app.get(invitations, listInvitationsHandler(deps.clock));
+  app.post(invitations, createInvitationHandler(deps.clock));
+  app.get(`${invitations}/:id`, getInvitationHandler);
+  app.delete(`${invitations}/:id`, deleteInvitationHandler);
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

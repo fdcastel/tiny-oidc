@@ -188,6 +188,10 @@ function adminRoutes(): Route[] {
     ["PATCH", "upstreams/:alias"],
     ["DELETE", "upstreams/:alias"],
     ["POST", "upstreams/:alias/test"],
+    ["GET", "invitations"],
+    ["POST", "invitations"],
+    ["GET", "invitations/:id"],
+    ["DELETE", "invitations/:id"],
   ];
   return operations.map(
     ([method, path]): Route => ({

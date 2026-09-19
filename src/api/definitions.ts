@@ -1545,6 +1545,126 @@ export const ADMIN_UPSTREAM_ROUTES = [
   adminUpstreamTestRoute,
 ] as const;
 
+// Admin invitations (§9.4 Invitations, §6.3)
+
+export const InvitationIdParams = z.object({
+  id: z.uuid().openapi({ description: "Invitation id (UUID v7)" }),
+});
+
+export const AdminInvitationSchema = z
+  .object({
+    id: z.uuid(),
+    kind: z.enum(["register", "recover"]),
+    user_id: z.uuid().nullable(),
+    email: z.string().nullable(),
+    email_verified: z.boolean(),
+    display_name: z.string().nullable(),
+    groups: z.array(z.string()),
+    expires_at: z.int(),
+    used_at: z.int().nullable(),
+    used_by_user_id: z.uuid().nullable(),
+    created_by: z.string(),
+    created_at: z.int(),
+  })
+  .openapi("AdminInvitation");
+
+export const AdminInvitationCreateSchema = z
+  .object({
+    kind: z.literal("register"),
+    email: z.string().max(254).nullable().optional(),
+    email_verified: z.boolean().optional(),
+    display_name: z.string().max(256).nullable().optional(),
+    groups: z.array(z.string().regex(GROUP_NAME)).max(64).optional(),
+    expires_in: z.int().optional().openapi({ description: "Seconds, 1 h – 90 d; default 7 d" }),
+  })
+  .strict()
+  .openapi("AdminInvitationCreate");
+
+export const AdminInvitationListQuerySchema = z
+  .object({
+    limit: z.string().optional(),
+    cursor: z.string().optional(),
+    kind: z.enum(["register", "recover"]).optional(),
+    user_id: z.uuid().optional(),
+  })
+  .strict();
+
+const INVITATION_PATH = "/api/v1/admin/invitations/{id}";
+
+export const adminInvitationsListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/invitations",
+  tags: ["admin"],
+  summary: "List invitations (keyset-paginated; filters kind, user_id)",
+  security: adminSecurity,
+  request: { query: AdminInvitationListQuerySchema },
+  responses: {
+    200: {
+      description: "A page of invitations (never their tokens)",
+      content: {
+        "application/json": { schema: pageSchema(AdminInvitationSchema, "AdminInvitationPage") },
+      },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminInvitationCreateRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/invitations",
+  tags: ["admin"],
+  summary: "Create a register invitation; the token and URL are returned once (TIO-REG-002)",
+  security: adminSecurity,
+  request: { body: jsonBody(AdminInvitationCreateSchema) },
+  responses: {
+    201: {
+      description: "The invitation with its one-time token",
+      content: { "application/json": { schema: InvitationCreatedSchema } },
+    },
+    400: errorResponse("invalid_request, email_invalid, group_unknown or expires_in_out_of_bounds"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminInvitationGetRoute = createRoute({
+  method: "get",
+  path: INVITATION_PATH,
+  tags: ["admin"],
+  summary: "An invitation record (never its token)",
+  security: adminSecurity,
+  request: { params: InvitationIdParams },
+  responses: {
+    200: {
+      description: "The invitation",
+      content: { "application/json": { schema: AdminInvitationSchema } },
+    },
+    404: errorResponse("invitation_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminInvitationDeleteRoute = createRoute({
+  method: "delete",
+  path: INVITATION_PATH,
+  tags: ["admin"],
+  summary: "Revoke an invitation: its token stops working at once",
+  security: adminSecurity,
+  request: { params: InvitationIdParams },
+  responses: {
+    204: { description: "Revoked" },
+    404: errorResponse("invitation_not_found"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const ADMIN_INVITATION_ROUTES = [
+  adminInvitationsListRoute,
+  adminInvitationCreateRoute,
+  adminInvitationGetRoute,
+  adminInvitationDeleteRoute,
+] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -1560,6 +1680,7 @@ export const API_ROUTES = [
   ...ADMIN_GROUP_ROUTES,
   ...ADMIN_CLIENT_ROUTES,
   ...ADMIN_UPSTREAM_ROUTES,
+  ...ADMIN_INVITATION_ROUTES,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */

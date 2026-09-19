@@ -118,3 +118,51 @@ export async function listInvitations(db: Db): Promise<InvitationRow[]> {
     .all<RawInvitationRow>();
   return rows.results.map(decode);
 }
+
+export interface InvitationFilters {
+  kind?: InvitationKind;
+  user_id?: string;
+}
+
+export interface InvitationKeyset {
+  created_at: number;
+  id: string;
+}
+
+const INVITATION_COLUMNS =
+  "id, token_hash, kind, user_id, email, email_verified, display_name, groups, expires_at, used_at, used_by_user_id, created_by, created_at";
+
+/** The keyset query behind `GET /admin/invitations`, walking `invitations_created`. */
+export async function listInvitationsPage(
+  db: Db,
+  filters: InvitationFilters,
+  after: InvitationKeyset | null,
+  limit: number,
+): Promise<InvitationRow[]> {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (filters.kind !== undefined) {
+    where.push("kind = ?");
+    binds.push(filters.kind);
+  }
+  if (filters.user_id !== undefined) {
+    where.push("user_id = ?");
+    binds.push(filters.user_id);
+  }
+  if (after !== null) {
+    where.push("(created_at, id) > (?, ?)");
+    binds.push(after.created_at, after.id);
+  }
+  const sql = [
+    "SELECT",
+    INVITATION_COLUMNS,
+    "FROM invitations",
+    where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`,
+    "ORDER BY created_at, id LIMIT ?",
+  ].join(" ");
+  const rows = await db
+    .prepare(sql)
+    .bind(...binds, limit)
+    .all<RawInvitationRow>();
+  return rows.results.map(decode);
+}
