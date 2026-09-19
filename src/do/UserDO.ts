@@ -1,5 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
+import {
+  type AssertionExpectations,
+  counterPolicy,
+  verifyAssertionSignature,
+} from "../auth/passkey.ts";
 import { sha256 } from "../crypto/hash.ts";
 import type { Env } from "../env.ts";
 import { encodeBase64Url } from "../util/base64url.ts";
@@ -51,6 +56,8 @@ export type UserDoError =
   | "invalid_scope"
   | "passkey_exists"
   | "passkey_limit_reached"
+  | "passkey_verification_failed"
+  | "passkey_counter_regression"
   | "identity_exists";
 
 interface UserRow extends Record<string, SqlStorageValue> {
@@ -1252,6 +1259,56 @@ export class UserDO extends DurableObject<Env> {
         .exec<PasskeyRow>("SELECT * FROM passkeys WHERE id = ?", passkey.id)
         .toArray()[0] as PasskeyRow;
       return { ok: true, passkey: UserDO.passkeyRecord(row) };
+    });
+  }
+
+  /**
+   * Assertion verification (TIO-PK-022): the signature is checked against the
+   * stored public key, then the counter policy (TIO-PK-030) and the
+   * `counter`/`last_used_at` update run in one transaction against the
+   * freshly re-read row, so two concurrent assertions cannot both advance it.
+   * The profile snapshot is returned for the caller's disabled and group checks.
+   */
+  async verifyAssertion(input: {
+    response: unknown;
+    credential_id: string;
+    expected: AssertionExpectations;
+    now: number;
+  }): Promise<DoResult<{ profile: UserProfile; passkey: PasskeyRecord }, UserDoError>> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const stored = this.ctx.storage.sql
+      .exec<PasskeyRow>("SELECT * FROM passkeys WHERE credential_id = ?", input.credential_id)
+      .toArray()[0];
+    if (!stored) return fail("passkey_verification_failed");
+    const verified = await verifyAssertionSignature(
+      input.response,
+      { credential_id: stored.credential_id, public_key: bytes(stored.public_key) },
+      input.expected,
+    );
+    if (!verified.ok) return fail(verified.error);
+    return this.ctx.storage.transactionSync(() => {
+      const row = this.ctx.storage.sql
+        .exec<PasskeyRow>("SELECT * FROM passkeys WHERE credential_id = ?", input.credential_id)
+        .toArray()[0];
+      if (!row) return fail("passkey_verification_failed");
+      if (counterPolicy(row.counter, verified.newCounter) === "regression") {
+        return fail("passkey_counter_regression");
+      }
+      this.ctx.storage.sql.exec(
+        "UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?",
+        verified.newCounter,
+        input.now,
+        row.id,
+      );
+      const updated = this.ctx.storage.sql
+        .exec<PasskeyRow>("SELECT * FROM passkeys WHERE id = ?", row.id)
+        .toArray()[0] as PasskeyRow;
+      return {
+        ok: true,
+        profile: UserDO.profile(this.readUser() as UserRow),
+        passkey: UserDO.passkeyRecord(updated),
+      };
     });
   }
 
