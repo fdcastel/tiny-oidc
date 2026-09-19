@@ -131,6 +131,13 @@ export function clientRef(client: Client): ClientRef {
   };
 }
 
+/** The scopes of the first grant in a listGrants result; none when the user is gone. */
+export function grantedScopes(
+  result: { ok: true; grants: { scopes: string[] }[] } | { ok: false },
+): string[] {
+  return result.ok ? (result.grants[0]?.scopes ?? []) : [];
+}
+
 /** The user an interaction is about: authenticated in it, or holding the session it started from. */
 export function interactionUid(doc: InteractionDocument): string | null {
   return doc.auth?.uid ?? doc.existing_session?.uid ?? null;
@@ -180,8 +187,7 @@ export function getInteractionHandler(clock: Clock): Handler<AppEnv> {
     if (doc.status === "consent_required" && client && request && uid !== null) {
       const stub = c.env.USER_DO.get(c.env.USER_DO.idFromName(uid));
       c.get("metrics").doCalls += 1;
-      const grants = await stub.listGrants([clientRef(client)]);
-      const granted = grants.ok ? (grants.grants[0]?.scopes ?? []) : [];
+      const granted = grantedScopes(await stub.listGrants([clientRef(client)]));
       body.consent = {
         scopes: request.scope.map((name) => ({
           name,

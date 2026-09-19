@@ -364,6 +364,20 @@
           "request_id"
         ]
       },
+      "PasskeyOptions": {
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "PublicKeyCredentialRequestOptionsJSON for navigator.credentials.get()"
+          }
+        },
+        "required": [
+          "publicKey"
+        ]
+      },
       "InteractionStep": {
         "type": "object",
         "properties": {
@@ -385,6 +399,20 @@
         "required": [
           "status",
           "redirect_to"
+        ]
+      },
+      "PasskeyVerify": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {},
+            "description": "AuthenticationResponseJSON from the browser"
+          }
+        },
+        "required": [
+          "response"
         ]
       },
       "ConsentDecision": {
@@ -488,6 +516,184 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/InteractionDocument"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/passkey/options": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Authentication options with a fresh challenge (§7.4)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOptions"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed, interaction_binding_failed or too_many_attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "interaction_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "interaction_invalid_state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/{id}/passkey/verify": {
+      "post": {
+        "tags": [
+          "interactions"
+        ],
+        "summary": "Verify an assertion and authenticate the interaction (§7.4)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 43,
+              "maxLength": 43,
+              "description": "Interaction id (43 base64url characters)"
+            },
+            "required": true,
+            "description": "Interaction id (43 base64url characters)",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyVerify"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ready, consent_required or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionStep"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "passkey_verification_failed or passkey_counter_regression",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

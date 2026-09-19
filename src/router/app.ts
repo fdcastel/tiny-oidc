@@ -7,6 +7,7 @@ import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type ConfigResult, type Env, SettingsLoader } from "../env.ts";
 import { abortHandler, consentHandler, getInteractionHandler } from "../interaction/api.ts";
+import { passkeyOptionsHandler, passkeyVerifyHandler } from "../interaction/passkey.ts";
 import { healthHandler } from "../obs/health.ts";
 import { consoleSink, Logger, type LogLevel, type LogSink, type RequestLog } from "../obs/log.ts";
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
@@ -172,14 +173,9 @@ export function createApp(deps: AppDeps) {
   app.get("/api/v1/interactions/:id", getInteractionHandler(deps.clock));
   app.post("/api/v1/interactions/:id/consent", consentHandler(deps.clock));
   app.post("/api/v1/interactions/:id/abort", abortHandler(deps.clock));
-  for (const op of [
-    "passkey/options",
-    "passkey/verify",
-    "register/options",
-    "register/verify",
-    "upstream/:alias",
-    "logout",
-  ]) {
+  app.post("/api/v1/interactions/:id/passkey/options", passkeyOptionsHandler(deps.clock));
+  app.post("/api/v1/interactions/:id/passkey/verify", passkeyVerifyHandler(deps.clock));
+  for (const op of ["register/options", "register/verify", "upstream/:alias", "logout"]) {
     app.post(`/api/v1/interactions/:id/${op}`, notImplemented);
   }
   for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);

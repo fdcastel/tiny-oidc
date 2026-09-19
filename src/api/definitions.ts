@@ -205,10 +205,60 @@ export const interactionAbortRoute = createRoute({
   },
 });
 
+export const PasskeyOptionsResponseSchema = z
+  .object({
+    publicKey: z.looseObject({}).openapi({
+      description: "PublicKeyCredentialRequestOptionsJSON for navigator.credentials.get()",
+    }),
+  })
+  .openapi("PasskeyOptions");
+
+export const PasskeyVerifyBodySchema = z
+  .object({
+    response: z
+      .looseObject({})
+      .openapi({ description: "AuthenticationResponseJSON from the browser" }),
+  })
+  .openapi("PasskeyVerify");
+
+export const interactionPasskeyOptionsRoute = createRoute({
+  method: "post",
+  path: "/api/v1/interactions/{id}/passkey/options",
+  tags: ["interactions"],
+  summary: "Authentication options with a fresh challenge (§7.4)",
+  request: { params: InteractionIdParams },
+  responses: {
+    200: {
+      description: "Options",
+      content: { "application/json": { schema: PasskeyOptionsResponseSchema } },
+    },
+    ...INTERACTION_ERRORS,
+  },
+});
+
+export const interactionPasskeyVerifyRoute = createRoute({
+  method: "post",
+  path: "/api/v1/interactions/{id}/passkey/verify",
+  tags: ["interactions"],
+  summary: "Verify an assertion and authenticate the interaction (§7.4)",
+  request: { params: InteractionIdParams, body: jsonBody(PasskeyVerifyBodySchema) },
+  responses: {
+    200: {
+      description: "ready, consent_required or failed",
+      content: { "application/json": { schema: InteractionStepSchema } },
+    },
+    400: errorResponse("invalid_request"),
+    401: errorResponse("passkey_verification_failed or passkey_counter_regression"),
+    ...INTERACTION_ERRORS,
+  },
+});
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
   interactionGetRoute,
+  interactionPasskeyOptionsRoute,
+  interactionPasskeyVerifyRoute,
   interactionConsentRoute,
   interactionAbortRoute,
 ] as const;

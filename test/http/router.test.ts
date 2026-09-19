@@ -344,6 +344,8 @@ describe("OpenAPI", () => {
     expect(Object.keys(doc.paths)).toEqual([
       "/api/v1/health",
       "/api/v1/interactions/{id}",
+      "/api/v1/interactions/{id}/passkey/options",
+      "/api/v1/interactions/{id}/passkey/verify",
       "/api/v1/interactions/{id}/consent",
       "/api/v1/interactions/{id}/abort",
     ]);
