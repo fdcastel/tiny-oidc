@@ -1665,6 +1665,254 @@ export const ADMIN_INVITATION_ROUTES = [
   adminInvitationDeleteRoute,
 ] as const;
 
+// Admin keys, settings, stats and maintenance (§9.4, §10.3, §12.2, §12.4)
+
+export const AdminKeySchema = z
+  .object({
+    kid: z.string(),
+    alg: z.string(),
+    role: z.enum(["signing", "next", "verifying", "retired"]),
+    public_jwk: z.looseObject({}),
+    created_at: z.int(),
+    activates_at: z.int(),
+    retired_at: z.int().nullable(),
+  })
+  .openapi("AdminKey");
+
+export const RotateKeyBodySchema = z
+  .object({
+    immediate: z
+      .boolean()
+      .optional()
+      .openapi({ description: "true makes the new key sign at once (emergency)" }),
+  })
+  .strict()
+  .openapi("RotateKeyBody");
+
+export const KidParams = z.object({ kid: z.string().min(1).max(128) });
+
+export const adminKeysListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/keys",
+  tags: ["admin"],
+  summary: "Every signing key with its derived role; public JWKs only (§10.3)",
+  security: adminSecurity,
+  responses: {
+    200: {
+      description: "The keys, oldest activation first",
+      content: { "application/json": { schema: z.object({ items: z.array(AdminKeySchema) }) } },
+    },
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminKeysRotateRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/keys/rotate",
+  tags: ["admin"],
+  summary: "Create the next signing key, prepublished or immediate (TIO-KEYS-012)",
+  security: adminSecurity,
+  request: { body: jsonBody(RotateKeyBodySchema) },
+  responses: {
+    201: {
+      description: "The new key",
+      content: { "application/json": { schema: AdminKeySchema } },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminKeyDeleteRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/admin/keys/{kid}",
+  tags: ["admin"],
+  summary: "Retire a key immediately; refused for the only active key (TIO-KEYS-013)",
+  security: adminSecurity,
+  request: { params: KidParams },
+  responses: {
+    200: {
+      description: "The retired key",
+      content: { "application/json": { schema: AdminKeySchema } },
+    },
+    404: errorResponse("key_not_found"),
+    409: errorResponse("last_active_key"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const EffectiveSettingSchema = z
+  .object({ value: z.unknown(), source: z.enum(["default", "setting"]) })
+  .openapi("EffectiveSetting");
+
+export const adminSettingsGetRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/settings",
+  tags: ["admin"],
+  summary: "Effective settings, each with its source (§12.2)",
+  security: adminSecurity,
+  responses: {
+    200: {
+      description: "Setting name → { value, source }",
+      content: { "application/json": { schema: z.record(z.string(), EffectiveSettingSchema) } },
+    },
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const adminSettingsPatchRoute = createRoute({
+  method: "patch",
+  path: "/api/v1/admin/settings",
+  tags: ["admin"],
+  summary:
+    "Change settings; null returns a key to its default; the whole is validated (TIO-CFG-003)",
+  security: adminSecurity,
+  request: {
+    body: jsonBody(
+      z.record(z.string(), z.unknown()).openapi("SettingsPatch", {
+        description: "Setting name → new value, or null for the default",
+      }),
+    ),
+  },
+  responses: {
+    200: {
+      description: "The effective settings after the change",
+      content: { "application/json": { schema: z.record(z.string(), EffectiveSettingSchema) } },
+    },
+    400: errorResponse("invalid_request or invalid_settings with the violations"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const StatsSchema = z
+  .object({
+    users: z.object({ creating: z.int(), active: z.int(), disabled: z.int(), deleting: z.int() }),
+    clients: z.int(),
+    upstreams: z.int(),
+    keys: z.object({ signing: z.int(), next: z.int(), verifying: z.int(), retired: z.int() }),
+    audit_hot_rows: z.int(),
+    last_cron_run: z.int().nullable(),
+  })
+  .openapi("Stats");
+
+export const adminStatsRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/stats",
+  tags: ["admin"],
+  summary:
+    "Counts of users by status, clients, upstreams, keys by role, hot audit rows and the last cron run",
+  security: adminSecurity,
+  responses: {
+    200: { description: "The counts", content: { "application/json": { schema: StatsSchema } } },
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const MaintenanceReportSchema = z
+  .object({
+    audit_rows_purged: z.int(),
+    invitations_deleted: z.int(),
+    users_repaired: z.int(),
+    users_dropped: z.int(),
+    users_deleted: z.int(),
+    keys: z.object({
+      created: z.string().nullable(),
+      retired: z.array(z.string()),
+      deleted: z.int(),
+    }),
+    rekeyed: z.object({
+      signing_keys: z.int(),
+      upstreams: z.int(),
+      unrecoverable: z.int(),
+      remaining: z.int(),
+    }),
+    skipped: z.array(z.string()),
+    duration_ms: z.int(),
+  })
+  .openapi("MaintenanceReport");
+
+export const adminMaintenancePurgeRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/maintenance/purge",
+  tags: ["admin"],
+  summary: "Run the cron body once, bounded (§12.4)",
+  security: adminSecurity,
+  responses: {
+    200: {
+      description: "What the run did",
+      content: { "application/json": { schema: MaintenanceReportSchema } },
+    },
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const RekeyReportSchema = z
+  .object({
+    signing_keys: z.array(z.string()),
+    upstreams: z.int(),
+    unrecoverable: z.int(),
+    remaining: z.int(),
+  })
+  .openapi("RekeyReport");
+
+export const adminMaintenanceRekeyRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/maintenance/rekey",
+  tags: ["admin"],
+  summary: "Re-encrypt one chunk of keystore rows under the active master key (TIO-CRYPTO-011)",
+  security: adminSecurity,
+  responses: {
+    200: {
+      description: "What was re-encrypted",
+      content: { "application/json": { schema: RekeyReportSchema } },
+    },
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const ReindexBodySchema = z
+  .object({ cursor: z.string().optional() })
+  .strict()
+  .openapi("ReindexBody");
+
+export const ReindexBatchSchema = z
+  .object({
+    processed: z.int(),
+    failed: z.array(z.string()),
+    next_cursor: z.string().nullable(),
+  })
+  .openapi("ReindexBatch");
+
+export const adminMaintenanceReindexRoute = createRoute({
+  method: "post",
+  path: "/api/v1/admin/maintenance/reindex",
+  tags: ["admin"],
+  summary:
+    "Rebuild the D1 mirror of 100 users per call, in id order, resumable by cursor (TIO-DATA-027)",
+  security: adminSecurity,
+  request: { body: jsonBody(ReindexBodySchema) },
+  responses: {
+    200: {
+      description: "The batch",
+      content: { "application/json": { schema: ReindexBatchSchema } },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const ADMIN_SYSTEM_ROUTES = [
+  adminKeysListRoute,
+  adminKeysRotateRoute,
+  adminKeyDeleteRoute,
+  adminSettingsGetRoute,
+  adminSettingsPatchRoute,
+  adminStatsRoute,
+  adminMaintenancePurgeRoute,
+  adminMaintenanceRekeyRoute,
+  adminMaintenanceReindexRoute,
+] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -1681,6 +1929,7 @@ export const API_ROUTES = [
   ...ADMIN_CLIENT_ROUTES,
   ...ADMIN_UPSTREAM_ROUTES,
   ...ADMIN_INVITATION_ROUTES,
+  ...ADMIN_SYSTEM_ROUTES,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */

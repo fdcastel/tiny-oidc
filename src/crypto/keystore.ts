@@ -123,6 +123,12 @@ export class KeysUnavailableError extends Error {
 }
 
 /** The keys an isolate signs and verifies with. */
+/** The role of every row by kid (the Admin API's key listing and stats). */
+export function rolesByKid(rows: readonly SigningKeyRow[], now: number): Map<string, KeyRole> {
+  const signingAt = deriveRoles(rows, now).signing?.activates_at ?? null;
+  return new Map(rows.map((row) => [row.kid, roleOf(row, now, signingAt)]));
+}
+
 export interface LoadedKeys {
   signing: { kid: string; privateKey: CryptoKey };
   /** Every unretired key (signing, next and verifying), for JWKS and verification. */

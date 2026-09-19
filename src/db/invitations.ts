@@ -166,3 +166,12 @@ export async function listInvitationsPage(
     .all<RawInvitationRow>();
   return rows.results.map(decode);
 }
+
+/** Removes invitations that expired before `cutoff` (TIO-CFG-010); returns how many went. */
+export async function deleteExpiredInvitations(db: Db, cutoff: number): Promise<number> {
+  const result = await db
+    .prepare("DELETE FROM invitations WHERE expires_at < ?")
+    .bind(cutoff)
+    .run();
+  return result.meta.changes;
+}

@@ -192,6 +192,15 @@ function adminRoutes(): Route[] {
     ["POST", "invitations"],
     ["GET", "invitations/:id"],
     ["DELETE", "invitations/:id"],
+    ["GET", "keys"],
+    ["POST", "keys/rotate"],
+    ["DELETE", "keys/:kid"],
+    ["GET", "settings"],
+    ["PATCH", "settings"],
+    ["GET", "stats"],
+    ["POST", "maintenance/purge"],
+    ["POST", "maintenance/rekey"],
+    ["POST", "maintenance/reindex"],
   ];
   return operations.map(
     ([method, path]): Route => ({

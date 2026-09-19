@@ -28,6 +28,17 @@ import {
   listInvitationsHandler,
 } from "../admin/invitations.ts";
 import {
+  getSettingsHandler,
+  listKeysHandler,
+  patchSettingsHandler,
+  purgeHandler,
+  reindexAllHandler,
+  rekeyHandler,
+  retireKeyHandler,
+  rotateKeyHandler,
+  statsHandler,
+} from "../admin/system.ts";
+import {
   createUpstreamHandler,
   deleteUpstreamHandler,
   getUpstreamHandler,
@@ -316,6 +327,15 @@ export function createApp(deps: AppDeps) {
   app.post(invitations, createInvitationHandler(deps.clock));
   app.get(`${invitations}/:id`, getInvitationHandler);
   app.delete(`${invitations}/:id`, deleteInvitationHandler);
+  app.get("/api/v1/admin/keys", listKeysHandler(deps.clock));
+  app.post("/api/v1/admin/keys/rotate", rotateKeyHandler(deps.clock));
+  app.delete("/api/v1/admin/keys/:kid", retireKeyHandler(deps.clock));
+  app.get("/api/v1/admin/settings", getSettingsHandler);
+  app.patch("/api/v1/admin/settings", patchSettingsHandler(deps.clock));
+  app.get("/api/v1/admin/stats", statsHandler(deps.clock));
+  app.post("/api/v1/admin/maintenance/purge", purgeHandler(deps.clock));
+  app.post("/api/v1/admin/maintenance/rekey", rekeyHandler);
+  app.post("/api/v1/admin/maintenance/reindex", reindexAllHandler(deps.clock));
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

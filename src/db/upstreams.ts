@@ -171,3 +171,35 @@ function columnValues(upstream: Upstream): unknown[] {
     upstream.enabled ? 1 : 0,
   ];
 }
+
+export async function countUpstreams(db: Db): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM upstreams").first<{ n: number }>();
+  return (row as { n: number }).n;
+}
+
+/** Every upstream with sealed material, for re-encryption under the active master key (TIO-CRYPTO-011). */
+export async function listSealedUpstreams(db: Db): Promise<Upstream[]> {
+  const rows = await db
+    .prepare(
+      [
+        "SELECT",
+        COLUMNS,
+        "FROM upstreams WHERE client_secret_enc IS NOT NULL OR client_jwk_enc IS NOT NULL ORDER BY alias",
+      ].join(" "),
+    )
+    .all<RawUpstreamRow>();
+  return rows.results.map(decodeUpstreamRow).filter((u) => u !== null);
+}
+
+/** Rewrites the sealed material of one upstream (rekey). */
+export async function updateUpstreamSecrets(
+  db: Db,
+  alias: string,
+  secretEnc: Uint8Array | null,
+  jwkEnc: Uint8Array | null,
+): Promise<void> {
+  await db
+    .prepare("UPDATE upstreams SET client_secret_enc = ?, client_jwk_enc = ? WHERE alias = ?")
+    .bind(secretEnc, jwkEnc, alias)
+    .run();
+}

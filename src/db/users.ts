@@ -291,3 +291,24 @@ export async function claimCredential(
 export async function releaseCredential(db: Db, credentialId: string): Promise<void> {
   await db.prepare("DELETE FROM passkey_index WHERE credential_id = ?").bind(credentialId).run();
 }
+
+/** The group names a registry row claims (the repair of a `creating` row, §4.6). */
+export async function groupNamesOfUser(db: Db, userId: string): Promise<string[]> {
+  const rows = await db
+    .prepare(
+      "SELECT groups.name AS name FROM group_members JOIN groups ON groups.id = group_members.group_id WHERE group_members.user_id = ? ORDER BY groups.name",
+    )
+    .bind(userId)
+    .all<{ name: string }>();
+  return rows.results.map((row) => row.name);
+}
+
+/** How many rows hold each status (`GET /admin/stats`). */
+export async function countUsersByStatus(db: Db): Promise<Record<UserStatus, number>> {
+  const rows = await db
+    .prepare("SELECT status, COUNT(*) AS n FROM users GROUP BY status")
+    .all<{ status: UserStatus; n: number }>();
+  const counts: Record<UserStatus, number> = { creating: 0, active: 0, disabled: 0, deleting: 0 };
+  for (const row of rows.results) counts[row.status] = row.n;
+  return counts;
+}

@@ -1960,6 +1960,305 @@
           "kind"
         ],
         "additionalProperties": false
+      },
+      "AdminKey": {
+        "type": "object",
+        "properties": {
+          "kid": {
+            "type": "string"
+          },
+          "alg": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "signing",
+              "next",
+              "verifying",
+              "retired"
+            ]
+          },
+          "public_jwk": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {}
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "activates_at": {
+            "type": "integer"
+          },
+          "retired_at": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kid",
+          "alg",
+          "role",
+          "public_jwk",
+          "created_at",
+          "activates_at",
+          "retired_at"
+        ]
+      },
+      "RotateKeyBody": {
+        "type": "object",
+        "properties": {
+          "immediate": {
+            "type": "boolean",
+            "description": "true makes the new key sign at once (emergency)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EffectiveSetting": {
+        "type": "object",
+        "properties": {
+          "value": {},
+          "source": {
+            "type": "string",
+            "enum": [
+              "default",
+              "setting"
+            ]
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "SettingsPatch": {
+        "type": "object",
+        "additionalProperties": {},
+        "description": "Setting name → new value, or null for the default"
+      },
+      "Stats": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "object",
+            "properties": {
+              "creating": {
+                "type": "integer"
+              },
+              "active": {
+                "type": "integer"
+              },
+              "disabled": {
+                "type": "integer"
+              },
+              "deleting": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "creating",
+              "active",
+              "disabled",
+              "deleting"
+            ]
+          },
+          "clients": {
+            "type": "integer"
+          },
+          "upstreams": {
+            "type": "integer"
+          },
+          "keys": {
+            "type": "object",
+            "properties": {
+              "signing": {
+                "type": "integer"
+              },
+              "next": {
+                "type": "integer"
+              },
+              "verifying": {
+                "type": "integer"
+              },
+              "retired": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "signing",
+              "next",
+              "verifying",
+              "retired"
+            ]
+          },
+          "audit_hot_rows": {
+            "type": "integer"
+          },
+          "last_cron_run": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "users",
+          "clients",
+          "upstreams",
+          "keys",
+          "audit_hot_rows",
+          "last_cron_run"
+        ]
+      },
+      "MaintenanceReport": {
+        "type": "object",
+        "properties": {
+          "audit_rows_purged": {
+            "type": "integer"
+          },
+          "invitations_deleted": {
+            "type": "integer"
+          },
+          "users_repaired": {
+            "type": "integer"
+          },
+          "users_dropped": {
+            "type": "integer"
+          },
+          "users_deleted": {
+            "type": "integer"
+          },
+          "keys": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "retired": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "deleted": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "created",
+              "retired",
+              "deleted"
+            ]
+          },
+          "rekeyed": {
+            "type": "object",
+            "properties": {
+              "signing_keys": {
+                "type": "integer"
+              },
+              "upstreams": {
+                "type": "integer"
+              },
+              "unrecoverable": {
+                "type": "integer"
+              },
+              "remaining": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "signing_keys",
+              "upstreams",
+              "unrecoverable",
+              "remaining"
+            ]
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "duration_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audit_rows_purged",
+          "invitations_deleted",
+          "users_repaired",
+          "users_dropped",
+          "users_deleted",
+          "keys",
+          "rekeyed",
+          "skipped",
+          "duration_ms"
+        ]
+      },
+      "RekeyReport": {
+        "type": "object",
+        "properties": {
+          "signing_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "upstreams": {
+            "type": "integer"
+          },
+          "unrecoverable": {
+            "type": "integer"
+          },
+          "remaining": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "signing_keys",
+          "upstreams",
+          "unrecoverable",
+          "remaining"
+        ]
+      },
+      "ReindexBatch": {
+        "type": "object",
+        "properties": {
+          "processed": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "processed",
+          "failed",
+          "next_cursor"
+        ]
+      },
+      "ReindexBody": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -7539,6 +7838,698 @@
           },
           "404": {
             "description": "invitation_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/keys": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Every signing key with its derived role; public JWKs only (§10.3)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The keys, oldest activation first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminKey"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/keys/rotate": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create the next signing key, prepublished or immediate (TIO-KEYS-012)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateKeyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/keys/{kid}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Retire a key immediately; refused for the only active key (TIO-KEYS-013)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": true,
+            "name": "kid",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The retired key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "key_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "last_active_key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Effective settings, each with its source (§12.2)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Setting name → { value, source }",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/EffectiveSetting"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Change settings; null returns a key to its default; the whole is validated (TIO-CFG-003)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The effective settings after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/EffectiveSetting"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request or invalid_settings with the violations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Counts of users by status, clients, upstreams, keys by role, hot audit rows and the last cron run",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/maintenance/purge": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Run the cron body once, bounded (§12.4)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the run did",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/maintenance/rekey": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Re-encrypt one chunk of keystore rows under the active master key (TIO-CRYPTO-011)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was re-encrypted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RekeyReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/maintenance/reindex": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Rebuild the D1 mirror of 100 users per call, in id order, resumable by cursor (TIO-DATA-027)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReindexBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexBatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
             "content": {
               "application/json": {
                 "schema": {

@@ -12,6 +12,7 @@ import {
   RETIRED_KEY_RETENTION_SECONDS,
   rekeySigningKeys,
   retireSigningKeyNow,
+  rolesByKid,
   rotateSigningKey,
 } from "../../src/crypto/keystore.ts";
 import { openSecret, sealedUnderVersion, sealSecret } from "../../src/crypto/secretbox.ts";
@@ -146,6 +147,15 @@ describe("key store", () => {
     let roles = deriveRoles(await listSigningKeys(db), clock.now());
     expect(roles.next.map((r) => r.kid)).toEqual([k2]);
     expect(roles.signing?.kid).toBe(k1);
+    expect([...rolesByKid(await listSigningKeys(db), clock.now())]).toEqual([
+      [k1, "signing"],
+      [k2, "next"],
+    ]);
+    // Before anything activated there is no signing key and every row is next.
+    expect([...rolesByKid(await listSigningKeys(db), t0 - 1)]).toEqual([
+      [k1, "next"],
+      [k2, "next"],
+    ]);
 
     // After pre-publication the new key signs and the old one verifies.
     clock.advance(DAY);

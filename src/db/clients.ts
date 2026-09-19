@@ -243,3 +243,8 @@ export async function listClientsPage(
     client: decodeClientRow(row),
   }));
 }
+
+export async function countClients(db: Db): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM clients").first<{ n: number }>();
+  return (row as { n: number }).n;
+}
