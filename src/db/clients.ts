@@ -101,15 +101,11 @@ export async function getClient(db: Db, clientId: string): Promise<Client | null
 
 export type InsertClientResult = "created" | "client_exists";
 
+/** Inserts the client; the primary key decides between concurrent creators (TIO-TEST-010). */
 export async function insertClient(db: Db, client: Client): Promise<InsertClientResult> {
-  const existing = await db
-    .prepare("SELECT 1 AS present FROM clients WHERE client_id = ?")
-    .bind(client.client_id)
-    .first();
-  if (existing !== null) return "client_exists";
-  await db
+  const result = await db
     .prepare(
-      "INSERT INTO clients (client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO clients (client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client_id) DO NOTHING",
     )
     .bind(
       client.client_id,
@@ -139,7 +135,7 @@ export async function insertClient(db: Db, client: Client): Promise<InsertClient
       client.updated_at,
     )
     .run();
-  return "created";
+  return result.meta.changes === 1 ? "created" : "client_exists";
 }
 
 /** Sets or clears `disabled_at` (TIO-CLIENT-004). Returns whether the client exists. */

@@ -115,8 +115,19 @@ async function resolveAccount(
   // 1. A linked identity whose object confirms it.
   const holder = await lookupIdentity(db, identity.issuer, identity.subject);
   if (holder !== null) {
+    // A `creating` holder is a creation in flight that claimed the pair (§4.6 step 1) and has
+    // not yet reached the object: the pair is taken, not stale (TIO-TEST-010). An abandoned
+    // creation is repaired or dropped by the cron (§3.4), which also frees the pair.
+    if (holder.status === "creating") {
+      return {
+        kind: "fail",
+        error: "identity_already_linked",
+        description: "the account could not be created",
+        reason: "identity_already_linked",
+      };
+    }
     c.get("metrics").doCalls += 1;
-    const stub = userStub(c.env, holder);
+    const stub = userStub(c.env, holder.user_id);
     const touched = await stub.touchIdentity(identity.issuer, identity.subject, claims, now);
     if (touched.ok && touched.found) {
       const profile = await stub.getProfile();

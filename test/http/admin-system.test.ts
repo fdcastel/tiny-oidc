@@ -3,6 +3,7 @@ import type { AuditEvent } from "../../src/audit/events.ts";
 import { sealedUnderVersion, sealSecret } from "../../src/crypto/secretbox.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { Db } from "../../src/db/db.ts";
+import { insertIdentityStatement } from "../../src/db/identities.ts";
 import { listSigningKeys } from "../../src/db/keys.ts";
 import { writeSettings } from "../../src/db/settings.ts";
 import { getUpstream, updateUpstreamSecrets } from "../../src/db/upstreams.ts";
@@ -20,7 +21,7 @@ import { harness, LOGIN_ORIGIN } from "../support/http.ts";
 import { testKeys } from "../support/keys.ts";
 import { env } from "../support/op.ts";
 import { userWithPasskey } from "../support/passkeys.ts";
-import { brokenD1, brokenDoFor, failingD1 } from "./faults.ts";
+import { brokenD1, brokenDoFor, failingD1, sabotageDo } from "./faults.ts";
 
 // Keys, settings, stats and maintenance endpoints (spec §9.4): the key
 // lifecycle by hand (TIO-KEYS-012, TIO-KEYS-013), settings validated as a
@@ -297,6 +298,14 @@ describe("stats and maintenance", () => {
           "INSERT INTO group_members (group_id, user_id, added_at) SELECT id, ?, ? FROM groups WHERE name = 'admins'",
         )
         .bind(repairable, clock.now()),
+      // A pair claimed by the creation (§4.6 step 1) that the object never received.
+      insertIdentityStatement(
+        db,
+        "https://idp.example.com",
+        "repaired-at-idp",
+        repairable,
+        clock.now(),
+      ),
       insertUserStatement(
         db,
         { id: droppable, email: null, email_norm: null, email_verified: false, display_name: null },
@@ -338,6 +347,17 @@ describe("stats and maintenance", () => {
       email: "Repair@Example.com",
       groups: ["admins"],
     });
+    // The claimed pair is linked into the object, so the index row is confirmed from now on.
+    const repairedIdentities = await userStub(env, repairable).listIdentities();
+    expect(repairedIdentities.ok && repairedIdentities.identities).toEqual([
+      expect.objectContaining({
+        issuer: "https://idp.example.com",
+        subject: "repaired-at-idp",
+        email: null,
+        email_verified: null,
+        name: null,
+      }),
+    ]);
     expect(await getUser(db, droppable)).toBeNull();
     expect(await getUser(db, halfDeleted.profile.id)).toBeNull();
     expect(await halfDeleted.stub.getProfile()).toEqual({ ok: false, error: "user_destroyed" });
@@ -398,6 +418,54 @@ describe("stats and maintenance", () => {
       .prepare("DELETE FROM users WHERE id IN (?, ?)")
       .bind(destroyed.profile.id, unreachable)
       .run();
+    // A creation that got past step 2 (the object holds the pair) is activated as is; one
+    // whose object refuses the pair stays for the next run.
+    const halfway = new UuidV7(clock).next();
+    const unlinkable = new UuidV7(clock).next();
+    const blank = { email: null, email_norm: null, email_verified: false, display_name: null };
+    await db.batch([
+      insertUserStatement(db, { id: halfway, ...blank }, clock.now() - 120),
+      insertIdentityStatement(
+        db,
+        "https://idp.example.com",
+        "halfway-at-idp",
+        halfway,
+        clock.now(),
+      ),
+      insertUserStatement(db, { id: unlinkable, ...blank }, clock.now() - 120),
+      insertIdentityStatement(
+        db,
+        "https://idp.example.com",
+        "unlinkable-at-idp",
+        unlinkable,
+        clock.now(),
+      ),
+    ]);
+    await userStub(env, halfway).init({ id: halfway, ...blank, groups: [] }, clock.now());
+    await userStub(env, halfway).addIdentity(
+      {
+        id: new UuidV7(clock).next(),
+        issuer: "https://idp.example.com",
+        subject: "halfway-at-idp",
+        email: "halfway@example.com",
+        email_verified: true,
+        name: "Halfway",
+      },
+      clock.now(),
+    );
+    const partial = (await (
+      await call("POST", "maintenance/purge", undefined, {
+        env: sabotageDo(unlinkable, "addIdentity"),
+      })
+    ).json()) as Record<string, unknown>;
+    expect(partial).toMatchObject({ users_repaired: 1, users_dropped: 0 });
+    expect((await getUser(db, halfway))?.status).toBe("active");
+    const halfwayIdentities = await userStub(env, halfway).listIdentities();
+    expect(halfwayIdentities.ok && halfwayIdentities.identities).toEqual([
+      expect.objectContaining({ subject: "halfway-at-idp", email: "halfway@example.com" }),
+    ]);
+    expect((await getUser(db, unlinkable))?.status).toBe("creating");
+    await db.prepare("DELETE FROM users WHERE id = ?").bind(unlinkable).run();
     // A full batch of old audit rows takes a second batch to finish.
     const bulk = [];
     for (let i = 0; i < 1000; i++) bulk.push(insertAudit(`bulk-${i}`, clock.now() - 400 * 86_400));

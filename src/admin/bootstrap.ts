@@ -2,7 +2,8 @@ import type { Handler } from "hono";
 import { z } from "zod";
 import { secretsEqual, sha256 } from "../crypto/hash.ts";
 import { countMembers } from "../db/groups.ts";
-import { writeSettings } from "../db/settings.ts";
+import { deleteInvitation } from "../db/invitations.ts";
+import { claimSetting } from "../db/settings.ts";
 import type { Clock, Settings } from "../env.ts";
 import { CAPABILITIES } from "../oidc/capabilities.ts";
 import { type Client, createClient, publicClient } from "../oidc/clients.ts";
@@ -104,7 +105,12 @@ export function bootstrapHandler(clock: Clock): Handler<AppEnv> {
       clock,
     );
     if (!invitation.ok) return errorResponse(c, 400, "email_invalid", "email is not valid");
-    await writeSettings(db, { bootstrapped_at: now }, "bootstrap", now);
+    // The claim decides between concurrent attempts (TIO-TEST-010): the loser withdraws its
+    // invitation so exactly one exists, and answers as if it had arrived late.
+    if (!(await claimSetting(db, "bootstrapped_at", now, "bootstrap", now))) {
+      await deleteInvitation(db, invitation.invitation.id);
+      return completed();
+    }
     c.get("settingsLoader").invalidate();
     c.get("audit").emit({
       type: "admin.bootstrap",

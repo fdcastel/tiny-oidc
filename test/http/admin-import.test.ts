@@ -139,7 +139,7 @@ describe("POST /api/v1/admin/import/users", () => {
       groups: ["staff"],
       created_at: 1_700_000_000,
     });
-    expect(await lookupIdentity(db, "https://idp.example.com", "s-1")).toBe(first.id);
+    expect((await lookupIdentity(db, "https://idp.example.com", "s-1"))?.user_id).toBe(first.id);
     expect(await getUser(db, givenId)).toMatchObject({
       status: "disabled",
       email: "given@example.com",

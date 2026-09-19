@@ -39,6 +39,28 @@ export async function writeSettings(
   if (statements.length > 0) await db.batch(statements);
 }
 
+/**
+ * Writes one entry only when no row holds the key yet, and tells whether this
+ * call did: the atomic claim behind single-use steps such as the bootstrap
+ * (TIO-ADMIN-010, TIO-TEST-010). A row set to its default is deleted, never
+ * stored as null, so absence is the only "unset" state.
+ */
+export async function claimSetting(
+  db: Db,
+  key: string,
+  value: unknown,
+  actor: string,
+  now: number,
+): Promise<boolean> {
+  const result = await db
+    .prepare(
+      "INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO NOTHING",
+    )
+    .bind(key, JSON.stringify(value), now, actor)
+    .run();
+  return result.meta.changes === 1;
+}
+
 /** Liveness probe for the health endpoint (TIO-OBS-003). */
 export async function pingDb(db: Db): Promise<boolean> {
   try {

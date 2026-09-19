@@ -2,8 +2,10 @@ import type { AuditInput, Auditor } from "../audit/events.ts";
 import { maintainSigningKeys, rekeySigningKeys } from "../crypto/keystore.ts";
 import type { DerivedKeys } from "../crypto/master-keys.ts";
 import { openSecret, sealedUnderVersion, sealSecret } from "../crypto/secretbox.ts";
+import { UuidV7 } from "../crypto/uuid.ts";
 import { PURGE_BATCH_ROWS, purgeAuditBatch } from "../db/audit.ts";
 import type { Db } from "../db/db.ts";
+import { identitiesOfUser } from "../db/identities.ts";
 import { deleteExpiredInvitations } from "../db/invitations.ts";
 import { writeSettings } from "../db/settings.ts";
 import { listSealedUpstreams, updateUpstreamSecrets } from "../db/upstreams.ts";
@@ -59,10 +61,21 @@ export interface MaintenanceDeps {
   budgetMs?: number;
 }
 
-/** Repairs one `creating` row: the object is initialized from the row and the row activated (§4.6). */
-async function repairCreating(env: Env, db: Db, row: UserRow, now: number): Promise<boolean> {
+/**
+ * Repairs one `creating` row: the object is initialized from the row and the
+ * pairs the index claims for it, then the row is activated (§4.6). A claimed
+ * pair is linked without the upstream's claims; the next login fills them in.
+ */
+async function repairCreating(
+  env: Env,
+  db: Db,
+  uuids: UuidV7,
+  row: UserRow,
+  now: number,
+): Promise<boolean> {
   try {
-    const initialized = await userStub(env, row.id).init(
+    const stub = userStub(env, row.id);
+    const initialized = await stub.init(
       {
         id: row.id,
         email: row.email,
@@ -74,6 +87,14 @@ async function repairCreating(env: Env, db: Db, row: UserRow, now: number): Prom
       now,
     );
     if (!initialized.ok) return false;
+    for (const pair of await identitiesOfUser(db, row.id)) {
+      const linked = await stub.addIdentity(
+        { id: uuids.next(), ...pair, email: null, email_verified: null, name: null },
+        now,
+      );
+      // An object that got past step 2 before the activation failed holds the pair already.
+      if (!linked.ok && linked.error !== "identity_exists") return false;
+    }
     await setUserStatus(db, row.id, "active", now);
     return true;
   } catch {
@@ -119,6 +140,7 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
   const { env, db, config, settings, clock } = deps;
   const startedMs = clock.nowMs();
   const now = clock.now();
+  const uuids = new UuidV7(clock);
   const budget = deps.budgetMs ?? MAINTENANCE_BUDGET_MS;
   const report: MaintenanceReport = {
     audit_rows_purged: 0,
@@ -167,7 +189,7 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
           if (row.created_at < now - CREATING_DELETE_AFTER_SECONDS) {
             await deleteUserRow(db, row.id);
             report.users_dropped++;
-          } else if (await repairCreating(env, db, row, now)) {
+          } else if (await repairCreating(env, db, uuids, row, now)) {
             report.users_repaired++;
           }
         }

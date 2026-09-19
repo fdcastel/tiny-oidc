@@ -146,7 +146,7 @@ describe("POST /api/v1/admin/users and GET /users/{id}", () => {
       user_id: detail.id,
       upstream: "https://idp.example.com",
     });
-    expect(await lookupIdentity(db, "https://idp.example.com", "abc")).toBe(detail.id);
+    expect((await lookupIdentity(db, "https://idp.example.com", "abc"))?.user_id).toBe(detail.id);
     const fetched = await call("GET", `users/${detail.id}`);
     expect(fetched.status).toBe(200);
     expect(await fetched.json()).toEqual(detail);
@@ -717,7 +717,7 @@ describe("sub-resources", () => {
       unknown_groups: ["ghosts"],
     });
     expect(await lookupCredential(db, user.credentialId)).toBe(id);
-    expect(await lookupIdentity(db, "https://idp.example.com", "reindex-1")).toBe(id);
+    expect((await lookupIdentity(db, "https://idp.example.com", "reindex-1"))?.user_id).toBe(id);
     expect((await getUser(db, id))?.display_name).toBe("Alice");
 
     // A page of the user's events (rows arrive through the queue consumer whenever it runs).

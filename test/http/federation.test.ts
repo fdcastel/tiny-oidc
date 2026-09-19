@@ -2,9 +2,11 @@ import { createLocalJWKSet, jwtVerify } from "jose";
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
 import { newSecret } from "../../src/crypto/random.ts";
+import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { Db } from "../../src/db/db.ts";
 import { insertIdentityStatement, lookupIdentity } from "../../src/db/identities.ts";
 import { writeSettings } from "../../src/db/settings.ts";
+import { getUser, insertUserStatement, setUserStatus } from "../../src/db/users.ts";
 import type { Client } from "../../src/oidc/clients.ts";
 import { sealBindingHandle } from "../../src/oidc/handles.ts";
 import { interactionStub } from "../../src/oidc/interactions.ts";
@@ -242,7 +244,7 @@ describe("federated login", () => {
       name: "Alice",
     });
     const uid = claims.sub as string;
-    expect(await lookupIdentity(db, IDP, "alice")).toBe(uid);
+    expect((await lookupIdentity(db, IDP, "alice"))?.user_id).toBe(uid);
     const identities = await userStub(env, uid).listIdentities();
     expect(identities.ok && identities.identities).toEqual([
       expect.objectContaining({
@@ -549,7 +551,7 @@ describe("claims and account resolution", () => {
     });
     expect(right.status).toBe(200);
     expect(await right.json()).toMatchObject({ status: "ready" });
-    expect(await lookupIdentity(db, IDP, "owner-at-idp")).toBe(owner.profile.id);
+    expect((await lookupIdentity(db, IDP, "owner-at-idp"))?.user_id).toBe(owner.profile.id);
     const identities = await owner.stub.listIdentities();
     expect(identities.ok && identities.identities).toEqual([
       expect.objectContaining({ issuer: IDP, subject: "owner-at-idp", email: "Owner@Example.com" }),
@@ -718,7 +720,7 @@ describe("claims and account resolution", () => {
     const recreated = await driveFederation(h, fake, web, { sub: "gone" });
     const fresh = (await claimsOf((await finish(recreated)).id_token)).sub as string;
     expect(fresh).not.toBe(uid);
-    expect(await lookupIdentity(db, IDP, "gone")).toBe(fresh);
+    expect((await lookupIdentity(db, IDP, "gone"))?.user_id).toBe(fresh);
     // Discovery: one fetch so far for this issuer, another after an hour, stale on failure.
     const discoveries = () =>
       fake.requests.filter((r) => r.path === "/.well-known/openid-configuration").length;
@@ -751,6 +753,66 @@ describe("claims and account resolution", () => {
     expect(await refused.json()).toMatchObject({ error: "upstream_unavailable" });
     fake.discoveryDown = false;
     await finish(await driveFederation(h, fake, web, { sub: "gone" }));
+  });
+
+  it("[TIO-TEST-010] [TIO-DATA-026] an index row held by a creation in flight (a `creating` user) is a claim, not a stale row: the login fails with identity_already_linked, the row stays, and once the creation completes the login signs in as that account", async () => {
+    fake.person({ sub: "pending", name: "Pending" });
+    const pending = new UuidV7(clock).next();
+    // Step 1 of §4.6 as `createUser` runs it: the row and the pair claimed in one batch.
+    await db.batch([
+      insertUserStatement(
+        db,
+        { id: pending, email: null, email_norm: null, email_verified: false, display_name: null },
+        clock.now(),
+      ),
+      insertIdentityStatement(db, IDP, "pending", pending, clock.now()),
+    ]);
+    const racing = await driveFederation(h, fake, web, { sub: "pending" });
+    expect(await failure(racing)).toEqual({
+      error: "identity_already_linked",
+      error_description: "the account could not be created",
+    });
+    expect(events("identity.login_failed").at(-1)).toMatchObject({
+      reason: "identity_already_linked",
+    });
+    expect(await lookupIdentity(db, IDP, "pending")).toEqual({
+      user_id: pending,
+      status: "creating",
+    });
+    expect((await getUser(db, pending))?.status).toBe("creating");
+    // Steps 2 and 3 complete: the holder is the account behind the pair.
+    const stub = userStub(env, pending);
+    await stub.init(
+      {
+        id: pending,
+        email: null,
+        email_norm: null,
+        email_verified: false,
+        display_name: null,
+        groups: [],
+      },
+      clock.now(),
+    );
+    await stub.addIdentity(
+      {
+        id: new UuidV7(clock).next(),
+        issuer: IDP,
+        subject: "pending",
+        email: null,
+        email_verified: null,
+        name: null,
+      },
+      clock.now(),
+    );
+    await setUserStatus(db, pending, "active", clock.now());
+    const claims = await claimsOf(
+      (await finish(await driveFederation(h, fake, web, { sub: "pending" }))).id_token,
+    );
+    expect(claims.sub).toBe(pending);
+    expect(await lookupIdentity(db, IDP, "pending")).toEqual({
+      user_id: pending,
+      status: "active",
+    });
   });
 });
 
@@ -980,7 +1042,7 @@ describe("failure paths", () => {
       )
     ).sub as string;
     expect(third).not.toBe(second);
-    expect(await lookupIdentity(db, IDP, "ghost")).toBe(third);
+    expect((await lookupIdentity(db, IDP, "ghost"))?.user_id).toBe(third);
     // The link step finds the interaction failed meanwhile.
     const owner = await userWithPasskey(clock, {
       email: "linked@example.com",
