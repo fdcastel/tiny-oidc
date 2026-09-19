@@ -39,11 +39,31 @@ jobs:
         run: echo "k6 scenarios land in P7-04" && exit 1
 
   mutation:
+    # Stryker over the Node unit project (spec §13.1): report only, never a gate.
+    # The Workers project stays out until the Vitest runner stops pinning
+    # pool=threads, which displaces the Cloudflare pool (stryker.config.json).
     name: mutation testing baseline (report only)
     if: ${{ vars.NIGHTLY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
-      - name: Stryker
-        run: echo "mutation baseline lands in P7-07" && exit 1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm gen:types
+      - name: Stryker (unit project)
+        run: pnpm mutate
+      - name: Mutation score
+        if: always()
+        run: node scripts/mutation-summary.ts reports/mutation/mutation.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30

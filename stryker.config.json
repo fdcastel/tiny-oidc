@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation-testing baseline (spec §13.1, P7-07): report only, nightly. The Vitest runner pins pool=threads, which displaces the Cloudflare Workers pool, so only the Node `unit` project takes part until the runner and the plugin agree; mutants in files the unit suite does not reach are reported as NoCoverage.",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.unit.config.ts" },
+  "mutate": ["src/**/*.ts", "!src/generated/**"],
+  "coverageAnalysis": "perTest",
+  "ignoreStatic": true,
+  "reporters": ["clear-text", "progress", "html", "json"],
+  "htmlReporter": { "fileName": "reports/mutation/index.html" },
+  "jsonReporter": { "fileName": "reports/mutation/mutation.json" },
+  "thresholds": { "high": 80, "low": 60, "break": null },
+  "ignorePatterns": [
+    "coverage",
+    "reports",
+    ".wrangler",
+    ".stryker-tmp",
+    "playwright-report",
+    "test-results",
+    "tmp",
+    "doc/openapi.json"
+  ],
+  "tempDirName": ".stryker-tmp",
+  "timeoutMS": 30000,
+  "concurrency": 4
+}

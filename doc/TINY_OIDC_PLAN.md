@@ -4,7 +4,7 @@
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-19 |
-| **Current focus** | `P7-05` (owner sign-off on the threat-model review) and `P7-07` (mutation nightly); `P4-08` waits on OP-04, `P6-07` and the P3-08 staging benchmark on OP-01, the fake upstream's staging deployment on OP-06; `P7-03`, `P7-04` and `P7-06` on staging and production. |
+| **Current focus** | `P7-05` (owner sign-off on the threat-model review); `P4-08` waits on OP-04, `P6-07` and the P3-08 staging benchmark on OP-01, the fake upstream's staging deployment on OP-06; `P7-03`, `P7-04` and `P7-06` on staging and production. |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated
@@ -216,7 +216,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | P7-04 | Load: seed 1,000,000 users on staging via import (benchmark), harvest 100,000 refresh tokens over HTTP, k6 scenarios with §2.7 thresholds, D1 write-rate assertion | TIO-TEST-050, TIO-TEST-051, TIO-PERF-001, TIO-PERF-002, TIO-ADMIN-021 | ❌ OPEN | — | |
 | P7-05 | Documents: `doc/RUNBOOK.md` (bootstrap, key rotation, master-key rotation, emergency retirement, secret rotation, recovery, D1 restore, reindex, lost `MASTER_KEYS`), `doc/LOGIN_APP_GUIDE.md`, `doc/adr/` for decisions made during the build, threat-model review sign-off | TIO-DEPLOY-004, TIO-SEC-001, TIO-GEN-005 | 🔧 IN PROGRESS | pending | Written: `doc/RUNBOOK.md` (thirteen procedures, each naming its test or saying it has none; the lost-`MASTER_KEYS` path retires the unopenable keys in D1 because no admin token can be minted without a signing key), `doc/LOGIN_APP_GUIDE.md` rewritten for every state of §7 (federation, linking, consent, logout, the error table), `doc/adr/0001`–`0010` for the decisions recorded in this plan's notes since Phase 0, and `doc/adr/0011` the Phase 7 threat-model review (evidence table generated from the traceability, six findings absorbed, one recommendation: a `user.exported` event). The D1 restore procedure gained its drill test in `test/http/admin-import.test.ts` (import a line with the id, reindex). Open: the owner's sign-off on ADR 0011 (TIO-SEC-001) |
 | P7-06 | Release: create the `production` branch, Workers Builds production Worker (OP-02), `deploy.ts` versions upload + smoke + deploy exercised, `v1.0.0` tag, README status updated | TIO-DEPLOY-006, TIO-DEPLOY-010 | ❌ OPEN | — | |
-| P7-07 | Mutation-testing baseline in nightly (report only) | §13.1 | ❌ OPEN | — | Non-blocking by decision |
+| P7-07 | Mutation-testing baseline in nightly (report only) | §13.1 | ✅ DONE | pending | Non-blocking by decision. Stryker 10 with the Vitest runner (`stryker.config.json`, `pnpm mutate`); the runner pins `pool: threads`, which displaces the Cloudflare pool, so only the Node `unit` project takes part until the runner and the plugin agree (the caveat §13.1 anticipated). Baseline on this workstation: 12,330 mutants, 1,482 detected of 1,620 covered (91.48% covered score), 10,710 without unit coverage (the workerd-only code: `do`, `db`, `interaction`, `me`, `logout`, …), 0 errors, 2 min 34 s. The nightly job uploads `reports/mutation/` and writes the score table to the job summary through `scripts/mutation-summary.ts` (metrics tested in `test/scripts/mutation-summary.test.ts`) |
 | P7-08 | Phase 7 exit: zero uncovered ids, all nightly gates green, production live | §14.2 | ❌ OPEN | — | |
 
 ---
@@ -298,6 +298,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | P5-01..P5-05: RP-initiated logout, the logout interaction, back-channel logout with the queue consumer and retries, the Self-service API, the e2e logout and self-service specs; trace at phase 5. Loopback port tolerance applied to `post_logout_redirect_uri` (TIO-LOGOUT-002 vs TIO-CLIENT-011, noted in P5-01). |
 | 2026-09-19 | Recorded 90ae144 for P7-01. |
 | 2026-09-19 | Recorded 764fbda for P7-02. |
+| 2026-09-19 | P7-07 mutation baseline: Stryker over the unit project in the nightly, report only; `scripts/mutation-summary.ts`. |
 | 2026-09-19 | P7-05 documents: runbook, login-app guide rewritten, `doc/adr/` with ten decision records and the threat-model review (0011, awaiting sign-off); D1 restore drill test. |
 | 2026-09-19 | P7-02 concurrency suite: `test/concurrency/{creation,federation}.test.ts`, the atomic bootstrap claim, the `creating`-holder rule in the federation callback and the identity re-link in the cron repair; trace at phase 7. |
 | 2026-09-19 | P7-01 security suite: seven files under `test/security/` (enumeration, injection, redaction, headers, limits, redirects, tokens), the `client_id` reporting fix in client authentication, `users/{id}/events` aligned with the other user sub-resources. |
