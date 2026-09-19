@@ -24,6 +24,7 @@ import { discoveryHandler, jwksHandler, webauthnHandler } from "../oidc/wellknow
 import type { AppEnv } from "./context.ts";
 import { errorBody, errorResponse } from "./errors.ts";
 import { cors, securityHeaders } from "./headers.ts";
+import { loginAppHandler } from "./login-app.ts";
 import { BODY_LIMITS, bodyClass, matchRoute } from "./routes.ts";
 
 export interface AppDeps {
@@ -187,6 +188,7 @@ export function createApp(deps: AppDeps) {
     app.post(`/api/v1/interactions/:id/${op}`, notImplemented);
   }
   app.post("/api/v1/admin/bootstrap", bootstrapHandler(deps.clock));
+  app.get("/login/*", loginAppHandler);
   for (const route of API_ROUTES) app.openAPIRegistry.registerPath(route);
 
   app.use(OPENAPI_PATH, async (c, next) => {

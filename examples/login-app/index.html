@@ -1,5 +1,18 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Tiny OIDC</title></head>
-<body><p>Tiny OIDC reference login app. Implemented in Phase 2 (P2-14).</p></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <!-- The OP this app talks to. Empty means "the origin this page is served from" (bundled mode). -->
+  <meta name="tio-issuer" content="">
+  <title>Sign in</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app" class="card" aria-live="polite">
+    <p class="muted">Loading…</p>
+  </main>
+  <script src="app.js"></script>
+</body>
 </html>

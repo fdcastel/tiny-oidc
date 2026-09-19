@@ -23,6 +23,8 @@ export interface Route {
   navigation: boolean;
   /** Public, cacheable response (discovery, JWKS, related origins, OpenAPI). */
   cacheable: boolean;
+  /** Static files of the bundled login app: the CSP admits same-origin scripts and styles (TIO-IX-081). */
+  assets?: boolean;
 }
 
 export const BODY_LIMITS: Record<BodyClass, number> = {
@@ -99,6 +101,14 @@ export const ROUTES: readonly Route[] = [
     cacheable: false,
   },
   ...interactionRoutes(),
+  {
+    method: "GET",
+    path: "/login/*",
+    cors: "none",
+    navigation: false,
+    cacheable: true,
+    assets: true,
+  },
 ];
 
 /** The Interaction API (§7): one GET and the POST operations, all in the `interactions` CORS class. */
@@ -138,9 +148,11 @@ export function bodyClass(path: string): BodyClass {
 function toRegExp(pattern: string): RegExp {
   const source = pattern
     .split("/")
-    .map((segment) =>
-      segment.startsWith(":") ? "[^/]+" : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-    )
+    .map((segment) => {
+      if (segment.startsWith(":")) return "[^/]+";
+      if (segment === "*") return ".*";
+      return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    })
     .join("/");
   return new RegExp(`^${source}$`);
 }

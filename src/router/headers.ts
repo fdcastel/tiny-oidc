@@ -14,7 +14,12 @@ export function applySecurityHeaders(headers: Headers, route: Route | undefined)
   if (!headers.has("Cache-Control") || !route?.cacheable) headers.set("Cache-Control", "no-store");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "no-referrer");
-  headers.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  headers.set(
+    "Content-Security-Policy",
+    route?.assets
+      ? "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+      : "default-src 'none'; frame-ancestors 'none'",
+  );
   headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   if (route?.navigation) {
     headers.set(
