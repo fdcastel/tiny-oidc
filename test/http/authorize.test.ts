@@ -268,6 +268,7 @@ describe("GET /authorize", () => {
       ["openid email email", "scope contains duplicates"],
       ["openid admin", "scope is not allowed for this client"],
       ["openid account", "scope is not allowed for this client"],
+      ["openid offline_access", "offline_access is not enabled for this client"],
     ];
     for (const [scope, description] of cases) {
       const r = await authorize(valid(web, { scope }));
@@ -277,9 +278,17 @@ describe("GET /authorize", () => {
       });
     }
     const r = await authorize(
-      valid(web, { scope: "openid profile email groups offline_access", response_type: "token" }),
+      valid(web, { scope: "openid profile email groups", response_type: "token" }),
     );
     expect(query(r)["error"]).toBe("unsupported_response_type");
+    // TIO-TOKEN-014: offline_access needs the client flag.
+    const offline = (
+      await createTestClient(db, clock, { redirect_uris: [RP], offline_access: true })
+    ).client;
+    const allowed = await authorize(
+      valid(offline, { scope: "openid offline_access", response_type: "token" }),
+    );
+    expect(query(allowed)["error"]).toBe("unsupported_response_type");
   });
 
   it("[TIO-AUTHZ-010] nonce (1-512), login_hint (<= 256), ui_locales (<= 64) and acr_values (<= 256) are bounded and otherwise passed through to the interaction verbatim", async () => {

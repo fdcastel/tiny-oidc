@@ -24,7 +24,8 @@ export interface UserContext {
   auth_time: number;
   acr: AcrValue;
   amr: string[];
-  sid: string;
+  /** The session id; null for offline families, which are not bound to one (TIO-TOKEN-032). */
+  sid: string | null;
 }
 
 /** Claims permitted by the scopes, from the current profile (§5.12). */
@@ -71,10 +72,10 @@ export async function idTokenClaims(input: IdTokenInput): Promise<JWTPayload> {
     auth_time: input.user.auth_time,
     acr: input.user.acr,
     amr: input.user.amr,
-    sid: input.user.sid,
     at_hash: await atHash(input.accessToken),
     ...scopedClaims(input.scopes, input.profile),
   };
+  if (input.user.sid !== null) claims["sid"] = input.user.sid;
   if (input.nonce !== null) claims["nonce"] = input.nonce;
   return claims;
 }
@@ -90,8 +91,6 @@ export interface AccessTokenInput {
   audiences: readonly string[];
   /** Absent for client_credentials tokens (TIO-TOKEN-021). */
   user: UserContext | null;
-  /** Session id only for session-bound families (TIO-TOKEN-032). */
-  includeSid: boolean;
   groups: readonly string[];
 }
 
@@ -122,7 +121,7 @@ export function accessTokenClaims(input: AccessTokenInput): JWTPayload {
     scope: input.scopes.join(" "),
   };
   if (input.user) {
-    if (input.includeSid) claims["sid"] = input.user.sid;
+    if (input.user.sid !== null) claims["sid"] = input.user.sid;
     claims["auth_time"] = input.user.auth_time;
     claims["acr"] = input.user.acr;
     claims["amr"] = input.user.amr;

@@ -133,6 +133,10 @@ export function validateAuthorizeRequest(
   if (!scope.every((s) => client.scopes_allowed.includes(s))) {
     return reject("invalid_scope", "scope is not allowed for this client");
   }
+  // TIO-TOKEN-014: offline_access needs the client flag, not only the scope allowance.
+  if (scope.includes("offline_access") && !client.offline_access) {
+    return reject("invalid_scope", "offline_access is not enabled for this client");
+  }
   // 10. Free-form parameters passed through to the login app (TIO-AUTHZ-010).
   const nonce = params.get("nonce") ?? null;
   if (nonce !== null && (nonce.length === 0 || nonce.length > NONCE_MAX_LENGTH)) {

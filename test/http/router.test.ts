@@ -111,7 +111,7 @@ describe("HTTP conventions", () => {
         headers: { "content-type": "text/plain" },
       });
     expect((await post("/token", 16 * 1024 + 1)).status).toBe(413);
-    expect((await post("/token", 16 * 1024)).status).toBe(501);
+    expect((await post("/token", 16 * 1024)).status).toBe(400);
     expect((await post("/api/v1/admin/users", 64 * 1024 + 1)).status).toBe(413);
     expect((await post("/api/v1/admin/users", 64 * 1024)).status).toBe(404);
     expect((await post("/api/v1/admin/import/users", 8 * 1024 * 1024 + 1)).status).toBe(413);

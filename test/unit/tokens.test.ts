@@ -94,6 +94,19 @@ describe("ID token claims", () => {
     expect(bare).not.toHaveProperty("email_verified");
     expect(bare["groups"]).toEqual([]);
     expect(Object.values(bare)).not.toContain(null);
+    // An offline family's ID token has no session to name (TIO-RT-005).
+    const offline = await idTokenClaims({
+      issuer: ISSUER,
+      clientId: "web",
+      now: 1,
+      ttl: 600,
+      user: { ...user, sid: null },
+      nonce: null,
+      accessToken: "at",
+      scopes: ["openid"],
+      profile,
+    });
+    expect(offline).not.toHaveProperty("sid");
     const onlyOpenid = scopedClaims(["openid"], profile);
     expect(onlyOpenid).toEqual({});
     expect(scopedClaims(["email"], profile)).toEqual({
@@ -122,7 +135,7 @@ describe("access token claims", () => {
       user,
       groups: ["b", "a"],
     };
-    expect(accessTokenClaims({ ...base, includeSid: true })).toEqual({
+    expect(accessTokenClaims(base)).toEqual({
       iss: ISSUER,
       sub: user.sub,
       aud: "web",
@@ -137,7 +150,11 @@ describe("access token claims", () => {
       amr: ["hwk", "user"],
       groups: ["a", "b"],
     });
-    const offline = accessTokenClaims({ ...base, includeSid: false, scopes: ["openid"] });
+    const offline = accessTokenClaims({
+      ...base,
+      user: { ...user, sid: null },
+      scopes: ["openid"],
+    });
     expect(offline).not.toHaveProperty("sid");
     expect(offline).not.toHaveProperty("groups");
   });
@@ -152,7 +169,6 @@ describe("access token claims", () => {
       scopes: ["admin"],
       audiences: [],
       user: null,
-      includeSid: false,
       groups: [],
     });
     expect(claims).toEqual({
@@ -190,7 +206,7 @@ describe("logout token claims", () => {
       issuer: ISSUER,
       clientId: "web",
       sub: user.sub,
-      sid: user.sid,
+      sid: user.sid as string,
       jti: "j3",
       now: 1_000,
     });

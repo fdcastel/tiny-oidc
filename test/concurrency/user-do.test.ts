@@ -65,7 +65,7 @@ describe("UserDO exactly-once", () => {
         const family = {
           secret_hash: await sha256(newSecret()),
           family_id: uuids.next(),
-          kind: "session" as const,
+          offline_allowed: false,
           idle_ttl: 1_209_600,
           absolute_ttl: 2_592_000,
         };
@@ -110,7 +110,7 @@ describe("UserDO exactly-once", () => {
     const first = {
       secret_hash: await sha256(newSecret()),
       family_id: uuids.next(),
-      kind: "session" as const,
+      offline_allowed: false,
       idle_ttl: 1_209_600,
       absolute_ttl: 2_592_000,
     };

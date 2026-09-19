@@ -179,6 +179,10 @@ async function authenticated(
   if (ref.allowed_groups !== null && !ref.allowed_groups.some((g) => profile.groups.includes(g))) {
     return fail("user_not_allowed");
   }
+  // TIO-SCOPE-002: the admin scope needs membership of `admins` at authentication time.
+  if (doc.request?.scope.includes("admin") && !profile.groups.includes("admins")) {
+    return fail("user_not_allowed");
+  }
   const auth: InteractionAuth = {
     uid: profile.id,
     method: "passkey",

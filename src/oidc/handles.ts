@@ -19,6 +19,12 @@ export interface CodeRef {
   secret_hash: Uint8Array;
 }
 
+export interface RefreshRef {
+  uid: string;
+  family_id: string;
+  secret_hash: Uint8Array;
+}
+
 export interface BindingRef {
   interaction_id: string;
   secret_hash: Uint8Array;
@@ -66,6 +72,29 @@ export async function openCodeHandle(keys: DerivedKeys, handle: string): Promise
   const fields = await openHandle(keys, "code", handle);
   if (!fields) return null;
   return { uid: bytesToUuid(fields.uid), secret_hash: await sha256(fields.secret) };
+}
+
+/** `tio_rt`: user id, family id and the refresh-token secret. */
+export async function sealRefreshHandle(
+  keys: DerivedKeys,
+  uid: string,
+  familyId: string,
+  secret: Uint8Array,
+): Promise<string> {
+  return sealHandle(keys, "refresh", { uid: uuidBytes(uid), family: uuidBytes(familyId), secret });
+}
+
+export async function openRefreshHandle(
+  keys: DerivedKeys,
+  handle: string,
+): Promise<RefreshRef | null> {
+  const fields = await openHandle(keys, "refresh", handle);
+  if (!fields) return null;
+  return {
+    uid: bytesToUuid(fields.uid),
+    family_id: bytesToUuid(fields.family),
+    secret_hash: await sha256(fields.secret),
+  };
 }
 
 /** `tio_ix`: the 32 raw bytes of the interaction id and the binding secret. */

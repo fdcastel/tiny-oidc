@@ -128,7 +128,7 @@ async function exchange(
       : {
           secret_hash: await sha256(newSecret()),
           family_id: uuids.next(),
-          kind: "session" as const,
+          offline_allowed: false,
           idle_ttl: REFRESH_IDLE,
           absolute_ttl: REFRESH_ABSOLUTE,
         };
@@ -307,7 +307,10 @@ describe("UserDO sessions", () => {
     expect(result.ok).toBe(true);
     // A second, offline family from another login of the same session (another client).
     const { challenge, verifier } = await pkce();
-    const other = await codeInput(challenge, { client_id: "mobile" });
+    const other = await codeInput(challenge, {
+      client_id: "mobile",
+      scope: ["openid", "offline_access"],
+    });
     clock.advance(1);
     await user.stub.finalizeLogin({
       now: clock.now(),
@@ -323,7 +326,7 @@ describe("UserDO sessions", () => {
       refresh: {
         secret_hash: await sha256(newSecret()),
         family_id: uuids.next(),
-        kind: "offline",
+        offline_allowed: true,
         idle_ttl: REFRESH_IDLE,
         absolute_ttl: REFRESH_ABSOLUTE,
       },
@@ -574,7 +577,7 @@ describe("UserDO code exchange (§2.5.3)", () => {
       refresh: {
         secret_hash: await sha256(newSecret()),
         family_id: uuids.next(),
-        kind: "offline",
+        offline_allowed: true,
         idle_ttl: REFRESH_IDLE,
         absolute_ttl: REFRESH_ABSOLUTE,
       },
@@ -769,7 +772,7 @@ describe("UserDO refresh rotation (§2.5.4)", () => {
       refresh: {
         secret_hash: await sha256(newSecret()),
         family_id: uuids.next(),
-        kind: "offline",
+        offline_allowed: true,
         idle_ttl: REFRESH_IDLE,
         absolute_ttl: REFRESH_ABSOLUTE,
       },
@@ -797,7 +800,7 @@ describe("UserDO refresh rotation (§2.5.4)", () => {
       refresh: {
         secret_hash: await sha256(newSecret()),
         family_id: uuids.next(),
-        kind: "session",
+        offline_allowed: false,
         idle_ttl: ABSOLUTE * 2,
         absolute_ttl: REFRESH_ABSOLUTE,
       },
@@ -815,8 +818,24 @@ describe("UserDO refresh rotation (§2.5.4)", () => {
     const { refreshHash, familyId } = await exchange(admin.stub, admin.codeHash, admin.verifier);
     const ok = await rotate(admin.stub, familyId, refreshHash);
     expect(ok.result).toMatchObject({ ok: true, grant: { scope: ["openid", "admin"] } });
-    const demoted = await loggedIn({ scope: ["openid", "admin"], groups: [] });
+    const demoted = await loggedIn({ scope: ["openid", "admin"], groups: ["admins"] });
     const family = await exchange(demoted.stub, demoted.codeHash, demoted.verifier);
+    const updated = await demoted.stub.setGroups(["staff", "staff"], clock.now());
+    expect(updated.ok && updated.profile.groups).toEqual(["staff"]);
+    // No code with the admin scope is issued to a non-member either (TIO-AUTHZ-009).
+    const { challenge } = await pkce();
+    const adminCode = await codeInput(challenge, { scope: ["openid", "admin"] });
+    expect(
+      await demoted.stub.finalizeLogin({
+        now: clock.now(),
+        session: {
+          rotate: { sid: demoted.sid, secret_hash: demoted.session.secretHash, auth: passkeyAuth },
+        },
+        code: adminCode.code,
+        client: client(),
+        session_idle_ttl: IDLE,
+      }),
+    ).toEqual({ ok: false, error: "user_not_allowed" });
     expect((await rotate(demoted.stub, family.familyId, family.refreshHash)).result).toEqual({
       ok: false,
       error: "invalid_grant",
@@ -1070,6 +1089,7 @@ describe("UserDO passkeys and identities storage", () => {
     expect(await stub.listPasskeys()).toEqual(notInit);
     expect(await stub.removePasskey("p")).toEqual(notInit);
     expect(await stub.renamePasskey("p", null)).toEqual(notInit);
+    expect(await stub.setGroups(["x"], 0)).toEqual(notInit);
     expect(
       await stub.addIdentity(
         { id: "i", issuer: "x", subject: "y", email: null, email_verified: null, name: null },
@@ -1224,7 +1244,7 @@ describe("UserDO disabled users and constructed inconsistencies", () => {
       refresh: {
         secret_hash: await sha256(newSecret()),
         family_id: uuids.next(),
-        kind: "offline",
+        offline_allowed: true,
         idle_ttl: REFRESH_IDLE,
         absolute_ttl: REFRESH_ABSOLUTE,
       },

@@ -56,7 +56,7 @@ export function harness(clock = new FakeClock(1_800_000_000)): Harness {
     if (options.cookie !== null && options.cookie !== undefined) headers["cookie"] = options.cookie;
     const init: RequestInit = { method: options.method ?? "GET", headers };
     if (options.body !== undefined) {
-      headers["content-type"] = "application/json";
+      headers["content-type"] ??= "application/json";
       init.body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
     }
     const ctx = createExecutionContext();

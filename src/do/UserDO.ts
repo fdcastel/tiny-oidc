@@ -285,7 +285,8 @@ export interface ExchangeCodeInput {
   refresh: {
     secret_hash: Uint8Array;
     family_id: string;
-    kind: "session" | "offline";
+    /** The client's `offline_access` flag: with `offline_access` in the code's scope the family is offline (TIO-TOKEN-014). */
+    offline_allowed: boolean;
     idle_ttl: number;
     absolute_ttl: number;
   } | null;
@@ -473,6 +474,19 @@ export class UserDO extends DurableObject<Env> {
     const row = this.guard();
     if (typeof row === "string") return fail(row);
     return { ok: true, profile: UserDO.profile(row) };
+  }
+
+  /** Replaces the group list (TIO-DATA-013); the D1 mirror is the caller's second write. */
+  setGroups(groups: string[], now: number): DoResult<{ profile: UserProfile }, UserDoError> {
+    const row = this.guard();
+    if (typeof row === "string") return fail(row);
+    this.ctx.storage.sql.exec(
+      "UPDATE user SET groups = ?, updated_at = ? WHERE id = ?",
+      JSON.stringify([...new Set(groups)].sort()),
+      now,
+      row.id,
+    );
+    return { ok: true, profile: UserDO.profile(this.readUser() as UserRow) };
   }
 
   /**
@@ -680,6 +694,11 @@ export class UserDO extends DurableObject<Env> {
     return client.allowed_groups.some((g) => groups.includes(g));
   }
 
+  /** TIO-SCOPE-002: the admin scope needs live membership of `admins`. */
+  private static adminAllowed(user: UserRow, scope: readonly string[]): boolean {
+    return !scope.includes("admin") || parseStrings(user.groups).includes("admins");
+  }
+
   /** The stored grant for a client, deleting one left by a deleted, re-created client (TIO-CLIENT-005). */
   private grantFor(client: ClientRef): GrantRow | null {
     const sql = this.ctx.storage.sql;
@@ -708,6 +727,7 @@ export class UserDO extends DurableObject<Env> {
       if (!session) return fail("session_invalid");
       if (user.disabled_at !== null) return fail("user_disabled");
       if (!UserDO.allowed(user, input.client)) return fail("user_not_allowed");
+      if (!UserDO.adminAllowed(user, input.scope)) return fail("user_not_allowed");
       const profile = UserDO.profile(user);
       const snapshot = this.snapshot(session);
       const stale = input.max_age !== null && session.auth_time + input.max_age <= input.now;
@@ -746,6 +766,7 @@ export class UserDO extends DurableObject<Env> {
     if (typeof user === "string") return fail(user);
     if (user.disabled_at !== null) return fail("user_disabled");
     if (input.client && !UserDO.allowed(user, input.client)) return fail("user_not_allowed");
+    if (input.code && !UserDO.adminAllowed(user, input.code.scope)) return fail("user_not_allowed");
     return this.ctx.storage.transactionSync(() => {
       this.purgeIfDue(input.now, PURGE_GRACE_SECONDS);
       let sid: string;
@@ -928,6 +949,7 @@ export class UserDO extends DurableObject<Env> {
       }
       if (user.disabled_at !== null) return fail("invalid_grant");
       if (!UserDO.allowed(user, input.client)) return fail("invalid_grant");
+      if (!UserDO.adminAllowed(user, code.scope.split(" "))) return fail("invalid_grant");
       const session = this.sessionRow(code.sid);
       if (!session || session.revoked_at !== null) return fail("invalid_grant");
       sql.exec(
@@ -939,11 +961,15 @@ export class UserDO extends DurableObject<Env> {
       let kind: "session" | "offline" | null = null;
       if (input.refresh) {
         const r = input.refresh;
-        kind = r.kind;
+        // TIO-TOKEN-014: offline only when granted and allowed for the client.
+        kind =
+          r.offline_allowed && code.scope.split(" ").includes("offline_access")
+            ? "offline"
+            : "session";
         familyId = r.family_id;
         // TIO-RT-010: session families end with the session; offline ones have their own lifetime.
         const absolute =
-          r.kind === "session" ? session.absolute_expires_at : input.now + r.absolute_ttl;
+          kind === "session" ? session.absolute_expires_at : input.now + r.absolute_ttl;
         const idle = Math.min(input.now + r.idle_ttl, absolute);
         sql.exec(
           "INSERT INTO refresh_families (id, client_id, client_created_at, code_secret_hash, kind, sid, scope, auth_time, amr, acr, created_at, absolute_expires_at, idle_expires_at, current_serial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
@@ -951,8 +977,8 @@ export class UserDO extends DurableObject<Env> {
           input.client.client_id,
           input.client.created_at,
           input.secret_hash,
-          r.kind,
-          r.kind === "session" ? code.sid : null,
+          kind,
+          kind === "session" ? code.sid : null,
           code.scope,
           code.auth_time,
           code.amr,
@@ -1047,10 +1073,7 @@ export class UserDO extends DurableObject<Env> {
         }
         scope = input.requested_scope;
       }
-      // TIO-SCOPE-002: admin needs live membership at every refresh.
-      if (scope.includes("admin") && !parseStrings(user.groups).includes("admins")) {
-        return fail("invalid_grant");
-      }
+      if (!UserDO.adminAllowed(user, scope)) return fail("invalid_grant");
       const serial = family.current_serial + 1;
       const idle = Math.min(input.now + input.idle_ttl, family.absolute_expires_at);
       sql.exec(
