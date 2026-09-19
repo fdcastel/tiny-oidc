@@ -50,7 +50,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | S-01 | Write the v1 specification from the initial draft; verify Cloudflare limits and tooling facts | all | ✅ DONE | 79fc01c | 268 ids at that point |
 | S-02 | Deployment model (Workers Builds, host-neutral repo, Deploy button, bundled reference login app), README, MIT license | §12, §7.9 | ✅ DONE | 17d7620 | |
 | S-03 | Reference review against tinyauth and authenti-kate: 12 improvements, 8 simplifications, decision log 28–36 | Appendix B | ✅ DONE | becd7c5 | 283 ids, 6 withdrawn |
-| S-04 | This implementation plan | §14.2 | ✅ DONE | pending | Hash filled by the next commit touching this file |
+| S-04 | This implementation plan | §14.2 | ✅ DONE | 058caee | |
 
 ---
 
@@ -252,3 +252,4 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | Date | Change |
 |---|---|
 | 2026-09-19 | Plan created from spec §14.2 after the reference review; Phase S recorded as done; all implementation tasks `❌ OPEN`. |
+| 2026-09-19 | Recorded the plan's own commit hash in S-04. |
