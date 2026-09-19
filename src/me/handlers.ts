@@ -1,5 +1,6 @@
 import type { Handler } from "hono";
 import { z } from "zod";
+import { userEvents } from "../admin/audit-log.ts";
 import type { AuditEvent, AuditInput } from "../audit/events.ts";
 import {
   authenticatorUserName,
@@ -13,7 +14,12 @@ import { getClient } from "../db/clients.ts";
 import { releaseIdentity } from "../db/identities.ts";
 import { listUpstreamAliases } from "../db/upstreams.ts";
 import { lookupCredential } from "../db/users.ts";
-import type { ClientRef, RevokedSession, UserProfile } from "../do/UserDO.ts";
+import {
+  type ClientRef,
+  PASSKEY_ATTEMPT_WINDOW_SECONDS,
+  type RevokedSession,
+  type UserProfile,
+} from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
 import type { AppContext } from "../interaction/api.ts";
 import { passkeyName } from "../interaction/register.ts";
@@ -160,6 +166,27 @@ export const listPasskeysHandler: Handler<AppEnv> = async (c) => {
   }
 };
 
+/** §6.7: ten registration attempts per ten minutes per user, whatever the token. */
+async function passkeyAttempt(c: AppContext, clock: Clock): Promise<Response | null> {
+  const me = c.get("me") as Account;
+  c.get("metrics").doCalls += 1;
+  const counted = await userStub(c.env, me.profile.id).countPasskeyAttempt(clock.now());
+  if (counted.ok) return null;
+  if (counted.error !== "too_many_attempts") return unavailable(c);
+  c.get("audit").emit({
+    type: "ratelimit.exceeded",
+    outcome: "failure",
+    actor: { kind: "user", id: me.profile.id },
+    user_id: me.profile.id,
+    client_id: me.token.client_id,
+    reason: "me_passkey_attempts",
+    data: { class: "me_passkey_attempts" },
+  });
+  return errorResponse(c, 429, "rate_limited", "too many passkey registration attempts", {
+    "Retry-After": String(PASSKEY_ATTEMPT_WINDOW_SECONDS),
+  });
+}
+
 /** TIO-ME-003: the token's session must have authenticated recently enough to add a passkey. */
 function reauthenticationRequired(
   c: AppContext,
@@ -189,6 +216,8 @@ export function passkeyOptionsHandler(clock: Clock): Handler<AppEnv> {
     const stub = userStub(c.env, me.profile.id);
     const challenge = newChallenge();
     try {
+      const throttled = await passkeyAttempt(c, clock);
+      if (throttled) return throttled;
       c.get("metrics").doCalls += 2;
       const passkeys = await stub.listPasskeys();
       const stored = await stub.putChallenge(
@@ -234,6 +263,8 @@ export function registerPasskeyHandler(clock: Clock): Handler<AppEnv> {
     const failed = () =>
       errorResponse(c, 401, "passkey_verification_failed", "passkey registration failed");
     try {
+      const throttled = await passkeyAttempt(c, clock);
+      if (throttled) return throttled;
       c.get("metrics").doCalls += 1;
       const taken = await stub.takeChallenge(me.challengeKey, now);
       if (!taken.ok) return unavailable(c);
@@ -532,5 +563,8 @@ export function deleteGrantHandler(clock: Clock): Handler<AppEnv> {
   };
 }
 
-export const eventsNotImplemented: Handler<AppEnv> = (c) =>
-  errorResponse(c, 501, "not_implemented", "events arrive with the audit endpoints");
+/** GET /me/events: the person's own events within the hot window (§8). */
+export function eventsHandler(clock: Clock): Handler<AppEnv> {
+  return (c) =>
+    userEvents(c, clock, (c.get("me") as Account).profile.id, new URL(c.req.url).searchParams);
+}

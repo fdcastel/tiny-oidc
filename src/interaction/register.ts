@@ -226,6 +226,15 @@ export function registerVerifyHandler(clock: Clock): Handler<AppEnv> {
               : "invitation_expired";
         return errorResponse(c, 400, error, "invitation not accepted");
       }
+      c.get("audit").emit({
+        type: "invitation.used",
+        outcome: "success",
+        actor: { kind: "user", id: uid },
+        user_id: uid,
+        client_id: doc.client_id,
+        interaction_id: guarded.id,
+        data: { kind: draft.kind, via: "interaction" },
+      });
     }
     let profile: UserProfile;
     if (draft.kind === "register") {
@@ -285,6 +294,15 @@ export function registerVerifyHandler(clock: Clock): Handler<AppEnv> {
       // A credential claimed by someone else since the check above, or storage trouble.
       return errorResponse(c, 503, "temporarily_unavailable", registered.error);
     }
+    c.get("audit").emit({
+      type: "passkey.registered",
+      outcome: "success",
+      actor: { kind: "user", id: uid },
+      user_id: uid,
+      client_id: doc.client_id,
+      interaction_id: guarded.id,
+      data: { passkey_id: registered.passkey.id, via: registered.passkey.created_via },
+    });
     const client = await interactionClient(c, doc);
     if (!client) return errorResponse(c, 503, "temporarily_unavailable", "client unavailable");
     return c.json(

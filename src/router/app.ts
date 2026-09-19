@@ -1,5 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
+import { listArchiveHandler, listAuditHandler, userEventsHandler } from "../admin/audit-log.ts";
 import { requireAdmin } from "../admin/auth.ts";
 import { bootstrapHandler } from "../admin/bootstrap.ts";
 import {
@@ -57,7 +58,6 @@ import {
   deleteSessionHandler,
   deleteSessionsHandler,
   deleteUserHandler,
-  eventsNotImplemented,
   exportUserHandler,
   getUserHandler,
   listFamiliesHandler,
@@ -73,6 +73,7 @@ import {
 } from "../admin/users.ts";
 import { API_INFO, OPENAPI_PATH, registerApi } from "../api/definitions.ts";
 import { Auditor } from "../audit/events.ts";
+import { shipAuditEvents } from "../audit/sink.ts";
 import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
@@ -199,6 +200,10 @@ export function createApp(deps: AppDeps) {
       c.set("audit", auditor);
       await next();
       auditor.flush(logger);
+      // Sink 1 of TIO-AUDIT-010: the queue, after the response.
+      if (auditor.events.length > 0) {
+        c.executionCtx.waitUntil(shipAuditEvents(c.env, logger, auditor.events));
+      }
     }
     const { template } = matchRoute(c.req.method, c.req.path);
     const contentLength = c.req.header("content-length");
@@ -216,12 +221,19 @@ export function createApp(deps: AppDeps) {
     const error = c.get("error");
     if (error !== undefined) line.error = error;
     logger.log("info", "request", { ...line });
-    // One data point per request when metrics are bound (TIO-OBS-002).
+    // One data point per request and one per audit event when metrics are bound (TIO-OBS-002).
     c.env.METRICS?.writeDataPoint({
       blobs: [line.route, String(line.status), line.error ?? ""],
       doubles: [line.duration_ms],
       indexes: [line.route],
     });
+    for (const event of c.get("audit")?.events ?? []) {
+      c.env.METRICS?.writeDataPoint({
+        blobs: [event.type, event.outcome],
+        doubles: [1],
+        indexes: [event.type],
+      });
+    }
     c.res.headers.set("X-Request-Id", requestId);
   });
 
@@ -288,7 +300,7 @@ export function createApp(deps: AppDeps) {
   app.delete("/api/v1/me/identities/:id", me.deleteIdentityHandler);
   app.get("/api/v1/me/grants", me.listGrantsHandler);
   app.delete("/api/v1/me/grants/:client_id", me.deleteGrantHandler(deps.clock));
-  app.get("/api/v1/me/events", me.eventsNotImplemented);
+  app.get("/api/v1/me/events", me.eventsHandler(deps.clock));
   app.post("/api/v1/admin/bootstrap", bootstrapHandler(deps.clock));
   // Admin API (§9): every other path under the prefix needs an administrator's token.
   app.use("/api/v1/admin/*", async (c, next) => {
@@ -315,7 +327,7 @@ export function createApp(deps: AppDeps) {
   app.delete(`${users}/:id/refresh-families`, deleteFamiliesOfClientHandler(deps.clock));
   app.get(`${users}/:id/grants`, listGrantsHandler());
   app.delete(`${users}/:id/grants/:client_id`, deleteGrantHandler(deps.clock));
-  app.get(`${users}/:id/events`, eventsNotImplemented);
+  app.get(`${users}/:id/events`, userEventsHandler(deps.clock));
   app.post(`${users}/:id/invitations`, createRecoverInvitationHandler(deps.clock));
   app.post(`${users}/:id/reindex`, reindexUserHandler(deps.clock));
   app.get(`${users}/:id/export`, exportUserHandler(deps.clock));
@@ -360,6 +372,8 @@ export function createApp(deps: AppDeps) {
   app.post("/api/v1/admin/maintenance/rekey", rekeyHandler);
   app.post("/api/v1/admin/maintenance/reindex", reindexAllHandler(deps.clock));
   app.post("/api/v1/admin/import/users", importUsersHandler(deps.clock));
+  app.get("/api/v1/admin/audit", listAuditHandler(deps.clock));
+  app.get("/api/v1/admin/audit/archive", listArchiveHandler());
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

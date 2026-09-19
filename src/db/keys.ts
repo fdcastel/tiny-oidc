@@ -84,12 +84,15 @@ export async function retireSigningKey(db: Db, kid: string, now: number): Promis
 }
 
 /** Deletes retired rows whose `retired_at` is before `cutoff` (§4.7: 90 days). */
-export async function deleteRetiredSigningKeys(db: Db, cutoff: number): Promise<number> {
-  const result = await db
-    .prepare("DELETE FROM signing_keys WHERE retired_at IS NOT NULL AND retired_at < ?")
+/** Deletes the retired rows past `cutoff` and returns their kids. */
+export async function deleteRetiredSigningKeys(db: Db, cutoff: number): Promise<string[]> {
+  const rows = await db
+    .prepare(
+      "DELETE FROM signing_keys WHERE retired_at IS NOT NULL AND retired_at < ? RETURNING kid",
+    )
     .bind(cutoff)
-    .run();
-  return result.meta.changes;
+    .all<{ kid: string }>();
+  return rows.results.map((r) => r.kid);
 }
 
 /** Replaces the encrypted private JWK (master-key rotation, TIO-CRYPTO-011). */

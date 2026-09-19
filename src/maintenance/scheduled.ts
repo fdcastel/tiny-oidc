@@ -1,4 +1,5 @@
 import { Auditor } from "../audit/events.ts";
+import { shipAuditEvents } from "../audit/sink.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type Env, SettingsLoader } from "../env.ts";
@@ -25,7 +26,7 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
   const sink = deps.sink ?? consoleSink;
   const settingsLoader = new SettingsLoader(deps.clock);
   const uuids = new UuidV7(deps.clock);
-  return async (controller, env) => {
+  return async (controller, env, ctx) => {
     const runId = uuids.next();
     const config = buildConfig(env);
     const logger = new Logger(sink, config.ok ? config.config.logLevel : "info");
@@ -56,5 +57,6 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
       logger.log("error", "cron failed", { ...base, reason: String(error) });
     }
     auditor.flush(logger);
+    if (auditor.events.length > 0) ctx.waitUntil(shipAuditEvents(env, logger, auditor.events));
   };
 }

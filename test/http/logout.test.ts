@@ -576,12 +576,13 @@ describe("back-channel delivery and retries", () => {
     delaySeconds: number | undefined;
   }
 
-  /** An environment whose TASKS queue records what is sent instead of queueing it. */
+  /** An environment whose TASKS queue records the back-channel tasks sent instead of queueing them (audit batches pass). */
   function recordingEnv(sent: Sent[], failing = false): Env {
     return {
       ...env,
       TASKS: {
         send: async (body: unknown, options?: { delaySeconds?: number }) => {
+          if ((body as { kind?: string }).kind === "audit") return;
           if (failing) throw new Error("queue down");
           sent.push({ body, delaySeconds: options?.delaySeconds });
         },
@@ -719,7 +720,8 @@ describe("back-channel delivery and retries", () => {
       await consume(batch, recordingEnv([]), createExecutionContext());
       expect(calls, JSON.stringify(body)).toEqual(["ack"]);
     }
-    expect(lines.filter((l) => l["msg"] === "task of an unknown kind dropped")).toHaveLength(4);
+    expect(lines.filter((l) => l["msg"] === "task of an unknown kind dropped")).toHaveLength(3);
+    expect(lines.filter((l) => l["msg"] === "malformed audit batch dropped")).toHaveLength(1);
     expect(lines.filter((l) => l["msg"] === "malformed backchannel task dropped")).toHaveLength(2);
     const loaded = await new KeyStore(clock).get(db, testKeys());
     const token = await signJwt(loaded, "logout+jwt", {

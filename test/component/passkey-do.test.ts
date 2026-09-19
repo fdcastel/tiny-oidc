@@ -79,7 +79,11 @@ describe("UserDO.verifyAssertion", () => {
       expected,
       now: clock.now(),
     });
-    expect(regressed).toEqual({ ok: false, error: "passkey_counter_regression" });
+    expect(regressed).toEqual({
+      ok: false,
+      error: "passkey_counter_regression",
+      regression: { passkey_id: expect.any(String), stored: 2, observed: 1 },
+    });
     const listed = await stub.listPasskeys();
     expect(listed.ok && listed.passkeys[0]?.counter).toBe(2);
     // Synced passkeys that never increment (0/0) are accepted every time.

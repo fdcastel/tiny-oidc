@@ -1,3 +1,4 @@
+import { runInDurableObject } from "cloudflare:test";
 import { decodeJwt } from "jose";
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
@@ -119,6 +120,13 @@ async function login(
   };
 }
 
+/** Each request from its own address: the suite makes more calls per real minute than one IP may (§6.7). */
+let requests = 0;
+const nextIp = () => {
+  requests += 1;
+  return `10.${Math.floor(requests / 65_536) % 256}.${Math.floor(requests / 256) % 256}.${requests % 256}`;
+};
+
 /** A request to the Self-service API with a bearer token (null sends none). */
 const me = (
   token: string | null,
@@ -129,6 +137,7 @@ const me = (
     method: options.method ?? "GET",
     origin: null,
     headers: {
+      "cf-connecting-ip": nextIp(),
       ...(token === null ? {} : { authorization: `Bearer ${token}` }),
       ...options.headers,
     },
@@ -331,7 +340,7 @@ describe("profile", () => {
 describe("passkeys", () => {
   it("[TIO-ME-003] [TIO-PK-040] [TIO-PK-041] registration needs a recent authentication and a single-use challenge on the person's object; names are 1-64 characters; the last passkey stays unless an identity is linked", async () => {
     const carol = await userWithPasskey(clock, { email: "carol@example.com" });
-    const session = await login(carol);
+    let session = await login(carol);
     const listed = await me(session.access_token, "/passkeys");
     expect(listed.status).toBe(200);
     const { items } = (await listed.json()) as { items: Record<string, unknown>[] };
@@ -370,6 +379,9 @@ describe("passkeys", () => {
     expect(passkey).toMatchObject({ name: "Laptop", created_via: "me" });
     expect(passkey).not.toHaveProperty("public_key");
     expect(await lookupCredential(db, good.id)).toBe(carol.profile.id);
+    // Past the ten-minute attempt window (§6.7), on a fresh token.
+    clock.advance(601);
+    session = await login(carol);
     expect(events("passkey.registered").at(-1)).toMatchObject({
       actor: { kind: "user", id: carol.profile.id },
       client_id: app.client_id,
@@ -460,6 +472,55 @@ describe("passkeys", () => {
     expect(await tooOldRegister.json()).toMatchObject({ error: "reauthentication_required" });
     await writeSettings(db, { "me.passkey_add_max_auth_age": null }, "test", clock.now());
     clock.advance(61);
+  });
+
+  it("[TIO-RL-001] ten registration attempts per ten minutes per user, options and registrations alike, then 429 with Retry-After until the window passes", async () => {
+    const hal = await userWithPasskey(clock, { email: "hal@example.com" });
+    const session = await login(hal);
+    // Six option requests and four bad registrations spend the window.
+    for (let i = 0; i < 6; i++) await options(session);
+    for (let i = 0; i < 4; i++) {
+      expect(
+        (await me(session.access_token, "/passkeys", { method: "POST", body: { response: {} } }))
+          .status,
+      ).toBe(401);
+    }
+    const refused = await me(session.access_token, "/passkeys/options", { method: "POST" });
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("Retry-After")).toBe("600");
+    expect(await refused.json()).toMatchObject({ error: "rate_limited" });
+    expect(
+      (await me(session.access_token, "/passkeys", { method: "POST", body: { response: {} } }))
+        .status,
+    ).toBe(429);
+    expect(events("ratelimit.exceeded").at(-1)).toMatchObject({
+      actor: { kind: "user", id: hal.profile.id },
+      reason: "me_passkey_attempts",
+      data: { class: "me_passkey_attempts" },
+    });
+    clock.advance(600);
+    const later = await login(hal);
+    expect((await me(later.access_token, "/passkeys/options", { method: "POST" })).status).toBe(
+      200,
+    );
+    // The counter lives on the object: a vanished object is 503.
+    const gone = await userWithPasskey(clock);
+    const goneSession = await login(gone);
+    expect(
+      (
+        await me(goneSession.access_token, "/passkeys/options", {
+          method: "POST",
+          env: sabotageDo(gone.profile.id, "countPasskeyAttempt"),
+        })
+      ).status,
+    ).toBe(503);
+    // A window record the object cannot read starts over.
+    await runInDurableObject(hal.stub, (_instance, state) => {
+      state.storage.sql.exec("UPDATE meta SET value = 'not json' WHERE key = 'passkey_attempts'");
+    });
+    expect((await me(later.access_token, "/passkeys/options", { method: "POST" })).status).toBe(
+      200,
+    );
   });
 
   it("[TIO-ME-003] an offline token (no sid) keys its challenge by the token; a session that vanished is 503", async () => {
@@ -786,8 +847,14 @@ describe("sessions, identities and grants", () => {
       clock.now(),
     );
     expect(await (await me(tokens.access_token, "/grants")).json()).toEqual({ items: [] });
-    // Events wait for the audit endpoints.
-    expect((await me(tokens.access_token, "/events")).status).toBe(501);
+    // The person's events: a page (its rows arrive through the queue consumer whenever it runs;
+    // the listing itself is covered in test/http/audit-endpoints.test.ts).
+    const ownEvents = (await (await me(tokens.access_token, "/events")).json()) as {
+      items: { type: string }[];
+      next_cursor: string | null;
+    };
+    expect(Array.isArray(ownEvents.items)).toBe(true);
+    expect(ownEvents.next_cursor).toBeNull();
     // Storage failures along the way.
     for (const [method, path, init] of [
       ["listSessions", "/sessions", { method: "GET" }],

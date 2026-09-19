@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { type AuditInput, Auditor } from "../../src/audit/events.ts";
+import { rotateSigningKey } from "../../src/crypto/keystore.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { Db } from "../../src/db/db.ts";
+import { retireSigningKey } from "../../src/db/keys.ts";
 import { insertUserStatement, setUserStatus } from "../../src/db/users.ts";
 import { buildConfig, type Clock, resolveSettings } from "../../src/env.ts";
 import { runMaintenance } from "../../src/maintenance/run.ts";
 import { FakeClock } from "../support/clock.ts";
+import { testKeys } from "../support/keys.ts";
 import { env } from "../support/op.ts";
 import { newUser } from "../support/passkeys.ts";
 
@@ -61,6 +64,33 @@ function deps(clock: Clock, budgetMs: number) {
 }
 
 describe("runMaintenance", () => {
+  it("[TIO-AUDIT-001] [TIO-CFG-010] the key step emits key.created when rotation is due, key.retired for superseded keys and key.deleted for retired rows past their retention", async () => {
+    const fake = new FakeClock(1_800_000_000);
+    const keys = testKeys();
+    const first = await rotateSigningKey(db, keys, fake.now(), 0, true);
+    // A key retired long ago, ready for deletion.
+    const old = await rotateSigningKey(db, keys, fake.now() - 100 * 86_400, 0, true);
+    await retireSigningKey(db, old, fake.now() - 91 * 86_400);
+    // Rotation due: the signing key has signed for the rotation interval.
+    fake.advance(90 * 86_400);
+    let d = deps(fake, 20_000);
+    let report = await runMaintenance(d);
+    expect(report.keys).toMatchObject({ created: expect.any(String), retired: [], deleted: 1 });
+    expect(d.events.map((e) => e.type)).toEqual(["key.created", "key.deleted", "system.cron_run"]);
+    expect(d.events[0]).toMatchObject({
+      actor: { kind: "system", id: null },
+      data: { target: `kid:${report.keys.created}`, via: "cron" },
+    });
+    expect(d.events[1]).toMatchObject({ data: { kid: `kid:${old}`, via: "cron" } });
+    // Once the new key signs for retire_after_seconds, the old signing key retires.
+    fake.advance(86_400 + d.settings["keys.retire_after_seconds"]);
+    d = deps(fake, 20_000);
+    report = await runMaintenance(d);
+    expect(report.keys.retired).toEqual([first]);
+    expect(d.events.map((e) => e.type)).toEqual(["key.retired", "system.cron_run"]);
+    expect(d.events[0]).toMatchObject({ data: { target: `kid:${first}`, via: "cron" } });
+  });
+
   it("[TIO-CFG-010] with no budget every step is skipped and the run is reported as budget_exhausted", async () => {
     const fake = new FakeClock(1_800_000_000);
     const d = deps(fake, 0);

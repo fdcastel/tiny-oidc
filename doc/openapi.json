@@ -867,6 +867,75 @@
           "updated_at"
         ]
       },
+      "PersonalEventPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalEvent"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "PersonalEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failure"
+            ]
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ua_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "ts",
+          "outcome",
+          "client_id",
+          "country",
+          "ua_family"
+        ]
+      },
       "BootstrapResponse": {
         "type": "object",
         "properties": {
@@ -2644,6 +2713,196 @@
         "required": [
           "line",
           "status"
+        ]
+      },
+      "AuditEventPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failure"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "interaction_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ip_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ua_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "type",
+          "outcome",
+          "actor",
+          "user_id",
+          "client_id",
+          "upstream",
+          "sid",
+          "interaction_id",
+          "ip_hash",
+          "country",
+          "ua_family",
+          "request_id",
+          "reason",
+          "data"
+        ]
+      },
+      "AuditActor": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user",
+              "client",
+              "admin",
+              "system",
+              "anonymous"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ]
+      },
+      "ArchiveListing": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchiveObject"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "from",
+          "to"
+        ]
+      },
+      "ArchiveObject": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "uploaded": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "size",
+          "uploaded"
         ]
       }
     },
@@ -4636,13 +4895,55 @@
         "tags": [
           "me"
         ],
-        "summary": "The person's recent events (arrives with the audit endpoints)",
+        "summary": "The person's own events from audit_hot, newest first, within the hot retention window (§8)",
         "security": [
           {
             "accountToken": []
           }
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "1..200, default 50"
+            },
+            "required": false,
+            "description": "1..200, default 50",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque; from next_cursor"
+            },
+            "required": false,
+            "description": "Opaque; from next_cursor",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
         "responses": {
+          "200": {
+            "description": "A page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "invalid_token",
             "content": {
@@ -4665,16 +4966,6 @@
           },
           "429": {
             "description": "rate_limited",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "not_implemented",
             "content": {
               "application/json": {
                 "schema": {
@@ -6695,7 +6986,7 @@
         "tags": [
           "admin"
         ],
-        "summary": "The user's audit events from audit_hot (arrives with the audit endpoints)",
+        "summary": "The user's events from audit_hot, newest first, within the hot retention window (§9.4)",
         "security": [
           {
             "adminToken": []
@@ -6712,9 +7003,49 @@
             "description": "User id (UUID v7)",
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "1..200, default 50"
+            },
+            "required": false,
+            "description": "1..200, default 50",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque; from next_cursor"
+            },
+            "required": false,
+            "description": "Opaque; from next_cursor",
+            "name": "cursor",
+            "in": "query"
           }
         ],
         "responses": {
+          "200": {
+            "description": "A page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "invalid_token",
             "content": {
@@ -6735,8 +7066,8 @@
               }
             }
           },
-          "429": {
-            "description": "rate_limited",
+          "404": {
+            "description": "user_not_found",
             "content": {
               "application/json": {
                 "schema": {
@@ -6745,8 +7076,8 @@
               }
             }
           },
-          "501": {
-            "description": "not_implemented",
+          "429": {
+            "description": "rate_limited",
             "content": {
               "application/json": {
                 "schema": {
@@ -10410,6 +10741,264 @@
           },
           "413": {
             "description": "payload_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Audit events from the hot table, newest first, under filters (§9.4)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "1..200, default 50"
+            },
+            "required": false,
+            "description": "1..200, default 50",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque; from next_cursor"
+            },
+            "required": false,
+            "description": "Opaque; from next_cursor",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "user_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "client_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "actor_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "failure"
+              ]
+            },
+            "required": false,
+            "name": "outcome",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Unix seconds, inclusive"
+            },
+            "required": false,
+            "description": "Unix seconds, inclusive",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Unix seconds, inclusive"
+            },
+            "required": false,
+            "description": "Unix seconds, inclusive",
+            "name": "until",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "temporarily_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit/archive": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "The R2 archive's object keys for a range of days, at most 31 (§9.4)",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD (UTC)"
+            },
+            "required": true,
+            "description": "YYYY-MM-DD (UTC)",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD (UTC), defaults to from"
+            },
+            "required": false,
+            "description": "YYYY-MM-DD (UTC), defaults to from",
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Keys only; the operator downloads with R2 tooling",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveListing"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid_token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "insufficient_scope",
             "content": {
               "application/json": {
                 "schema": {

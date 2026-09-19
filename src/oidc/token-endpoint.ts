@@ -148,7 +148,7 @@ async function disabledClientRefresh(
 
 export function tokenHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c);
+    if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c, "ip_token");
     const form = await protocolForm(c);
     if (!form.ok) return form.response;
     const params = form.params;
@@ -160,7 +160,9 @@ export function tokenHandler(clock: Clock): Handler<AppEnv> {
       return auth.response;
     }
     const client = auth.client;
-    if (await limited(c.env, "client_token", client.client_id)) return rateLimited(c);
+    if (await limited(c.env, "client_token", client.client_id)) {
+      return rateLimited(c, "client_token");
+    }
     const grantType = params.get("grant_type") ?? "";
     if (!(CAPABILITIES.grant_types_supported as readonly string[]).includes(grantType)) {
       return errorResponse(c, 400, "unsupported_grant_type", "grant_type is not supported");
@@ -225,6 +227,13 @@ export function tokenHandler(clock: Clock): Handler<AppEnv> {
         expires_in: ttl,
         scope: requested.join(" "),
       };
+      c.get("audit").emit({
+        type: "token.issued",
+        outcome: "success",
+        actor: { kind: "client", id: client.client_id },
+        client_id: client.client_id,
+        data: { grant_type: grantType, scopes: requested },
+      });
       return c.json(body, 200, NO_STORE);
     }
 
@@ -268,9 +277,25 @@ export function tokenHandler(clock: Clock): Handler<AppEnv> {
             request_id: c.get("requestId"),
             client_id: client.client_id,
           });
+          c.get("audit").emit({
+            type: "token.code_replay",
+            outcome: "failure",
+            actor: { kind: "client", id: client.client_id },
+            user_id: code.uid,
+            client_id: client.client_id,
+          });
         }
         return invalidGrant("code is invalid, expired or already used");
       }
+      c.get("audit").emit({
+        type: "token.issued",
+        outcome: "success",
+        actor: { kind: "user", id: code.uid },
+        user_id: code.uid,
+        client_id: client.client_id,
+        sid: exchanged.grant.sid,
+        data: { grant_type: grantType, scopes: exchanged.grant.scope, kind: exchanged.kind },
+      });
       const tokens = await userTokens(
         issuance,
         exchanged.grant,
@@ -323,9 +348,26 @@ export function tokenHandler(clock: Clock): Handler<AppEnv> {
           client_id: client.client_id,
           revoked_session_clients: rotated.revoked_session_clients ?? [],
         });
+        c.get("audit").emit({
+          type: "token.refresh_reuse",
+          outcome: "failure",
+          actor: { kind: "client", id: client.client_id },
+          user_id: refresh.uid,
+          client_id: client.client_id,
+          data: { revoked_session_clients: rotated.revoked_session_clients ?? [] },
+        });
       }
       return invalidGrant("refresh_token is invalid, expired or revoked");
     }
+    c.get("audit").emit({
+      type: "token.refreshed",
+      outcome: "success",
+      actor: { kind: "user", id: refresh.uid },
+      user_id: refresh.uid,
+      client_id: client.client_id,
+      sid: rotated.grant.sid,
+      data: { scopes: rotated.grant.scope, kind: rotated.kind },
+    });
     const tokens = await userTokens(issuance, rotated.grant, rotated.kind, null, issuer);
     const body: TokenResponse = {
       ...tokens,

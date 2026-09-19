@@ -196,6 +196,7 @@ export interface MaintenanceResult {
   created: string | null;
   retired: string[];
   deleted: number;
+  deleted_kids: string[];
 }
 
 export interface KeyMaintenanceSettings {
@@ -217,7 +218,7 @@ export async function maintainSigningKeys(
   settings: KeyMaintenanceSettings,
 ): Promise<MaintenanceResult> {
   const roles = deriveRoles(await listSigningKeys(db), now);
-  const result: MaintenanceResult = { created: null, retired: [], deleted: 0 };
+  const result: MaintenanceResult = { created: null, retired: [], deleted: 0, deleted_kids: [] };
   const rotationSeconds = settings["keys.rotation_days"] * 86_400;
   if (
     roles.signing &&
@@ -239,7 +240,8 @@ export async function maintainSigningKeys(
       result.retired.push(row.kid);
     }
   }
-  result.deleted = await deleteRetiredSigningKeys(db, now - RETIRED_KEY_RETENTION_SECONDS);
+  result.deleted_kids = await deleteRetiredSigningKeys(db, now - RETIRED_KEY_RETENTION_SECONDS);
+  result.deleted = result.deleted_kids.length;
   return result;
 }
 

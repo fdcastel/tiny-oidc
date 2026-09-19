@@ -76,16 +76,16 @@ describe("Auditor", () => {
       type: "admin.import_batch",
       outcome: "success",
       actor: { kind: "admin", id: "x" },
-      data: { lines: "x".repeat(MAX_DATA_BYTES) },
+      data: { lines: Array.from({ length: MAX_DATA_BYTES / 4 }, (_, i) => `w${i % 10}`) },
     });
     expect(big.data).toEqual({ truncated: true });
     const fits = a.emit({
       type: "admin.import_batch",
       outcome: "success",
       actor: { kind: "admin", id: "x" },
-      data: { lines: "x".repeat(MAX_DATA_BYTES - 12) },
+      data: { lines: Array.from({ length: 800 }, (_, i) => `w${i % 10}`) },
     });
-    expect(fits.data).toEqual({ lines: "x".repeat(MAX_DATA_BYTES - 12) });
+    expect(fits.data).toEqual({ lines: Array.from({ length: 800 }, (_, i) => `w${i % 10}`) });
   });
 });
 

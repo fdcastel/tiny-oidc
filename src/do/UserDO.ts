@@ -59,7 +59,13 @@ export type UserDoError =
   | "passkey_verification_failed"
   | "passkey_counter_regression"
   | "identity_exists"
-  | "last_login_method";
+  | "last_login_method"
+  | "too_many_attempts";
+
+/** Self-service passkey registration attempts per user (§6.7). */
+export const PASSKEY_ATTEMPT_LIMIT = 10;
+export const PASSKEY_ATTEMPT_WINDOW_SECONDS = 600;
+const AttemptWindowSchema = z.object({ since: z.int(), count: z.int() });
 
 /**
  * Who asks for a removal: the Admin API may remove any passkey or identity;
@@ -371,6 +377,13 @@ export interface GrantRecord {
   scopes: string[];
   granted_at: number;
   updated_at: number;
+}
+
+/** A signature counter that went backwards (TIO-PK-023): what the audit event reports. */
+export interface CounterRegression {
+  ok: false;
+  error: "passkey_counter_regression";
+  regression: { passkey_id: string; stored: number; observed: number };
 }
 
 export interface RevokedSession {
@@ -938,6 +951,29 @@ export class UserDO extends DurableObject<Env> {
     });
   }
 
+  /**
+   * Counts one Self-service passkey registration attempt (§6.7: 10 per 10 minutes per
+   * user). The window starts at the first attempt and resets once it has elapsed.
+   */
+  countPasskeyAttempt(now: number): DoResult<{ remaining: number }, UserDoError> {
+    const user = this.guard();
+    if (typeof user === "string") return fail(user);
+    const sql = this.ctx.storage.sql;
+    const row = sql
+      .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'passkey_attempts'")
+      .toArray()[0];
+    const parsed = row === undefined ? null : parseJson(AttemptWindowSchema, row.value);
+    let window = parsed?.ok ? parsed.value : { since: now, count: 0 };
+    if (now - window.since >= PASSKEY_ATTEMPT_WINDOW_SECONDS) window = { since: now, count: 0 };
+    if (window.count >= PASSKEY_ATTEMPT_LIMIT) return fail("too_many_attempts");
+    window = { since: window.since, count: window.count + 1 };
+    sql.exec(
+      "INSERT INTO meta (key, value) VALUES ('passkey_attempts', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      JSON.stringify(window),
+    );
+    return { ok: true, remaining: PASSKEY_ATTEMPT_LIMIT - window.count };
+  }
+
   /** Stores a single-use WebAuthn challenge under `key` (a session or token id), replacing any previous one (§8). */
   putChallenge(
     key: string,
@@ -1427,7 +1463,9 @@ export class UserDO extends DurableObject<Env> {
     credential_id: string;
     expected: AssertionExpectations;
     now: number;
-  }): Promise<DoResult<{ profile: UserProfile; passkey: PasskeyRecord }, UserDoError>> {
+  }): Promise<
+    DoResult<{ profile: UserProfile; passkey: PasskeyRecord }, UserDoError> | CounterRegression
+  > {
     const user = this.guard();
     if (typeof user === "string") return fail(user);
     const stored = this.ctx.storage.sql
@@ -1446,7 +1484,12 @@ export class UserDO extends DurableObject<Env> {
         .toArray()[0];
       if (!row) return fail("passkey_verification_failed");
       if (counterPolicy(row.counter, verified.newCounter) === "regression") {
-        return fail("passkey_counter_regression");
+        const regression: CounterRegression = {
+          ok: false,
+          error: "passkey_counter_regression",
+          regression: { passkey_id: row.id, stored: row.counter, observed: verified.newCounter },
+        };
+        return regression;
       }
       this.ctx.storage.sql.exec(
         "UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?",

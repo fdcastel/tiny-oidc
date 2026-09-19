@@ -188,7 +188,21 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
     [
       "signing_keys",
       async () => {
-        report.keys = await maintainSigningKeys(db, config.keys, now, settings);
+        const keys = await maintainSigningKeys(db, config.keys, now, settings);
+        report.keys = { created: keys.created, retired: keys.retired, deleted: keys.deleted };
+        const event = (type: "key.created" | "key.retired" | "key.deleted", kid: string) =>
+          deps.audit.emit({
+            type,
+            outcome: "success",
+            actor: deps.actor,
+            data:
+              type === "key.deleted"
+                ? { kid: `kid:${kid}`, via: "cron" }
+                : { target: `kid:${kid}`, via: "cron" },
+          });
+        if (keys.created !== null) event("key.created", keys.created);
+        for (const kid of keys.retired) event("key.retired", kid);
+        for (const kid of keys.deleted_kids) event("key.deleted", kid);
       },
     ],
     [

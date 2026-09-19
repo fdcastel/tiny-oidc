@@ -669,9 +669,6 @@ export const deleteGrantHandler = (clock: Clock) =>
     return { ok: true, removed: revoked.revoked };
   });
 
-export const eventsNotImplemented: Handler<AppEnv> = (c) =>
-  errorResponse(c, 501, "not_implemented", "user events arrive with the audit endpoints");
-
 export function createRecoverInvitationHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
     const user = await loadUser(c);

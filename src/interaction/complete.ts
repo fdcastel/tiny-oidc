@@ -2,7 +2,7 @@ import type { Handler } from "hono";
 import { sha256 } from "../crypto/hash.ts";
 import { newSecret } from "../crypto/random.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
-import type { ExistingSession, LogoutRequest } from "../do/InteractionDO.ts";
+import type { ExistingSession, InteractionDocument, LogoutRequest } from "../do/InteractionDO.ts";
 import type { AuthContext, CodeInput } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
 import { endSession, postLogoutDestination } from "../logout/rp-logout.ts";
@@ -31,6 +31,42 @@ import { clientRef, interactionClient } from "./api.ts";
 // GET /interactions/{id}/complete (spec §7.7): the top-level navigation that
 // turns a ready interaction into a session and a code, or a failed one into
 // the error redirect. The binding cookie is the only credential it needs.
+
+/** `interaction.completed` (§11.2) for the document that just finished. */
+function completed(c: Parameters<Handler<AppEnv>>[0], doc: InteractionDocument): void {
+  const uid = doc.auth?.uid ?? doc.existing_session?.uid ?? doc.logout?.uid ?? null;
+  c.get("audit").emit({
+    type: "interaction.completed",
+    outcome: "success",
+    actor: uid === null ? { kind: "anonymous", id: null } : { kind: "user", id: uid },
+    user_id: uid,
+    client_id: doc.client_id,
+    interaction_id: doc.id,
+    data: { kind: doc.kind },
+  });
+}
+
+/** `session.created` or `session.rotated` (§6.2) with the authentication that made it. */
+function sessionEvent(
+  c: Parameters<Handler<AppEnv>>[0],
+  type: "session.created" | "session.rotated",
+  uid: string,
+  sid: string,
+  doc: InteractionDocument,
+  auth: AuthContext,
+): void {
+  c.get("audit").emit({
+    type,
+    outcome: "success",
+    actor: { kind: "user", id: uid },
+    user_id: uid,
+    client_id: doc.client_id,
+    sid,
+    upstream: auth.upstream,
+    interaction_id: doc.id,
+    data: { amr: auth.amr, acr: auth.acr, upstream: auth.upstream },
+  });
+}
 
 /** What the RP is told when the user cannot be signed in (never the account's status). */
 function accessDeniedDescription(error: string): string {
@@ -95,6 +131,7 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
       }
       c.get("metrics").doCalls += 1;
       await stub.apply("complete", "completed", {}, now);
+      completed(c, doc);
       c.header("Set-Cookie", clearCookie(bindingCookieName(id)), { append: true });
       return c.redirect(
         postLogoutDestination(settings, logout.post_logout_redirect_uri, logout.state),
@@ -105,6 +142,7 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
     const finish = async (params: Record<string, string>, sessionCookie?: string) => {
       c.get("metrics").doCalls += 1;
       await stub.apply("complete", "completed", {}, now);
+      completed(c, doc);
       c.header("Set-Cookie", clearCookie(bindingCookieName(id)), { append: true });
       if (sessionCookie !== undefined) c.header("Set-Cookie", sessionCookie, { append: true });
       return c.redirect(
@@ -114,8 +152,28 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
     };
     const failWith = (error: string, description: string) => {
       c.set("error", error);
+      c.get("audit").emit({
+        type: "authz.denied",
+        outcome: "failure",
+        actor: { kind: "anonymous", id: null },
+        client_id: doc.client_id,
+        interaction_id: id,
+        reason: error,
+        data: { error },
+      });
       return finish({ error, error_description: sanitizeDescription(description) });
     };
+    const codeIssued = (sid: string) =>
+      c.get("audit").emit({
+        type: "authz.code_issued",
+        outcome: "success",
+        actor: { kind: "user", id: uid as string },
+        user_id: uid,
+        client_id: doc.client_id,
+        sid,
+        interaction_id: id,
+        data: { scopes: code.scope, session_hit: false },
+      });
     if (doc.status === "failed") {
       const error = doc.error ?? { error: "server_error", error_description: "interaction failed" };
       return failWith(error.error, error.error_description);
@@ -175,6 +233,7 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
         c.header("Set-Cookie", clearCookie(SESSION_COOKIE), { append: true });
         return c.redirect(withQuery(loginUrl, { interaction: id }), 303);
       }
+      codeIssued(session.sid);
       return finish({ code: await sealCodeHandle(config.keys, uid, codeSecret) });
     }
 
@@ -197,8 +256,10 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
         client: ref,
         session_idle_ttl: idleTtl,
       });
-      if (rotated.ok) sid = existing.sid;
-      else if (rotated.error !== "session_invalid") {
+      if (rotated.ok) {
+        sid = existing.sid;
+        sessionEvent(c, "session.rotated", uid, sid, doc, auth);
+      } else if (rotated.error !== "session_invalid") {
         return failWith("access_denied", accessDeniedDescription(rotated.error));
       }
       // A session that vanished since the user authenticated is replaced by a new one.
@@ -227,7 +288,9 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
         session_idle_ttl: idleTtl,
       });
       if (!created.ok) return failWith("access_denied", accessDeniedDescription(created.error));
+      sessionEvent(c, "session.created", uid, sid, doc, auth);
     }
+    codeIssued(sid);
     const handle = await sealSessionHandle(config.keys, uid, sid, sessionSecret);
     return finish(
       { code: await sealCodeHandle(config.keys, uid, codeSecret) },

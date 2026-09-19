@@ -858,6 +858,23 @@ describe("failure paths", () => {
     expect(expired.next.href).toBe(`${LOGIN_ORIGIN}/?error=invalid_state`);
   });
 
+  it("[TIO-FED-021] a failure the interaction can no longer take (failed meanwhile) still sends the browser to the login app", async () => {
+    const overtaken = await driveFederation(h, fake, web, {
+      sub: "someone",
+      faults: ["token_500"],
+      env: sabotageInteraction("apply", async (stub) => {
+        await stub.apply(
+          "fail",
+          "failed",
+          { error: { error: "x", error_description: "y" } },
+          clock.now(),
+        );
+      }),
+    });
+    expect(overtaken.next.href).toBe(`${LOGIN_ORIGIN}/?interaction=${overtaken.started.id}`);
+    expect(events("identity.login_failed").at(-1)).toMatchObject({ reason: "token_status_500" });
+  });
+
   it("[TIO-FED-022] [TIO-FED-031] an upstream disabled or unreadable between the legs, an unavailable client, and a missing userinfo endpoint all fail the interaction", async () => {
     const disabled = await driveFederation(h, fake, web, {
       sub: "someone",

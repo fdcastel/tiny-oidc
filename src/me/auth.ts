@@ -34,7 +34,7 @@ const challenge = (error: string) => ({ "WWW-Authenticate": `Bearer error="${err
 
 export function requireAccount(clock: Clock): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    if (await limited(c.env, "ip_me", ipKey(c.req.raw))) return rateLimited(c);
+    if (await limited(c.env, "ip_me", ipKey(c.req.raw))) return rateLimited(c, "ip_me");
     const invalidToken = () =>
       errorResponse(c, 401, "invalid_token", "invalid token", challenge("invalid_token"));
     const presented = bearerHeader(c.req.header("authorization"));

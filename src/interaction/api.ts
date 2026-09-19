@@ -50,13 +50,9 @@ export interface Guarded {
   now: number;
 }
 
-/** TIO-IX-021: the first character of the local part, `***`, and the full domain. */
-export function maskEmail(email: string | null): string | null {
-  if (email === null) return null;
-  const at = email.lastIndexOf("@");
-  if (at <= 0) return "***";
-  return `${email[0]}***${email.slice(at)}`;
-}
+import { maskEmail } from "../users/email.ts";
+
+export { maskEmail };
 
 /** TIO-IX-033: where the browser finishes the interaction. */
 export function redirectTo(c: AppContext, id: string): string {
@@ -72,7 +68,8 @@ const SAME_SITE = new Set(["same-origin", "same-site"]);
  * the request is refused.
  */
 export async function guard(c: AppContext, clock: Clock): Promise<Guarded | Response> {
-  if (await limited(c.env, "ip_interactions", ipKey(c.req.raw))) return rateLimited(c);
+  if (await limited(c.env, "ip_interactions", ipKey(c.req.raw)))
+    return rateLimited(c, "ip_interactions");
   const id = c.req.param("id") as string;
   if (!INTERACTION_ID_PATTERN.test(id)) {
     return errorResponse(c, 404, "interaction_not_found", "no such interaction");
@@ -256,6 +253,7 @@ export function abortHandler(clock: Clock): Handler<AppEnv> {
       { error: { error: "access_denied", error_description: "aborted by the user" } },
       guarded.now,
     );
+    interactionFailed(c, guarded.doc, "access_denied", "aborted");
     const step: InteractionStep = { status: "failed", redirect_to: redirectTo(c, guarded.id) };
     return c.json(step, 200);
   };
@@ -281,6 +279,15 @@ export function consentHandler(clock: Clock): Handler<AppEnv> {
         { error: { error: "access_denied", error_description: "consent denied" } },
         now,
       );
+      c.get("audit").emit({
+        type: "consent.denied",
+        outcome: "failure",
+        actor: { kind: "user", id: interactionUid(doc) },
+        user_id: interactionUid(doc),
+        client_id: doc.client_id,
+        interaction_id: id,
+      });
+      interactionFailed(c, doc, "access_denied", "consent_denied");
       const step: InteractionStep = { status: "failed", redirect_to: redirectTo(c, id) };
       return c.json(step, 200);
     }
@@ -298,6 +305,15 @@ export function consentHandler(clock: Clock): Handler<AppEnv> {
     if (!granted.ok) return errorResponse(c, 403, "access_denied", granted.error);
     c.get("metrics").doCalls += 1;
     await stub.apply("consent", "ready", { consent: { scopes } }, now);
+    c.get("audit").emit({
+      type: "consent.granted",
+      outcome: "success",
+      actor: { kind: "user", id: uid },
+      user_id: uid,
+      client_id: doc.client_id,
+      interaction_id: id,
+      data: { scopes },
+    });
     const step: InteractionStep = { status: "ready", redirect_to: redirectTo(c, id) };
     return c.json(step, 200);
   };
@@ -305,4 +321,24 @@ export function consentHandler(clock: Clock): Handler<AppEnv> {
 
 function invalidState(c: AppContext): Response {
   return errorResponse(c, 409, "interaction_invalid_state", "not allowed in this state");
+}
+
+/** `interaction.failed` (§11.2): the §7.8 error the document carries and why. */
+export function interactionFailed(
+  c: AppContext,
+  doc: InteractionDocument,
+  error: string,
+  reason: string,
+): void {
+  const uid = interactionUid(doc);
+  c.get("audit").emit({
+    type: "interaction.failed",
+    outcome: "failure",
+    actor: uid === null ? { kind: "anonymous", id: null } : { kind: "user", id: uid },
+    user_id: uid,
+    client_id: doc.client_id,
+    interaction_id: doc.id,
+    reason,
+    data: { kind: doc.kind, error },
+  });
 }

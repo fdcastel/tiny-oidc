@@ -62,8 +62,19 @@ export async function authenticateFormClient(
     client_id: result.client_id,
     reason: result.reason,
   });
+  c.get("audit").emit({
+    type: "token.client_auth_failed",
+    outcome: "failure",
+    actor: { kind: result.client_id === null ? "anonymous" : "client", id: result.client_id },
+    client_id: result.client_id,
+    reason: result.reason,
+  });
   if (result.client_id !== null && (await limited(c.env, "client_auth_failed", result.client_id))) {
-    return { ok: false, response: rateLimited(c), disabled_client_id: disabledClientId };
+    return {
+      ok: false,
+      response: rateLimited(c, "client_auth_failed"),
+      disabled_client_id: disabledClientId,
+    };
   }
   const headers: Record<string, string> = {};
   if (result.basic_challenge) headers["WWW-Authenticate"] = BASIC_CHALLENGE;

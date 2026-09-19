@@ -1,7 +1,7 @@
 import type { Handler } from "hono";
 import { sha256 } from "../crypto/hash.ts";
 import { newInteractionId, newSecret } from "../crypto/random.ts";
-import type { InteractionDO } from "../do/InteractionDO.ts";
+import type { ExistingSession, InteractionDO } from "../do/InteractionDO.ts";
 import type { AuthorizeOutcome, ClientRef } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
@@ -164,12 +164,32 @@ export function authorizeHandler(clock: Clock): Handler<AppEnv> {
 
     // 14. Session evaluation (TIO-AUTHZ-014..017).
     const evaluation = await evaluateSession(c, clientRef, request, settings, now);
-    if (evaluation.clear) c.header("Set-Cookie", clearCookie(SESSION_COOKIE), { append: true });
+    if (evaluation.clear) {
+      c.header("Set-Cookie", clearCookie(SESSION_COOKIE), { append: true });
+      c.get("audit").emit({
+        type: "session.expired",
+        outcome: "failure",
+        actor: { kind: "anonymous", id: null },
+        client_id: client.client_id,
+        reason: "cookie_without_session",
+      });
+    }
     if (evaluation.outcome === "authorized") {
       if (pushed) {
         metrics.doCalls += 1;
         await pushed.stub.apply("consume_par", "completed", {}, now);
       }
+      const session = evaluation.existing_session as ExistingSession;
+      c.get("audit").emit({
+        type: "authz.code_issued",
+        outcome: "success",
+        actor: { kind: "user", id: session.uid },
+        user_id: session.uid,
+        client_id: client.client_id,
+        sid: session.sid,
+        interaction_id: pushed?.id ?? null,
+        data: { scopes: request.scope, session_hit: true },
+      });
       return c.redirect(
         withQuery(request.redirect_uri, {
           code: evaluation.code as string,
@@ -213,6 +233,19 @@ export function authorizeHandler(clock: Clock): Handler<AppEnv> {
       id = started.id;
       cookie = started.cookie;
     }
+    c.get("audit").emit({
+      type: "interaction.created",
+      outcome: "success",
+      actor:
+        existing_session === null
+          ? { kind: "anonymous", id: null }
+          : { kind: "user", id: existing_session.uid },
+      user_id: existing_session?.uid ?? null,
+      client_id: client.client_id,
+      sid: existing_session?.sid ?? null,
+      interaction_id: id,
+      data: { kind: "authorize", status },
+    });
     // TIO-AUTHZ-020: 303 to login_url with the interaction id and the binding cookie.
     c.header("Set-Cookie", cookie, { append: true });
     return c.redirect(withQuery(loginUrl, { interaction: id }), 303);
@@ -228,6 +261,13 @@ function redirectError(
   state: string | null,
 ): Response {
   c.set("error", error);
+  c.get("audit").emit({
+    type: "authz.denied",
+    outcome: "failure",
+    actor: { kind: "anonymous", id: null },
+    reason: error,
+    data: { error },
+  });
   const params: Record<string, string> = {
     error,
     error_description: sanitizeDescription(description),

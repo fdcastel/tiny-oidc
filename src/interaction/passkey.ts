@@ -30,6 +30,7 @@ import {
   grantedScopes,
   guard,
   interactionClient,
+  interactionFailed,
   redirectTo,
 } from "./api.ts";
 
@@ -48,6 +49,9 @@ async function countAttempt(c: AppContext, guarded: Guarded): Promise<Response |
   c.get("metrics").doCalls += 1;
   const counted = await guarded.stub.attempt(guarded.now, ATTEMPT_LIMIT);
   if (counted.ok) return null;
+  if (counted.error === "too_many_attempts") {
+    interactionFailed(c, guarded.doc, "too_many_attempts", "attempt_limit");
+  }
   return errorResponse(c, 403, "too_many_attempts", "too many attempts");
 }
 
@@ -100,11 +104,21 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
     if (refused) return refused;
     const body = await readJsonBody(c.req.raw, VerifyBody, BODY_LIMITS.api);
     if (!body.ok) return errorResponse(c, 400, "invalid_request", body.error);
-    // Both failures answer the same body (TIO-IX-070); the reason goes to the log only.
-    const failed = (reason: string): Response => {
+    // Both failures answer the same body (TIO-IX-070); the reason goes to the log and the audit only.
+    const failed = (reason: string, uid: string | null = null): Response => {
       c.get("logger").log("info", "passkey verification failed", {
         request_id: c.get("requestId"),
         reason,
+      });
+      c.get("audit").emit({
+        type: "passkey.auth_failed",
+        outcome: "failure",
+        actor: uid === null ? { kind: "anonymous", id: null } : { kind: "user", id: uid },
+        user_id: uid,
+        client_id: doc.client_id,
+        interaction_id: guarded.id,
+        reason,
+        data: { step: reason },
       });
       return errorResponse(c, 401, "passkey_verification_failed", "passkey verification failed");
     };
@@ -137,7 +151,19 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
       now,
     });
     if (!verified.ok) {
-      if (verified.error === "passkey_counter_regression") {
+      if ("regression" in verified) {
+        // TIO-PK-023: a counter that went backwards means a cloned credential.
+        c.get("audit").emit({
+          type: "passkey.clone_suspected",
+          outcome: "failure",
+          actor: { kind: "user", id: uid },
+          user_id: uid,
+          client_id: doc.client_id,
+          interaction_id: guarded.id,
+          reason: "counter_regression",
+          data: { ...verified.regression },
+        });
+        failed("passkey_counter_regression", uid);
         return errorResponse(c, 401, "passkey_counter_regression", "passkey counter regression");
       }
       if (verified.error === "user_not_initialized" || verified.error === "user_destroyed") {
@@ -145,8 +171,17 @@ export function passkeyVerifyHandler(clock: Clock): Handler<AppEnv> {
         if (fromIndex) await releaseCredential(db, identity.credentialId);
         return failed("passkey_unknown");
       }
-      return failed(verified.error);
+      return failed(verified.error, uid);
     }
+    c.get("audit").emit({
+      type: "passkey.auth_succeeded",
+      outcome: "success",
+      actor: { kind: "user", id: uid },
+      user_id: uid,
+      client_id: doc.client_id,
+      interaction_id: guarded.id,
+      data: { passkey_id: verified.passkey.id },
+    });
     const client = await interactionClient(c, doc);
     if (!client) return errorResponse(c, 503, "temporarily_unavailable", "client unavailable");
     if (doc.status === "link_required") {
@@ -253,6 +288,12 @@ export async function authenticateInteraction(
       "failed",
       { error: { error: "access_denied", error_description: description } },
       now,
+    );
+    interactionFailed(
+      c,
+      doc,
+      "access_denied",
+      description === "user_not_allowed" ? "user_not_allowed" : "user_disabled",
     );
     return { status: "failed", redirect_to: redirectTo(c, id) };
   };

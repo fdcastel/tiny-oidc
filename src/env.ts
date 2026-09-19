@@ -58,6 +58,11 @@ export const systemClock: Clock = {
   nowDate: () => new Date(),
 };
 
+/** An instant in seconds as a Date (the one place a Date is built from a value, TIO-TEST-060). */
+export function dateOf(seconds: number): Date {
+  return new Date(seconds * 1000);
+}
+
 export { EnvVarsSchema, SecretsSchema, SettingsSchema } from "./config/schema.ts";
 
 type StoredSettings = z.infer<typeof SettingsSchema>;

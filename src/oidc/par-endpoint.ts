@@ -19,7 +19,8 @@ export const REQUEST_URI_TTL_SECONDS = 60;
 
 export function parHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_navigation", ipKey(c.req.raw))) return rateLimited(c);
+    if (await limited(c.env, "ip_navigation", ipKey(c.req.raw)))
+      return rateLimited(c, "ip_navigation");
     const form = await protocolForm(c);
     if (!form.ok) return form.response;
     const params = form.params;
@@ -44,6 +45,14 @@ export function parHandler(clock: Clock): Handler<AppEnv> {
     const id = newInteractionId();
     const now = clock.now();
     c.get("metrics").doCalls += 1;
+    c.get("audit").emit({
+      type: "interaction.created",
+      outcome: "success",
+      actor: { kind: "client", id: client.client_id },
+      client_id: client.client_id,
+      interaction_id: id,
+      data: { kind: "par", status: "pushed" },
+    });
     await interactionStub(c.env, id).create(
       {
         id,

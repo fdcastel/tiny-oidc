@@ -720,7 +720,11 @@ describe("sub-resources", () => {
     expect(await lookupIdentity(db, "https://idp.example.com", "reindex-1")).toBe(id);
     expect((await getUser(db, id))?.display_name).toBe("Alice");
 
-    expect((await call("GET", `users/${id}/events`)).status).toBe(501);
+    // A page of the user's events (rows arrive through the queue consumer whenever it runs).
+    expect(await (await call("GET", `users/${id}/events`)).json()).toMatchObject({
+      items: expect.any(Array),
+      next_cursor: null,
+    });
 
     const restore = await call("POST", `users/${id}/restore`, {
       bookmark_time: clock.now() - 3600,

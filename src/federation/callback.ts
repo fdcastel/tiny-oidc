@@ -13,6 +13,7 @@ import {
   type AppContext,
   type Guarded,
   interactionClient,
+  interactionFailed,
   redirectTo,
 } from "../interaction/api.ts";
 import { authenticateInteraction } from "../interaction/passkey.ts";
@@ -67,7 +68,12 @@ async function failInteraction(
   audit: { alias: string; reason: string },
 ): Promise<Response> {
   c.get("metrics").doCalls += 1;
-  await stub.apply("fail", "failed", { error: { error, error_description: description } }, now);
+  const applied = await stub.apply(
+    "fail",
+    "failed",
+    { error: { error, error_description: description } },
+    now,
+  );
   c.get("audit").emit({
     type: "identity.login_failed",
     outcome: "failure",
@@ -76,6 +82,7 @@ async function failInteraction(
     interaction_id: id,
     reason: audit.reason,
   });
+  if (applied.ok) interactionFailed(c, applied.doc, error, audit.reason);
   c.set("error", error);
   return c.redirect(withQuery(loginUrl, { interaction: id }), 303);
 }
@@ -157,13 +164,23 @@ async function resolveAccount(
   }
   const uuids = new UuidV7(clock);
   const id = uuids.next();
-  if (invitation !== null && !(await consumeInvitation(db, invitation.id, id, now))) {
-    return {
-      kind: "fail",
-      error: "invitation_used",
-      description: "invitation not accepted",
-      reason: "invitation_used",
-    };
+  if (invitation !== null) {
+    if (!(await consumeInvitation(db, invitation.id, id, now))) {
+      return {
+        kind: "fail",
+        error: "invitation_used",
+        description: "invitation not accepted",
+        reason: "invitation_used",
+      };
+    }
+    c.get("audit").emit({
+      type: "invitation.used",
+      outcome: "success",
+      actor: { kind: "user", id },
+      user_id: id,
+      upstream: upstream.alias,
+      data: { kind: invitation.kind, via: "federation" },
+    });
   }
   // An invitation that names an email decides the email and its verification (TIO-DATA-008 b).
   const named = invitation !== null && invitation.email !== null ? invitation : null;
@@ -218,7 +235,8 @@ async function resolveAccount(
 
 export function federationCallbackHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_navigation", ipKey(c.req.raw))) return rateLimited(c);
+    if (await limited(c.env, "ip_navigation", ipKey(c.req.raw)))
+      return rateLimited(c, "ip_navigation");
     const config = c.get("config");
     const db = c.get("db");
     let settings: Settings;

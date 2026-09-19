@@ -104,7 +104,7 @@ export function rotateKeyHandler(clock: Clock): Handler<AppEnv> {
       const created = (await keyViews(c, now)).find((k) => k.kid === kid) as KeyView;
       auditAdmin(c, {
         type: "key.created",
-        target: kid,
+        target: `kid:${kid}`,
         data: { activates_at: created.activates_at, immediate: body.value.immediate === true },
       });
       return c.json(created, 201);
@@ -125,7 +125,7 @@ export function retireKeyHandler(clock: Clock): Handler<AppEnv> {
         return errorResponse(c, 409, "last_active_key", "rotate with immediate: true first");
       }
       c.get("keyStore").invalidate();
-      auditAdmin(c, { type: "key.retired", target: kid, data: { emergency: true } });
+      auditAdmin(c, { type: "key.retired", target: `kid:${kid}`, data: { emergency: true } });
       return c.json((await keyViews(c, now)).find((k) => k.kid === kid) as KeyView);
     } catch {
       return unavailable(c);

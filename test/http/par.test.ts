@@ -228,7 +228,7 @@ describe("POST /par", () => {
     expect(await res.json()).toMatchObject({ error: "unauthorized_client" });
   });
 
-  it("[TIO-PAR-004] [TIO-TOKEN-004] failed client authentication is rate-limited per client id and every call per IP, answering 429 with Retry-After", async () => {
+  it("[TIO-RL-003] [TIO-PAR-004] [TIO-TOKEN-004] failed client authentication is rate-limited per client id and every call per IP, answering 429 with Retry-After", async () => {
     const pub = (await createTestClient(db, clock, { redirect_uris: [RP] })).client;
     const confidential = await createTestClient(db, clock, {
       redirect_uris: [RP],

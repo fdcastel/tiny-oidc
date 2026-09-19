@@ -1,4 +1,8 @@
-import { createExecutionContext, createScheduledController } from "cloudflare:test";
+import {
+  createExecutionContext,
+  createScheduledController,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
 import type { Env } from "../../src/env.ts";
@@ -47,6 +51,22 @@ describe("scheduled()", () => {
     // The worker's default export carries the same handler.
     expect(typeof worker.scheduled).toBe("function");
     await worker.scheduled(createScheduledController(), env, createExecutionContext());
+    // The run's events reach the queue after the run, like a request's (TIO-AUDIT-010).
+    const shipped: unknown[] = [];
+    const recording = {
+      ...env,
+      TASKS: { send: async (body: unknown) => void shipped.push(body) },
+    } as unknown as Env;
+    const ctx = createExecutionContext();
+    await scheduled(
+      createScheduledController({ cron: "*/5 * * * *", scheduledTime: clock.nowMs() }),
+      recording,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+    expect(shipped).toEqual([
+      { kind: "audit", events: [expect.objectContaining({ type: "system.cron_run" })] },
+    ]);
   });
 
   it("[TIO-CFG-010] logs and returns when the configuration is invalid or storage fails; the next trigger tries again", async () => {

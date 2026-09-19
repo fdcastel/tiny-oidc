@@ -1,11 +1,15 @@
 import type { UuidV7 } from "../crypto/uuid.ts";
 import type { Clock } from "../env.ts";
 import type { Logger } from "../obs/log.ts";
+import { allowedDataKeys, isAuditType } from "./catalog.ts";
+import { redactData, redactReason } from "./redact.ts";
 
 // Audit events (spec §11.1): one record per security-relevant action, built
 // per request from the request's pseudonymized metadata and handed to the
-// sinks when the request ends. This phase feeds the structured log; the
-// queue producer and `audit_hot` consumer arrive with §11.3 (Phase 6).
+// sinks when the request ends: the structured log here, the TASKS queue
+// through the producer of §11.3. `data` keeps only the keys the catalog
+// allows for the type (TIO-AUDIT-001) and nothing that looks like a secret
+// (TIO-AUDIT-002); what was dropped is logged with the flush.
 
 export type AuditOutcome = "success" | "failure";
 export type ActorKind = "user" | "client" | "admin" | "system" | "anonymous";
@@ -63,6 +67,8 @@ function dataSize(data: Record<string, unknown>): number {
 /** Collects the events of one request. */
 export class Auditor {
   readonly events: AuditEvent[] = [];
+  /** Keys (or whole types) the catalog did not allow, reported once per flush. */
+  readonly dropped: { type: string; keys: string[] }[] = [];
   private readonly context: RequestContext;
   private readonly uuids: UuidV7;
   private readonly clock: Clock;
@@ -74,7 +80,17 @@ export class Auditor {
   }
 
   emit(input: AuditInput): AuditEvent {
-    const data = input.data ?? {};
+    const allowed = allowedDataKeys(input.type);
+    const kept: Record<string, unknown> = {};
+    const dropped: string[] = [];
+    for (const [key, value] of Object.entries(input.data ?? {})) {
+      if (allowed.has(key)) kept[key] = value;
+      else dropped.push(key);
+    }
+    if (dropped.length > 0 || !isAuditType(input.type)) {
+      this.dropped.push({ type: input.type, keys: dropped });
+    }
+    const data = redactData(kept);
     const event: AuditEvent = {
       id: this.uuids.next(),
       ts: this.clock.now(),
@@ -90,7 +106,7 @@ export class Auditor {
       country: this.context.country,
       ua_family: this.context.ua_family,
       request_id: this.context.request_id,
-      reason: input.reason ?? null,
+      reason: redactReason(input.reason ?? null),
       // A payload past the bound is replaced, never trimmed field by field (the
       // allow-lists of §11.2 keep the normal case small).
       data: dataSize(data) <= MAX_DATA_BYTES ? data : { truncated: true },
@@ -99,8 +115,15 @@ export class Auditor {
     return event;
   }
 
-  /** Hands every collected event to the log sink (TIO-AUDIT-010 sink 2). */
+  /** Hands every collected event to the log sink (TIO-AUDIT-010 sink 2) and reports what was dropped. */
   flush(logger: Logger): void {
     for (const event of this.events) logger.log("info", "audit", { event });
+    for (const { type, keys } of this.dropped) {
+      logger.log("warn", "audit data outside the catalog dropped", {
+        type,
+        keys,
+        request_id: this.context.request_id,
+      });
+    }
   }
 }

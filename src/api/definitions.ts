@@ -905,15 +905,41 @@ export const adminUserGrantDeleteRoute = createRoute({
   responses: revokedResponse("Whether a grant was revoked"),
 });
 
+export const PersonalEventSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    ts: z.int(),
+    outcome: z.enum(["success", "failure"]),
+    client_id: z.string().nullable(),
+    country: z.string().nullable(),
+    ua_family: z.string().nullable(),
+  })
+  .openapi("PersonalEvent");
+
+export const EventsQuerySchema = z
+  .object({
+    limit: z.string().optional().openapi({ description: "1..200, default 50" }),
+    cursor: z.string().optional().openapi({ description: "Opaque; from next_cursor" }),
+  })
+  .strict();
+
 export const adminUserEventsRoute = createRoute({
   method: "get",
   path: `${USER_PATH}/events`,
   tags: ["admin"],
-  summary: "The user's audit events from audit_hot (arrives with the audit endpoints)",
+  summary: "The user's events from audit_hot, newest first, within the hot retention window (§9.4)",
   security: adminSecurity,
-  request: { params: UserIdParams },
+  request: { params: UserIdParams, query: EventsQuerySchema },
   responses: {
-    501: errorResponse("not_implemented"),
+    200: {
+      description: "A page",
+      content: {
+        "application/json": { schema: pageSchema(PersonalEventSchema, "PersonalEventPage") },
+      },
+    },
+    400: errorResponse("invalid_request"),
+    404: errorResponse("user_not_found"),
     ...ADMIN_ERRORS,
   },
 });
@@ -2308,10 +2334,18 @@ export const meEventsRoute = createRoute({
   method: "get",
   path: "/api/v1/me/events",
   tags: ["me"],
-  summary: "The person's recent events (arrives with the audit endpoints)",
+  summary:
+    "The person's own events from audit_hot, newest first, within the hot retention window (§8)",
   security: meSecurity,
+  request: { query: EventsQuerySchema },
   responses: {
-    501: errorResponse("not_implemented"),
+    200: {
+      description: "A page",
+      content: {
+        "application/json": { schema: pageSchema(PersonalEventSchema, "PersonalEventPage") },
+      },
+    },
+    400: errorResponse("invalid_request"),
     ...ME_ERRORS,
   },
 });
@@ -2334,6 +2368,103 @@ export const ME_ROUTES = [
   meEventsRoute,
 ] as const;
 
+// Admin audit (§9.4 Audit, §11.3)
+
+export const AuditActorSchema = z
+  .object({
+    kind: z.enum(["user", "client", "admin", "system", "anonymous"]),
+    id: z.string().nullable(),
+  })
+  .openapi("AuditActor");
+
+export const AuditEventSchema = z
+  .object({
+    id: z.string(),
+    ts: z.int(),
+    type: z.string(),
+    outcome: z.enum(["success", "failure"]),
+    actor: AuditActorSchema,
+    user_id: z.string().nullable(),
+    client_id: z.string().nullable(),
+    upstream: z.string().nullable(),
+    sid: z.string().nullable(),
+    interaction_id: z.string().nullable(),
+    ip_hash: z.string().nullable(),
+    country: z.string().nullable(),
+    ua_family: z.string().nullable(),
+    request_id: z.string(),
+    reason: z.string().nullable(),
+    data: z.record(z.string(), z.unknown()),
+  })
+  .openapi("AuditEvent");
+
+export const AdminAuditQuerySchema = z
+  .object({
+    limit: z.string().optional().openapi({ description: "1..200, default 50" }),
+    cursor: z.string().optional().openapi({ description: "Opaque; from next_cursor" }),
+    type: z.string().optional(),
+    user_id: z.string().optional(),
+    client_id: z.string().optional(),
+    actor_id: z.string().optional(),
+    outcome: z.enum(["success", "failure"]).optional(),
+    since: z.string().optional().openapi({ description: "Unix seconds, inclusive" }),
+    until: z.string().optional().openapi({ description: "Unix seconds, inclusive" }),
+  })
+  .strict();
+
+export const adminAuditListRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/audit",
+  tags: ["admin"],
+  summary: "Audit events from the hot table, newest first, under filters (§9.4)",
+  security: adminSecurity,
+  request: { query: AdminAuditQuerySchema },
+  responses: {
+    200: {
+      description: "A page",
+      content: { "application/json": { schema: pageSchema(AuditEventSchema, "AuditEventPage") } },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const ArchiveObjectSchema = z
+  .object({ key: z.string(), size: z.int(), uploaded: z.int() })
+  .openapi("ArchiveObject");
+
+export const adminAuditArchiveRoute = createRoute({
+  method: "get",
+  path: "/api/v1/admin/audit/archive",
+  tags: ["admin"],
+  summary: "The R2 archive's object keys for a range of days, at most 31 (§9.4)",
+  security: adminSecurity,
+  request: {
+    query: z
+      .object({
+        from: z.string().openapi({ description: "YYYY-MM-DD (UTC)" }),
+        to: z.string().optional().openapi({ description: "YYYY-MM-DD (UTC), defaults to from" }),
+      })
+      .strict(),
+  },
+  responses: {
+    200: {
+      description: "Keys only; the operator downloads with R2 tooling",
+      content: {
+        "application/json": {
+          schema: z
+            .object({ items: z.array(ArchiveObjectSchema), from: z.string(), to: z.string() })
+            .openapi("ArchiveListing"),
+        },
+      },
+    },
+    400: errorResponse("invalid_request"),
+    ...ADMIN_ERRORS,
+  },
+});
+
+export const ADMIN_AUDIT_ROUTES = [adminAuditListRoute, adminAuditArchiveRoute] as const;
+
 /** Every OpenAPI route, in document order. */
 export const API_ROUTES = [
   healthRoute,
@@ -2355,6 +2486,7 @@ export const API_ROUTES = [
   ...ADMIN_INVITATION_ROUTES,
   ...ADMIN_SYSTEM_ROUTES,
   adminImportUsersRoute,
+  ...ADMIN_AUDIT_ROUTES,
 ] as const;
 
 /** Registers every route and the bearer scheme of the Admin API on an app's registry. */

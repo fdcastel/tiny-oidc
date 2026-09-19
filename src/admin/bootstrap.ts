@@ -44,7 +44,8 @@ export function bootstrapHandler(clock: Clock): Handler<AppEnv> {
       ));
     if (!accepted) {
       // A wrong token is counted against the caller's address (TIO-ADMIN-010).
-      if (await limited(c.env, "ip_bootstrap", ipKey(c.req.raw))) return rateLimited(c);
+      if (await limited(c.env, "ip_bootstrap", ipKey(c.req.raw)))
+        return rateLimited(c, "ip_bootstrap");
       return errorResponse(c, 401, "unauthorized", "bootstrap token not accepted");
     }
     const db = c.get("db");
@@ -105,6 +106,13 @@ export function bootstrapHandler(clock: Clock): Handler<AppEnv> {
     if (!invitation.ok) return errorResponse(c, 400, "email_invalid", "email is not valid");
     await writeSettings(db, { bootstrapped_at: now }, "bootstrap", now);
     c.get("settingsLoader").invalidate();
+    c.get("audit").emit({
+      type: "admin.bootstrap",
+      outcome: "success",
+      actor: { kind: "admin", id: null },
+      client_id: client.client_id,
+      data: { client_id: client.client_id },
+    });
     return c.json(
       {
         invitation: invitation.token,

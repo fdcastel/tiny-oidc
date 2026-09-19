@@ -172,10 +172,10 @@ describe("key store", () => {
 
     // Retirement: cron retires superseded keys once the signing key has signed for retire_after_seconds.
     let result = await maintainSigningKeys(db, keys, clock.now(), SETTINGS);
-    expect(result).toEqual({ created: null, retired: [], deleted: 0 });
+    expect(result).toEqual({ created: null, retired: [], deleted: 0, deleted_kids: [] });
     clock.advance(SETTINGS["keys.retire_after_seconds"]);
     result = await maintainSigningKeys(db, keys, clock.now(), SETTINGS);
-    expect(result).toEqual({ created: null, retired: [k1], deleted: 0 });
+    expect(result).toEqual({ created: null, retired: [k1], deleted: 0, deleted_kids: [] });
     const retiredRow = (await listSigningKeys(db)).find((r) => r.kid === k1);
     expect(retiredRow?.retired_at).toBe(clock.now());
     expect(retiredRow?.private_jwk_enc).toBeNull();

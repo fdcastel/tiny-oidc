@@ -252,6 +252,34 @@ describe("health and observability", () => {
     expect(lines.filter((l) => l.msg === "request")).toHaveLength(2);
   });
 
+  it("[TIO-OBS-002] writes one data point per request and one per audit event when metrics are bound", async () => {
+    const points: { blobs: string[]; doubles: number[]; indexes: string[] }[] = [];
+    const metrics = {
+      writeDataPoint: (p: { blobs: string[]; doubles: number[]; indexes: string[] }) =>
+        points.push(p),
+    } as unknown as AnalyticsEngineDataset;
+    const withMetrics = harness({ METRICS: metrics });
+    // A refused client authentication is a request with one audit event.
+    const res = await withMetrics.fetch(url("/token"), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "grant_type=client_credentials&client_id=nobody&client_secret=x",
+    });
+    expect(res.status).toBe(401);
+    expect(points).toEqual([
+      {
+        blobs: ["/token", "401", "invalid_client"],
+        doubles: [expect.any(Number)],
+        indexes: ["/token"],
+      },
+      {
+        blobs: ["token.client_auth_failed", "failure"],
+        doubles: [1],
+        indexes: ["token.client_auth_failed"],
+      },
+    ]);
+  });
+
   it("[TIO-OBS-001] log lines below the configured level are dropped and metrics are written only when the binding exists", async () => {
     const { fetch, lines } = harness({ LOG_LEVEL: "error" });
     await fetch(url("/api/v1/health"));

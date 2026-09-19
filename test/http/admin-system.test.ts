@@ -92,7 +92,7 @@ describe("keys", () => {
     expect(next).toMatchObject({ role: "next", activates_at: clock.now() + 86_400 });
     expect(lastEvent("key.created")).toMatchObject({
       actor: { kind: "admin", id: rootId },
-      data: { target: next.kid, immediate: false },
+      data: { target: `kid:${next.kid}`, immediate: false },
     });
     expect((await keysOf()).map((k) => k.role)).toEqual(["signing", "next"]);
     // The only active key cannot be retired; the next one can.
@@ -102,7 +102,9 @@ describe("keys", () => {
     const retiredNext = await call("DELETE", `keys/${next.kid}`);
     expect(retiredNext.status).toBe(200);
     expect(await retiredNext.json()).toMatchObject({ role: "retired", retired_at: clock.now() });
-    expect(lastEvent("key.retired")).toMatchObject({ data: { target: next.kid, emergency: true } });
+    expect(lastEvent("key.retired")).toMatchObject({
+      data: { target: `kid:${next.kid}`, emergency: true },
+    });
     expect((await call("DELETE", `keys/${next.kid}`)).status).toBe(404);
     expect((await call("DELETE", "keys/unknown-kid")).status).toBe(404);
 

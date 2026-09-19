@@ -233,6 +233,8 @@ function adminRoutes(): Route[] {
     ["POST", "maintenance/rekey"],
     ["POST", "maintenance/reindex"],
     ["POST", "import/users"],
+    ["GET", "audit"],
+    ["GET", "audit/archive"],
   ];
   return operations.map(
     ([method, path]): Route => ({

@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import type { Env } from "../env.ts";
+import type { AppEnv } from "./context.ts";
 import { errorResponse } from "./errors.ts";
 
 // Rate limits (spec §6.7, TIO-RL-001, TIO-RL-003) on the Rate Limiting
@@ -67,8 +68,15 @@ export function ipKey(request: Request): string {
     .join(":")}::/64`;
 }
 
-/** 429 with `Retry-After: 10` and `rate_limited` (TIO-RL-001). */
-export function rateLimited(c: Context): Response {
+/** 429 with `Retry-After: 10` and `rate_limited` (TIO-RL-001), recorded as `ratelimit.exceeded`. */
+export function rateLimited(c: Context<AppEnv>, cls: LimitClass): Response {
+  c.get("audit").emit({
+    type: "ratelimit.exceeded",
+    outcome: "failure",
+    actor: { kind: "anonymous", id: null },
+    reason: cls,
+    data: { class: cls },
+  });
   return errorResponse(c, 429, "rate_limited", "too many requests", {
     "Retry-After": String(RETRY_AFTER_SECONDS),
   });

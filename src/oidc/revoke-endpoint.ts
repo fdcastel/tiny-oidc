@@ -17,7 +17,7 @@ import { authenticateFormClient, protocolForm } from "./token-common.ts";
 
 export function revokeHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c);
+    if (await limited(c.env, "ip_token", ipKey(c.req.raw))) return rateLimited(c, "ip_token");
     const form = await protocolForm(c);
     if (!form.ok) return form.response;
     const auth = await authenticateFormClient(c, form.params, clock);
@@ -33,6 +33,21 @@ export function revokeHandler(clock: Clock): Handler<AppEnv> {
         client_id: client.client_id,
         ...fields,
       });
+    const audit = (
+      type: "token.revoked" | "token.revoke_foreign",
+      uid: string,
+      sid: string | null,
+      data: Record<string, unknown>,
+    ) =>
+      c.get("audit").emit({
+        type,
+        outcome: type === "token.revoked" ? "success" : "failure",
+        actor: { kind: "client", id: client.client_id },
+        user_id: uid,
+        client_id: client.client_id,
+        sid,
+        data,
+      });
     // The hint is advisory (RFC 7009 §2.1); the token's own format decides.
     if (handleType(token) === "refresh") {
       const refresh = await openRefreshHandle(config.keys, token);
@@ -44,8 +59,11 @@ export function revokeHandler(clock: Clock): Handler<AppEnv> {
           "client_revoke",
           client.client_id,
         );
-        log(revoked.ok && revoked.revoked ? "token.revoke" : "token.revoke_foreign", {
-          family_id: refresh.family_id,
+        const own = revoked.ok && revoked.revoked;
+        log(own ? "token.revoke" : "token.revoke_foreign", { family_id: refresh.family_id });
+        audit(own ? "token.revoked" : "token.revoke_foreign", refresh.uid, null, {
+          family: refresh.family_id,
+          hint: "refresh_token",
         });
       }
       return c.body(null, 200);
@@ -65,8 +83,13 @@ export function revokeHandler(clock: Clock): Handler<AppEnv> {
         now,
       );
       log("token.revoke", { sid: access.sid, families: revoked.ok ? revoked.revoked : 0 });
+      audit("token.revoked", access.sub, access.sid, {
+        families: revoked.ok ? revoked.revoked : 0,
+        hint: "access_token",
+      });
     } else if (access !== null) {
       log("token.revoke_foreign", { sid: access.sid });
+      audit("token.revoke_foreign", access.sub, access.sid, { hint: "access_token" });
     }
     return c.body(null, 200);
   };

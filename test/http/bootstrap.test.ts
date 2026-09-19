@@ -6,6 +6,7 @@ import {
   ADMIN_CLI_POST_LOGOUT_URI,
   ADMIN_CLI_REDIRECT_URI,
 } from "../../src/admin/bootstrap.ts";
+import type { AuditEvent } from "../../src/audit/events.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { getClient } from "../../src/db/clients.ts";
 import { Db } from "../../src/db/db.ts";
@@ -110,6 +111,17 @@ describe("POST /api/v1/admin/bootstrap", () => {
     expect(res.status).toBe(201);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = (await res.json()) as BootstrapResponse;
+    expect(
+      h.lines
+        .filter((l) => l["msg"] === "audit")
+        .map((l) => l["event"] as AuditEvent)
+        .find((e) => e.type === "admin.bootstrap"),
+    ).toMatchObject({
+      outcome: "success",
+      actor: { kind: "admin", id: null },
+      client_id: ADMIN_CLI_CLIENT_ID,
+      data: { client_id: ADMIN_CLI_CLIENT_ID },
+    });
     expect(body.invitation).toMatch(/^tio_iv_/);
     expect(body.invitation_url).toBe(`${LOGIN_ORIGIN}/?invitation=${body.invitation}`);
     expect(body.invitation_expires_at).toBe(clock.now() + 7 * 86_400);

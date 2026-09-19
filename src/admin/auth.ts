@@ -62,7 +62,7 @@ export function requireAdmin(clock: Clock): MiddlewareHandler<AppEnv> {
     // 600 per 60 s per token (§6.7). The key is the whole jti: a prefix of a UUID v7 is
     // its timestamp, shared by every token minted in the same millisecond.
     const jti = token.payload.jti as string;
-    if (await limited(c.env, "admin_token", jti)) return rateLimited(c);
+    if (await limited(c.env, "admin_token", jti)) return rateLimited(c, "admin_token");
 
     if (token.sub === token.client_id) {
       // A service client (client_credentials): the current record decides.

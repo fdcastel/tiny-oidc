@@ -14,6 +14,14 @@ export function normalizeEmail(email: string): string {
 }
 
 /** Syntactic validity after trimming, within 254 characters. */
+/** TIO-IX-021: the first character of the local part, `***`, and the full domain. */
+export function maskEmail(email: string | null): string | null {
+  if (email === null) return null;
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return "***";
+  return `${email[0]}***${email.slice(at)}`;
+}
+
 export function isValidEmail(email: string): boolean {
   const trimmed = email.trim();
   return trimmed.length > 0 && trimmed.length <= EMAIL_MAX_LENGTH && EMAIL_PATTERN.test(trimmed);

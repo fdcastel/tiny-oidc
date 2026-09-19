@@ -107,7 +107,8 @@ interface Hint {
 
 export function logoutHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
-    if (await limited(c.env, "ip_navigation", ipKey(c.req.raw))) return rateLimited(c);
+    if (await limited(c.env, "ip_navigation", ipKey(c.req.raw)))
+      return rateLimited(c, "ip_navigation");
     const config = c.get("config");
     const db = c.get("db");
     let settings: Settings;
@@ -243,6 +244,16 @@ export function logoutHandler(clock: Clock): Handler<AppEnv> {
       now,
       settings.interaction_ttl,
     );
+    c.get("audit").emit({
+      type: "interaction.created",
+      outcome: "success",
+      actor: { kind: "user", id: ref.uid },
+      user_id: ref.uid,
+      client_id: client?.client_id ?? null,
+      sid: ref.sid,
+      interaction_id: started.id,
+      data: { kind: "logout", status: "login_required" },
+    });
     c.header("Set-Cookie", started.cookie, { append: true });
     return c.redirect(withQuery(loginUrl, { interaction: started.id }), 303);
   };
