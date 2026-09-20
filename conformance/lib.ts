@@ -104,36 +104,81 @@ export const CONFIG_FILES = [
 export const WAIVER_REASON =
   "feature intentionally unsupported and advertised as such in discovery";
 
+/**
+ * A waiver: a condition allowed to fail or warn, or a whole module allowed to
+ * skip (the suite skips a module itself when discovery says the feature is
+ * absent, and an unexpected skip fails the plan like a failure does).
+ */
 export interface Waiver {
+  "test-name": string;
+  variant: Record<string, string> | "*";
+  "configuration-filename": string;
+  /** The failing condition class; absent for a skip. */
+  condition?: string;
+  /** The block the condition fails in (`"*"` for any); absent for a skip. */
+  "current-block"?: string;
+  "expected-result": "failure" | "warning" | "skip";
+  reason: string;
+  /** What in discovery advertises the absence (a metadata field), for the reviewer. */
+  advertised_by: string;
+}
+
+/** An entry of the suite's expected-failures file. */
+export interface ExpectedFailure {
   "test-name": string;
   variant: Record<string, string> | "*";
   "configuration-filename": string;
   condition: string;
   "current-block": string;
   "expected-result": "failure" | "warning";
-  reason: string;
-  /** What in discovery advertises the absence (a metadata field), for the reviewer. */
-  advertised_by: string;
 }
 
-/** Validates the waivers and returns them in the suite's expected-failures format (reason dropped). */
-export function expectedFailures(waivers: Waiver[]): Omit<Waiver, "reason" | "advertised_by">[] {
-  const out: Omit<Waiver, "reason" | "advertised_by">[] = [];
+/** An entry of the suite's expected-skips file. */
+export interface ExpectedSkip {
+  "test-name": string;
+  variant: Record<string, string> | "*";
+  "configuration-filename": string;
+}
+
+/**
+ * Validates every waiver and splits them into the suite's two files: the
+ * expected failures (with warnings) and the expected skips. The reason and
+ * the advertising field are for the reviewer and do not travel.
+ */
+export function expectedProblems(waivers: Waiver[]): {
+  failures: ExpectedFailure[];
+  skips: ExpectedSkip[];
+} {
+  const failures: ExpectedFailure[] = [];
+  const skips: ExpectedSkip[] = [];
   for (const [i, w] of waivers.entries()) {
-    if (w.reason !== WAIVER_REASON)
-      throw new Error(`waiver ${i} (${w["test-name"]}): reason must be "${WAIVER_REASON}"`);
+    const where = `waiver ${i} (${w["test-name"]})`;
+    if (w.reason !== WAIVER_REASON) throw new Error(`${where}: reason must be "${WAIVER_REASON}"`);
     if (typeof w.advertised_by !== "string" || w.advertised_by.length === 0)
-      throw new Error(
-        `waiver ${i} (${w["test-name"]}): advertised_by must name the discovery field`,
-      );
-    if (w["expected-result"] !== "failure" && w["expected-result"] !== "warning")
-      throw new Error(
-        `waiver ${i} (${w["test-name"]}): expected-result must be failure or warning`,
-      );
-    const { reason: _reason, advertised_by: _by, ...entry } = w;
-    out.push(entry);
+      throw new Error(`${where}: advertised_by must name the discovery field`);
+    const head = {
+      "test-name": w["test-name"],
+      variant: w.variant,
+      "configuration-filename": w["configuration-filename"],
+    };
+    if (w["expected-result"] === "skip") {
+      if (w.condition !== undefined || w["current-block"] !== undefined)
+        throw new Error(`${where}: a skip names no condition or block`);
+      skips.push(head);
+    } else if (w["expected-result"] === "failure" || w["expected-result"] === "warning") {
+      if (typeof w.condition !== "string" || typeof w["current-block"] !== "string")
+        throw new Error(`${where}: a failure or warning names its condition and block`);
+      failures.push({
+        ...head,
+        condition: w.condition,
+        "current-block": w["current-block"],
+        "expected-result": w["expected-result"],
+      });
+    } else {
+      throw new Error(`${where}: expected-result must be failure, warning or skip`);
+    }
   }
-  return out;
+  return { failures, skips };
 }
 
 /** The argument list of `run-test-plan.py` for the runs. */
@@ -141,12 +186,15 @@ export function runnerArgs(
   runs: PlanRun[],
   exportDir: string,
   expectedFailuresFile: string,
+  expectedSkipsFile: string,
 ): string[] {
   return [
     "--export-dir",
     exportDir,
     "--expected-failures-file",
     expectedFailuresFile,
+    "--expected-skips-file",
+    expectedSkipsFile,
     ...runs.flatMap((r) => [r.plan, r.config]),
   ];
 }

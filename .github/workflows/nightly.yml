@@ -103,6 +103,7 @@ jobs:
             conformance/results/export/
             conformance/results/config/
             conformance/results/expected-failures.json
+            conformance/results/expected-skips.json
             conformance/results/server.log
           retention-days: 90
 

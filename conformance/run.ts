@@ -10,7 +10,7 @@
 // It registers (or re-points) the suite's relying parties on staging with the
 // suite's public URLs, rotates their secrets so no secret is stored anywhere,
 // renders the plan configurations, turns conformance/waivers.json into the
-// suite's expected-failures file, and hands everything to the suite's own
+// suite's expected-failures and expected-skips files, and hands everything to the suite's own
 // scripts/run-test-plan.py, whose exit code is this script's. The suite runs
 // in dev mode (no API token), reached over the local address; the OP reaches
 // it over the public one.
@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
   CONFIG_FILES,
-  expectedFailures,
+  expectedProblems,
   placeholders,
   planRuns,
   RELYING_PARTIES,
@@ -157,9 +157,14 @@ async function main(): Promise<number> {
   mkdirSync(exportDir, { recursive: true });
   // Waivers first: a bad one stops the run before anything touches staging.
   const waivers = JSON.parse(readFileSync("conformance/waivers.json", "utf8")) as Waiver[];
+  const problems = expectedProblems(waivers);
   const expectedFile = join(results, "expected-failures.json");
-  writeFileSync(expectedFile, `${JSON.stringify(expectedFailures(waivers), null, 2)}\n`);
-  log(`${waivers.length} waiver(s) → ${expectedFile}`);
+  const skipsFile = join(results, "expected-skips.json");
+  writeFileSync(expectedFile, `${JSON.stringify(problems.failures, null, 2)}\n`);
+  writeFileSync(skipsFile, `${JSON.stringify(problems.skips, null, 2)}\n`);
+  log(
+    `${waivers.length} waiver(s): ${problems.failures.length} expected failure(s) → ${expectedFile}, ${problems.skips.length} expected skip(s) → ${skipsFile}`,
+  );
   const run: RunValues = {
     issuer,
     loginUrl,
@@ -179,7 +184,7 @@ async function main(): Promise<number> {
     writeFileSync(join(configDir, file), renderPlan(template, browser, placeholderValues));
   }
   const runs = planRuns(configDir);
-  const args = runnerArgs(runs, exportDir, expectedFile);
+  const args = runnerArgs(runs, exportDir, expectedFile, skipsFile);
   log(`run-test-plan.py ${args.join(" ")}`);
   if (values["dry-run"]) return 0;
   const scripts = values["suite-scripts"];

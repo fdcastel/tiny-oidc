@@ -11,7 +11,7 @@ results are its artifact.
 |---|---|
 | `docker-compose.yml` | The suite from its prebuilt images (`registry.gitlab.com/openid/conformance-suite` and `…/nginx`, plus MongoDB), dev profile (no API token), `BASE_URL` = the public URL the OP will see |
 | `plans/*.json` | Templates of the plan configurations, host-neutral: `{ISSUER}`, `{LOGIN_URL}`, `{SUITE}`, the clients; `browser.json` is the automation block every plan gets |
-| `waivers.json` | Tests allowed to fail, each with the one permitted reason and the discovery field that advertises the absence; turned into the suite's expected-failures file |
+| `waivers.json` | Conditions allowed to fail or warn and modules allowed to skip, each with the one permitted reason and the discovery field that advertises the absence; turned into the suite's expected-failures and expected-skips files |
 | `lib.ts` | The pure parts (plans and variants, rendering, waivers, the runner's arguments); tested by `test/scripts/conformance.test.ts` |
 | `run.ts` | The run: registers the suite's relying parties on staging with the run's public URL (secrets rotated, never stored), renders the plans, drives the suite's own `scripts/run-test-plan.py` |
 
@@ -77,14 +77,19 @@ node conformance/run.ts --suite-scripts conformance/suite/scripts --public-url h
 
 `--dry-run` registers the clients and renders the configurations without
 running the suite. Results land in `conformance/results/` (ignored by git):
-the rendered configurations, the expected-failures file and the suite's
+the rendered configurations, the expected-failures and expected-skips files and the suite's
 exported zips.
 
 ## Waivers
 
 A waiver names a test (shell wildcards), a variant (`"*"` or the variant
-object), the configuration file, the failing condition class, the block and
-the expected result, exactly as the suite's expected-failures format, plus
-`reason` — which must be the sentence `feature intentionally unsupported and
-advertised as such in discovery` — and `advertised_by`, the discovery field
-that says so. Anything else is rejected before the run starts.
+object), the configuration file and the expected result, plus `reason` —
+which must be the sentence `feature intentionally unsupported and advertised
+as such in discovery` — and `advertised_by`, the discovery field that says
+so. With `"expected-result": "failure"` or `"warning"` it also names the
+failing condition class and the block, exactly as the suite's
+expected-failures format; with `"skip"` it names neither and becomes an
+entry of the suite's expected-skips file (the suite skips a module itself
+when discovery says the feature is absent, and an unexpected skip fails the
+plan like a failure). Anything else is rejected before the run starts, and
+the suite fails a run whose waivers went unused.

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CONFIG_FILES,
-  expectedFailures,
+  expectedProblems,
   placeholders,
   planRuns,
   RELYING_PARTIES,
@@ -61,11 +61,13 @@ describe("conformance plans", () => {
         runs.some((r) => r.plan === plan || r.plan.startsWith(`${plan}[`)),
         plan,
       ).toBe(true);
-    expect(runnerArgs(runs.slice(0, 1), "out", "expected.json")).toEqual([
+    expect(runnerArgs(runs.slice(0, 1), "out", "expected.json", "skips.json")).toEqual([
       "--export-dir",
       "out",
       "--expected-failures-file",
       "expected.json",
+      "--expected-skips-file",
+      "skips.json",
       runs[0]?.plan,
       "cfg/config.json",
     ]);
@@ -142,7 +144,7 @@ describe("conformance plans", () => {
     });
   });
 
-  it("accept only waivers with the one permitted reason and a discovery field, and turn them into the suite's expected-failures entries", () => {
+  it("accept only waivers with the one permitted reason and a discovery field, and turn them into the suite's expected-failures and expected-skips entries", () => {
     const waiver: Waiver = {
       "test-name": "oidcc-request-object-*",
       variant: "*",
@@ -153,26 +155,47 @@ describe("conformance plans", () => {
       reason: WAIVER_REASON,
       advertised_by: "request_parameter_supported: false",
     };
-    expect(expectedFailures([waiver])).toEqual([
-      {
-        "test-name": "oidcc-request-object-*",
-        variant: "*",
-        "configuration-filename": "*",
-        condition: "EnsureRequestObjectSupported",
-        "current-block": "*",
-        "expected-result": "failure",
-      },
-    ]);
-    expect(() => expectedFailures([{ ...waiver, reason: "flaky" }])).toThrow("reason must be");
-    expect(() => expectedFailures([{ ...waiver, advertised_by: "" }])).toThrow("advertised_by");
-    expect(() => expectedFailures([{ ...waiver, "expected-result": "skip" as "failure" }])).toThrow(
+    const skip: Waiver = {
+      "test-name": "oidcc-scope-address",
+      variant: "*",
+      "configuration-filename": "basic.json",
+      "expected-result": "skip",
+      reason: WAIVER_REASON,
+      advertised_by: "scopes_supported (no address)",
+    };
+    expect(expectedProblems([waiver, skip])).toEqual({
+      failures: [
+        {
+          "test-name": "oidcc-request-object-*",
+          variant: "*",
+          "configuration-filename": "*",
+          condition: "EnsureRequestObjectSupported",
+          "current-block": "*",
+          "expected-result": "failure",
+        },
+      ],
+      skips: [
+        {
+          "test-name": "oidcc-scope-address",
+          variant: "*",
+          "configuration-filename": "basic.json",
+        },
+      ],
+    });
+    expect(() => expectedProblems([{ ...waiver, reason: "flaky" }])).toThrow("reason must be");
+    expect(() => expectedProblems([{ ...waiver, advertised_by: "" }])).toThrow("advertised_by");
+    expect(() => expectedProblems([{ ...waiver, "expected-result": "info" as "failure" }])).toThrow(
       "expected-result",
     );
-    // The committed file is valid and, so far, empty.
-    const committed = JSON.parse(readFileSync("conformance/waivers.json", "utf8")) as Waiver[];
-    expect(expectedFailures(committed)).toEqual(
-      committed.map(({ reason: _r, advertised_by: _a, ...rest }) => rest),
+    const { condition: _c, ...noCondition } = waiver;
+    expect(() => expectedProblems([noCondition])).toThrow("names its condition and block");
+    expect(() => expectedProblems([{ ...skip, condition: "X" }])).toThrow(
+      "a skip names no condition or block",
     );
+    // The committed file is valid.
+    const committed = JSON.parse(readFileSync("conformance/waivers.json", "utf8")) as Waiver[];
+    const problems = expectedProblems(committed);
+    expect(problems.failures.length + problems.skips.length).toBe(committed.length);
   });
 
   it("is what the nightly job runs", () => {
