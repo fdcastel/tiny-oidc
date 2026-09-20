@@ -142,8 +142,13 @@ jobs:
       - uses: grafana/setup-k6-action@v1
       - name: Prepare staging (settings, group, fake upstream, relying parties)
         run: node perf/seed.ts prepare --groups staff
-      - name: Import the population unless it is already there (TIO-ADMIN-021 benchmark on the first night)
-        run: node perf/seed.ts import --users "$TIO_PERF_USERS" --groups staff --skip-if-seeded --report perf/data/import-benchmark.json
+      # The population is re-created every night from this runner: a Durable Object lives where
+      # its first request entered Cloudflare, and a population created by another night's runner
+      # (another region) puts a cross-colo round trip into every object call it measures.
+      - name: Delete last night's population
+        run: node perf/seed.ts delete --users "$TIO_PERF_USERS"
+      - name: Import the population (TIO-ADMIN-021 benchmark)
+        run: node perf/seed.ts import --users "$TIO_PERF_USERS" --groups staff --report perf/data/import-benchmark.json
       - name: Harvest the tokens (TIO-TEST-050)
         run: node perf/seed.ts harvest --count "$TIO_PERF_HARVEST" --rate 50 --report perf/data/harvest.json
       - name: k6 scenarios with the §2.7 thresholds (TIO-PERF-001, TIO-TEST-051)

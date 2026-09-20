@@ -25,6 +25,9 @@ export const RP_REDIRECT = "https://perf-rp.invalid/callback";
 
 /** The measurements of TIO-OBS-004, one custom metric each, tagged by scenario. */
 export const serverMs = new Trend("server_ms", true);
+/** Diagnostics: the same duration for requests without any D1 read, and with one. */
+export const serverMsWarm = new Trend("server_ms_warm", true);
+export const serverMsD1 = new Trend("server_ms_d1", true);
 export const doCalls = new Counter("do_calls");
 export const d1Reads = new Counter("d1_reads");
 export const d1Writes = new Counter("d1_writes");
@@ -53,6 +56,7 @@ export function record(res, scenario = exec.scenario.name) {
   const budget = BUDGETS[scenario] || BUDGETS[scenario.replace(/_(burst|steps)$/, "")];
   if (timing.app !== null) {
     serverMs.add(timing.app, tags);
+    (timing.d1r > 0 ? serverMsD1 : serverMsWarm).add(timing.app, tags);
     if (budget) withinBudget.add(timing.app <= budget.p99, tags);
   }
   doCalls.add(timing.do, tags);

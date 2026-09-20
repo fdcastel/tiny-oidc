@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  diagnosticRows,
   type K6Summary,
   renderLoadMarkdown,
   type SeedReport,
@@ -24,6 +25,8 @@ const summary: K6Summary = {
       values: { count: 0, rate: 0 },
       thresholds: { "rate<5": { ok: true } },
     },
+    "server_ms_warm{scenario:token_refresh}": { values: { count: 97, med: 31, "p(99)": 88.4 } },
+    "server_ms_d1{scenario:token_refresh}": { values: { count: 3, med: 140, "p(99)": 310 } },
     http_reqs: { values: { count: 100 } },
   },
 };
@@ -84,6 +87,26 @@ describe("load summary", () => {
       "| token_refresh | `http_req_failed{scenario:token_refresh}` rate<0.001 | 0 | **FAIL** |",
     );
     expect(text).toContain("**1 of 3 thresholds failed.**");
+    // The warm / D1 split is rendered as a diagnostic, without a result column.
+    expect(diagnosticRows("token_refresh", summary)).toEqual([
+      {
+        scenario: "token_refresh",
+        metric: "server_ms_d1{scenario:token_refresh}",
+        count: 3,
+        med: 140,
+        p99: 310,
+      },
+      {
+        scenario: "token_refresh",
+        metric: "server_ms_warm{scenario:token_refresh}",
+        count: 97,
+        med: 31,
+        p99: 88.4,
+      },
+    ]);
+    expect(text).toContain(
+      "| token_refresh | `server_ms_warm{scenario:token_refresh}` | 97 | 31 | 88.4 |",
+    );
     expect(renderLoadMarkdown([], [])).toContain("No k6 summaries found.");
     expect(
       renderLoadMarkdown(

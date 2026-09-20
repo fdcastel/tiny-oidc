@@ -140,12 +140,15 @@ describe("perf flow helpers", () => {
 
   it("is what the nightly job runs: the seed CLI names every subcommand and the load job calls them", () => {
     const cli = readFileSync("perf/seed.ts", "utf8");
-    for (const command of ["generate", "prepare", "import", "harvest"]) {
+    for (const command of ["generate", "prepare", "import", "harvest", "delete"]) {
       expect(cli).toContain(`node perf/seed.ts ${command}`);
     }
     const nightly = readFileSync(".github/workflows/nightly.yml", "utf8");
     expect(nightly).toContain("perf/seed.ts prepare");
+    // Every night places its own population (the objects follow the runner's colo).
+    expect(nightly).toContain("perf/seed.ts delete");
     expect(nightly).toContain("perf/seed.ts import");
+    expect(nightly).not.toContain("--skip-if-seeded");
     expect(nightly).toContain("perf/seed.ts harvest");
   });
 });

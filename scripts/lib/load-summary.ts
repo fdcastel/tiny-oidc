@@ -40,6 +40,39 @@ export function thresholdRows(scenario: string, summary: K6Summary): ThresholdRo
   return rows;
 }
 
+export interface DiagnosticRow {
+  scenario: string;
+  /** The tagged metric, e.g. `server_ms_warm{scenario:token_refresh}`. */
+  metric: string;
+  count: number;
+  med: number | null;
+  p99: number | null;
+}
+
+/**
+ * The warm / D1-touching split of the server-side duration (perf/scenarios/lib.js):
+ * no threshold, but the tail's origin is read from it.
+ */
+export function diagnosticRows(scenario: string, summary: K6Summary): DiagnosticRow[] {
+  const rows: DiagnosticRow[] = [];
+  for (const [metric, data] of Object.entries(summary.metrics).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    if (!/^server_ms_(warm|d1)\{/.test(metric)) continue;
+    const v = data.values ?? {};
+    const num = (x: number | undefined) =>
+      typeof x === "number" ? Math.round(x * 100) / 100 : null;
+    rows.push({
+      scenario,
+      metric,
+      count: v["count"] ?? 0,
+      med: num(v["med"]),
+      p99: num(v["p(99)"]),
+    });
+  }
+  return rows;
+}
+
 export interface SeedReport {
   kind: "import_benchmark" | "seed_harvest";
   duration_s: number;
@@ -85,6 +118,21 @@ export function renderLoadMarkdown(
         ? `All ${rows.length} thresholds passed.`
         : `**${failed} of ${rows.length} thresholds failed.**`,
     );
+    const diagnostics = summaries.flatMap((s) => diagnosticRows(s.scenario, s.summary));
+    if (diagnostics.length > 0) {
+      lines.push(
+        "",
+        "Server-side duration by whether the request read D1 (a cold isolate's loads, or a background refresh that started in it):",
+        "",
+        "| Scenario | Requests | Count | p50 ms | p99 ms |",
+        "|---|---|---|---|---|",
+      );
+      for (const d of diagnostics) {
+        lines.push(
+          `| ${d.scenario} | \`${d.metric}\` | ${d.count} | ${d.med ?? "—"} | ${d.p99 ?? "—"} |`,
+        );
+      }
+    }
   } else {
     lines.push("No k6 summaries found.");
   }

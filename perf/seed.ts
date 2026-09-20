@@ -15,6 +15,10 @@
 //                              --count 100000 [--from 0 --rate 50 --concurrency 20 --out FILE]
 //       Federated logins through the fake upstream, one per user, each leaving a session cookie
 //       and a refresh token in the NDJSON the k6 scenarios read.
+//   node perf/seed.ts delete   --issuer OP --client-id ID --client-secret S --users 1000 [--from 0 --concurrency 20]
+//       Deletes the population's users (their objects with them), so that the next import
+//       places them again: a Durable Object lives where its first request entered, and the
+//       nightly's measurements only mean something when the runner of the night created them.
 //
 // The values above are also read from TIO_PERF_ISSUER, TIO_PERF_CLIENT_ID,
 // TIO_PERF_CLIENT_SECRET, TIO_PERF_LOGIN_URL, TIO_PERF_SEED, TIO_FAKE_ISSUER,
@@ -364,6 +368,47 @@ async function importUsers(): Promise<void> {
     process.exitCode = 1;
 }
 
+// --- delete -----------------------------------------------------------------------------
+
+async function deleteUsers(): Promise<void> {
+  const a = admin();
+  const users = int("users");
+  const from = int("from");
+  const counts = { deleted: 0, absent: 0, failed: 0 };
+  const errors: string[] = [];
+  const startedAt = Date.now();
+  log(`delete: population "${population.seed}" (${from}..${from + users - 1})`);
+  await pool(
+    Array.from({ length: users }, (_, i) => from + i),
+    int("concurrency"),
+    async (n) => {
+      const email = emailOf(population, n);
+      const found = await a.json<{ items?: { id: string }[] }>(
+        "GET",
+        `users?email=${encodeURIComponent(email)}`,
+      );
+      const id = found.body.items?.[0]?.id;
+      if (id === undefined) {
+        counts.absent += 1;
+        return;
+      }
+      const res = await a.call("DELETE", `users/${id}`);
+      if (res.status === 204 || res.status === 404) counts.deleted += 1;
+      else {
+        counts.failed += 1;
+        if (errors.length < 20)
+          errors.push(`${email}: ${res.status} ${(await res.text()).slice(0, 120)}`);
+      }
+    },
+  );
+  const s = ((Date.now() - startedAt) / 1000).toFixed(1);
+  log(
+    `delete: ${counts.deleted} deleted, ${counts.absent} absent, ${counts.failed} failed in ${s}s`,
+  );
+  for (const e of errors) log(`delete: ${e}`);
+  if (counts.failed > 0) process.exitCode = 1;
+}
+
 // --- harvest ----------------------------------------------------------------------------
 
 interface Harvested {
@@ -513,10 +558,13 @@ const commands: Record<string, () => Promise<void> | void> = {
   prepare,
   import: importUsers,
   harvest,
+  delete: deleteUsers,
 };
 const run = commands[command];
 if (run === undefined) {
-  console.error(`seed: unknown command "${command}" (generate | prepare | import | harvest)`);
+  console.error(
+    `seed: unknown command "${command}" (generate | prepare | import | harvest | delete)`,
+  );
   process.exit(2);
 }
 await run();
