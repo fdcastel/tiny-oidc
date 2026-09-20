@@ -173,10 +173,10 @@ async function main(): Promise<number> {
     },
   };
   const browser = readFileSync("conformance/plans/browser.json", "utf8");
-  const values = placeholders(run);
+  const placeholderValues = placeholders(run);
   for (const file of CONFIG_FILES) {
     const template = readFileSync(`conformance/plans/${file}`, "utf8");
-    writeFileSync(join(configDir, file), renderPlan(template, browser, values));
+    writeFileSync(join(configDir, file), renderPlan(template, browser, placeholderValues));
   }
   const runs = planRuns(configDir);
   const args = runnerArgs(runs, exportDir, expectedFile);
