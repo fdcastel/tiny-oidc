@@ -7,7 +7,7 @@ import type { Clock, Settings } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
 import { clearCookie, parseCookies, SESSION_COOKIE } from "../router/cookies.ts";
 import { errorResponse, sanitizeDescription } from "../router/errors.ts";
-import { uniqueParams } from "../router/form.ts";
+import { readForm, uniqueParams } from "../router/form.ts";
 import { userStub } from "../users/create.ts";
 import {
   type AuthorizeErrorCode,
@@ -24,10 +24,12 @@ import {
   withQuery,
 } from "./interactions.ts";
 
-// GET /authorize (spec §5.4): the validation pipeline in spec order, then the
-// session evaluation of step 14. Errors before the redirect URI is trusted go
-// to the login app (TIO-AUTHZ-018); later ones go back to the client with
-// `state` and `iss` (TIO-AUTHZ-019); everything else starts an interaction.
+// GET|POST /authorize (spec §5.4): the validation pipeline in spec order, then
+// the session evaluation of step 14. A POST carries the same parameters as a
+// form body (OIDC Core §3.1.2.1; the conformance suite exercises it). Errors
+// before the redirect URI is trusted go to the login app (TIO-AUTHZ-018);
+// later ones go back to the client with `state` and `iss` (TIO-AUTHZ-019);
+// everything else starts an interaction.
 
 export const REQUEST_URI_PREFIX = "urn:ietf:params:oauth:request_uri:";
 
@@ -76,9 +78,13 @@ export function authorizeHandler(clock: Clock): Handler<AppEnv> {
       );
     };
 
-    // 1. Duplicates (TIO-AUTHZ-001); the method, query size and body are the router's.
-    const parsed = uniqueParams(new URL(c.req.url).searchParams);
-    if (!parsed.ok) return toLoginApp("invalid_request", "duplicate parameter");
+    // 1. The parameter source and duplicates (TIO-AUTHZ-001); the method, query size and
+    // body size are the router's. A POST reads its form body, like /logout.
+    const parsed =
+      c.req.method === "POST"
+        ? await readForm(c.req.raw)
+        : uniqueParams(new URL(c.req.url).searchParams);
+    if (!parsed.ok) return toLoginApp("invalid_request", parsed.reason);
     const params = parsed.params;
 
     // 2. The client (TIO-AUTHZ-002).

@@ -1,10 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  CONFIG_SOURCES,
+  CONFIG_FILES,
   expectedFailures,
   placeholders,
   planRuns,
+  RELYING_PARTIES,
   type RunValues,
   render,
   renderPlan,
@@ -27,29 +28,30 @@ const run: RunValues = {
   alias: "tiny-oidc",
   clients: {
     basic: { id: "conformance-basic", secret: "s1" },
-    post: { id: "conformance-post", secret: "s2" },
-    none: { id: "conformance-none", secret: null },
-  },
-  clients2: {
-    basic: { id: "conformance-basic-2", secret: "t1" },
-    post: { id: "conformance-post-2", secret: "t2" },
-    none: { id: "conformance-none-2", secret: null },
+    basic2: { id: "conformance-basic2", secret: "s2" },
+    post: { id: "conformance-post", secret: "s3" },
   },
 };
 
 describe("conformance plans", () => {
-  it("run the four plans of TIO-TEST-040, the basic one in the three client-authentication variants", () => {
+  it("run the four plans of TIO-TEST-040 with only the variants each plan leaves selectable, as the suite's own CI does", () => {
     const runs = planRuns("cfg");
     expect(runs.map((r) => r.plan)).toEqual([
       "oidcc-config-certification-test-plan",
-      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic]",
-      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_post]",
-      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=none]",
-      "oidcc-rp-initiated-logout-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic]",
-      "oidcc-backchannel-rp-initiated-logout-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic]",
+      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client]",
+      "oidcc-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]",
+      "oidcc-backchannel-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]",
     ]);
-    // Every rendered configuration has a template, and every template is used.
-    for (const r of runs) expect(CONFIG_SOURCES[r.config.replace("cfg/", "")]).toBeDefined();
+    // Every run has a rendered configuration of its own, and every configuration a template.
+    expect(runs.map((r) => r.config)).toEqual(CONFIG_FILES.map((f) => `cfg/${f}`));
+    for (const file of CONFIG_FILES)
+      expect(existsSync(`conformance/plans/${file}`), file).toBe(true);
+    // The basic plan authenticates its client both ways; the second client mirrors the first.
+    expect(RELYING_PARTIES).toEqual({
+      basic: "client_secret_basic",
+      basic2: "client_secret_basic",
+      post: "client_secret_post",
+    });
     const config = JSON.parse(readFileSync("scripts/trace.config.json", "utf8")) as {
       conformance_plans: Record<string, string[]>;
     };
@@ -71,14 +73,14 @@ describe("conformance plans", () => {
 
   it("render every template into valid JSON with the run's values, the browser block driving the login app by its control ids (TIO-TEST-041)", () => {
     const browser = readFileSync("conformance/plans/browser.json", "utf8");
-    for (const [file, source] of Object.entries(CONFIG_SOURCES)) {
-      const template = readFileSync(`conformance/plans/${source.template}`, "utf8");
-      const rendered = JSON.parse(
-        renderPlan(template, browser, placeholders(run, source.variant)),
-      ) as {
+    for (const file of CONFIG_FILES) {
+      const template = readFileSync(`conformance/plans/${file}`, "utf8");
+      const rendered = JSON.parse(renderPlan(template, browser, placeholders(run))) as {
         alias: string;
         server: { discoveryUrl: string };
         client?: { client_id: string; client_secret: string };
+        client2?: { client_id: string; client_secret: string };
+        client_secret_post?: { client_id: string; client_secret: string };
         browser?: { match: string; tasks: { match: string; commands?: unknown[][] }[] }[];
       };
       expect(rendered.alias, file).toBe("tiny-oidc");
@@ -86,9 +88,17 @@ describe("conformance plans", () => {
         "https://auth.example.com/.well-known/openid-configuration",
       );
       expect(JSON.stringify(rendered)).not.toMatch(/\{[A-Z_]+\}/);
-      if (source.template !== "config.json") {
-        expect(rendered.client?.client_id).toBe(run.clients[source.variant].id);
-        expect(rendered.client?.client_secret).toBe(run.clients[source.variant].secret ?? "");
+      if (file !== "config.json") {
+        expect(rendered.client).toEqual(
+          expect.objectContaining({ client_id: "conformance-basic", client_secret: "s1" }),
+        );
+        expect(rendered.client2).toEqual({ client_id: "conformance-basic2", client_secret: "s2" });
+        // The basic plan's client_secret_post module reads its own client (static_client fields).
+        expect(rendered.client_secret_post, file).toEqual(
+          file === "basic.json"
+            ? expect.objectContaining({ client_id: "conformance-post", client_secret: "s3" })
+            : undefined,
+        );
         const [authorize, logout] = rendered.browser as NonNullable<typeof rendered.browser>;
         expect(authorize?.match).toBe("https://auth.example.com/authorize*");
         expect(authorize?.tasks[0]?.match).toBe("https://login.example.com/*");

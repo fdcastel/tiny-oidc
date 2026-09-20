@@ -50,6 +50,26 @@ async function authorize(
   return res;
 }
 
+/** POST /authorize with a form body (or another content type) through the app. */
+async function authorizePost(
+  params: Record<string, string> | string,
+  contentType = "application/x-www-form-urlencoded",
+): Promise<Response> {
+  const body = typeof params === "string" ? params : new URLSearchParams(params).toString();
+  const ctx = createExecutionContext();
+  const res = await app.fetch(
+    new Request(url("/authorize"), {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body,
+    }),
+    env,
+    ctx,
+  );
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
 const location = (res: Response): URL => {
   expect(res.status).toBe(303);
   return new URL(res.headers.get("location") as string);
@@ -79,6 +99,7 @@ function valid(client: Client, overrides: Record<string, string | undefined> = {
 let web: Client;
 let consentful: Client;
 let grouped: Client;
+let unpinned: Client;
 
 const loggedIn = (profile?: InitProfile) => loggedInUser(clock, profile);
 
@@ -124,10 +145,18 @@ describe("GET /authorize", () => {
         { existingGroups: new Set(["staff"]) },
       )
     ).client;
+    unpinned = (
+      await createTestClient(db, clock, {
+        redirect_uris: [RP],
+        skip_consent: true,
+        token_endpoint_auth_method: "client_secret_basic",
+        require_pkce: false,
+      })
+    ).client;
     expect((await authorize({ client_id: "nobody" })).status).toBe(303);
   });
 
-  it("[TIO-AUTHZ-001] rejects duplicate parameters and non-GET methods; the router bounds the query at 8 KB", async () => {
+  it("[TIO-AUTHZ-001] rejects duplicate parameters and methods other than GET and POST; the router bounds the query at 8 KB", async () => {
     const dup = await authorize(`client_id=${web.client_id}&client_id=${web.client_id}`);
     expect(location(dup).origin + location(dup).pathname).toBe(LOGIN_URL);
     expect(query(dup)).toEqual({
@@ -135,11 +164,36 @@ describe("GET /authorize", () => {
       error_description: "duplicate parameter",
     });
     const ctx = createExecutionContext();
-    const post = await app.fetch(new Request(url("/authorize"), { method: "POST" }), env, ctx);
+    const put = await app.fetch(new Request(url("/authorize"), { method: "PUT" }), env, ctx);
     await waitOnExecutionContext(ctx);
-    expect(post.status).toBe(405);
+    expect(put.status).toBe(405);
+    expect(put.headers.get("allow")).toBe("GET, POST");
     const long = await authorize(`client_id=${web.client_id}&state=${"a".repeat(9_000)}`);
     expect(long.status).toBe(414);
+  });
+
+  it("[TIO-AUTHZ-001] POST /authorize reads the same parameters from a form body (OIDC Core §3.1.2.1): it starts the interaction, refuses duplicates and any other content type", async () => {
+    const posted = await authorizePost(valid(web));
+    const target = location(posted);
+    expect(target.origin + target.pathname).toBe(LOGIN_URL);
+    expect(target.searchParams.get("interaction")).toMatch(/^[A-Za-z0-9_-]+$/);
+    const doc = await interactionDoc(target.searchParams.get("interaction") as string);
+    expect(doc.client_id).toBe(web.client_id);
+    expect((doc.request as AuthorizeRequest).state).toBe("st-123");
+    const dup = await authorizePost(`client_id=${web.client_id}&client_id=${web.client_id}`);
+    expect(query(dup)).toEqual({
+      error: "invalid_request",
+      error_description: "duplicate parameter",
+    });
+    const json = await authorizePost(JSON.stringify(valid(web)), "application/json");
+    expect(query(json)).toEqual({
+      error: "invalid_request",
+      error_description: "unsupported content type",
+    });
+    // The redirectable errors of a POST go back to the client like a GET's.
+    const bad = await authorizePost(valid(web, { response_type: "token" }));
+    expect(location(bad).origin + location(bad).pathname).toBe(RP);
+    expect(query(bad)).toMatchObject({ error: "unsupported_response_type", state: "st-123" });
   });
 
   it("[TIO-AUTHZ-002] [TIO-AUTHZ-018] a missing, unknown, disabled or code-less client is reported to the login app without touching the redirect_uri", async () => {
@@ -256,6 +310,39 @@ describe("GET /authorize", () => {
       const r = await authorize(valid(web, { code_challenge, response_type: "token" }));
       expect(query(r)["error"]).toBe("unsupported_response_type");
     }
+  });
+
+  it("[TIO-AUTHZ-008] a client registered with require_pkce = 0 may omit both PKCE parameters (the code then binds no challenge); whatever it does send is validated in full", async () => {
+    const none = await authorize(
+      valid(unpinned, { code_challenge: undefined, code_challenge_method: undefined }),
+    );
+    const id = location(none).searchParams.get("interaction") as string;
+    expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect((await interactionDoc(id)).request).toMatchObject({ code_challenge: null });
+    const withBoth = await authorize(valid(unpinned));
+    const bothId = location(withBoth).searchParams.get("interaction") as string;
+    expect((await interactionDoc(bothId)).request).toMatchObject({
+      code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    });
+    const methodOnly = await authorize(valid(unpinned, { code_challenge: undefined }));
+    expect(query(methodOnly)["error"]).toBe("invalid_request");
+    expect(query(methodOnly)["error_description"]).toMatch(/code_challenge is required/);
+    const challengeOnly = await authorize(valid(unpinned, { code_challenge_method: undefined }));
+    expect(query(challengeOnly)).toMatchObject({
+      error: "invalid_request",
+      error_description: "code_challenge_method must be S256",
+    });
+    for (const code_challenge of ["a".repeat(42), `${"a".repeat(42)}!`]) {
+      const r = await authorize(valid(unpinned, { code_challenge }));
+      expect(query(r)["error_description"]).toMatch(/code_challenge is required/);
+    }
+    const plain = await authorize(valid(unpinned, { code_challenge_method: "plain" }));
+    expect(query(plain)["error_description"]).toBe("code_challenge_method must be S256");
+    // The default client still requires both.
+    const pinned = await authorize(
+      valid(web, { code_challenge: undefined, code_challenge_method: undefined }),
+    );
+    expect(query(pinned)["error_description"]).toMatch(/code_challenge is required/);
   });
 
   it("[TIO-AUTHZ-009] [TIO-SCOPE-001] scope must be present, include openid, hold only supported scopes allowed for the client, without duplicates", async () => {

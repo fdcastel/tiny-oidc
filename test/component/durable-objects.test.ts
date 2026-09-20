@@ -70,7 +70,7 @@ describe("UserDO", () => {
     });
   });
 
-  it("migrates the §4.2 schema lazily and idempotently and records the version", async () => {
+  it("migrates the §4.2 schema lazily and idempotently and records the version; the version 3 rebuild of auth_codes keeps a live code (rows inserted directly to construct the earlier schema)", async () => {
     const stub = userStub("schema");
     await stub.init({ ...profile("u3"), email_verified: false }, 1_790_000_000);
     const first = await stub.getProfile();
@@ -124,6 +124,51 @@ describe("UserDO", () => {
         .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'")
         .toArray()[0];
       expect(version?.value).toBe(String(USER_SCHEMA_VERSION));
+    });
+    // An object at version 2 (auth_codes.code_challenge NOT NULL) holding a live code: the
+    // version 3 rebuild copies the row, keeps the index and admits a challenge-less code.
+    await runInDurableObject(stub, (_instance: UserDO, state) => {
+      const sql = state.storage.sql;
+      sql.exec("DROP TABLE auth_codes");
+      sql.exec(
+        "CREATE TABLE auth_codes (secret_hash BLOB PRIMARY KEY, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, scope TEXT NOT NULL, nonce TEXT, code_challenge TEXT NOT NULL, sid TEXT NOT NULL, auth_time INTEGER NOT NULL, amr TEXT NOT NULL, acr TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER)",
+      );
+      sql.exec("CREATE INDEX auth_codes_expires ON auth_codes(expires_at)");
+      sql.exec(
+        "INSERT INTO auth_codes VALUES (?, 'c1', 'https://rp.example.com/cb', 'openid', NULL, 'challenge-1', 'sid-1', 1, '[\"pk\"]', 'urn:x', 1, 1_790_000_060, NULL)",
+        new Uint8Array([1, 2, 3]),
+      );
+      sql.exec("UPDATE meta SET value = '2' WHERE key = 'schema_version'");
+    });
+    await evictDurableObject(stub);
+    expect(await stub.putChallenge("k2", "v", 1_790_000_100)).toEqual({ ok: true });
+    await runInDurableObject(stub, (_instance: UserDO, state) => {
+      const sql = state.storage.sql;
+      const rows = sql
+        .exec<{ client_id: string; code_challenge: string | null }>(
+          "SELECT client_id, code_challenge FROM auth_codes ORDER BY client_id",
+        )
+        .toArray();
+      expect(rows).toEqual([{ client_id: "c1", code_challenge: "challenge-1" }]);
+      expect(
+        sql
+          .exec<{ name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'auth_codes' AND sql IS NOT NULL",
+          )
+          .toArray()
+          .map((r) => r.name),
+      ).toEqual(["auth_codes_expires"]);
+      sql.exec(
+        "INSERT INTO auth_codes VALUES (?, 'c2', 'https://rp.example.com/cb', 'openid', NULL, NULL, 'sid-1', 1, '[]', 'urn:x', 1, 1_790_000_060, NULL)",
+        new Uint8Array([4, 5, 6]),
+      );
+      expect(
+        sql.exec("SELECT count(*) AS n FROM auth_codes WHERE code_challenge IS NULL").one()["n"],
+      ).toBe(1);
+      expect(
+        sql.exec<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'").one()
+          .value,
+      ).toBe(String(USER_SCHEMA_VERSION));
     });
   });
 

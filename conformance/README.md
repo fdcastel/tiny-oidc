@@ -18,11 +18,28 @@ results are its artifact.
 ## The four plans
 
 `oidcc-config-certification-test-plan`; `oidcc-basic-certification-test-plan`
-with `client_auth_type` `client_secret_basic`, `client_secret_post` and
-`none` (public client with PKCE); `oidcc-rp-initiated-logout-certification-test-plan`;
-`oidcc-backchannel-rp-initiated-logout-certification-test-plan`. Every plan
-runs `server_metadata=discovery`, `client_registration=static_client`,
-`response_type=code`, `response_mode=default`.
+(the plan itself runs `client_secret_basic` throughout and one
+`client_secret_post` module, read from the `client_secret_post` block of
+the configuration); `oidcc-rp-initiated-logout-certification-test-plan`;
+`oidcc-backchannel-rp-initiated-logout-certification-test-plan`. Each plan
+is invoked with only the variants it leaves selectable, as the suite's own CI
+does (`.gitlab-ci/run-tests.sh`): none for the config plan,
+`[server_metadata=discovery][client_registration=static_client]` for the
+basic plan, `[response_type=code][client_registration=static_client]` for the
+logout plans. A variant the plan fixes itself is refused on the command line.
+
+The suite offers no plan that sends PKCE with a public client, so the `none`
+variant is covered by the `oauth4webapi` interop suite instead. Its modules
+send no `code_challenge` at all (only `oidcc-ensure-request-with-valid-pkce-succeeds`
+does), which is why the three relying parties are confidential clients
+registered with `require_pkce: false` (spec TIO-AUTHZ-008, ADR 0013).
+
+## The relying parties
+
+`conformance-basic` (`client`), `conformance-basic2` (`client2`) and
+`conformance-post` (`client_secret_post`), created on the first run and
+re-pointed at the run's tunnel URL afterwards, their secrets rotated on every
+run and never stored.
 
 ## How the browser automation works
 

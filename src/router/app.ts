@@ -277,7 +277,7 @@ export function createApp(deps: AppDeps) {
   app.get("/.well-known/jwks.json", jwksHandler);
   app.get("/.well-known/webauthn", webauthnHandler);
   app.get("/api/v1/health", healthHandler(deps.clock));
-  app.get("/authorize", authorizeHandler(deps.clock));
+  app.on(["GET", "POST"], "/authorize", authorizeHandler(deps.clock));
   app.post("/par", parHandler(deps.clock));
   app.post("/token", tokenHandler(deps.clock));
   app.on(["GET", "POST"], "/userinfo", userinfoHandler(deps.clock));

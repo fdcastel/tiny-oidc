@@ -35,10 +35,10 @@ export interface Harness {
   lines: LogLine[];
   /** A request to the app under the test issuer. */
   send(path: string, options?: CallOptions): Promise<Response>;
-  /** Starts an authorize interaction through /authorize and returns its id and binding cookie. */
+  /** Starts an authorize interaction through /authorize and returns its id and binding cookie (an `undefined` override removes the parameter). */
   start(
     client: Client,
-    overrides?: Record<string, string>,
+    overrides?: Record<string, string | undefined>,
     sessionCookie?: string,
   ): Promise<Started>;
   /** GET the interaction document. */
@@ -66,7 +66,7 @@ export function harness(clock = new FakeClock(1_800_000_000)): Harness {
   };
   const start = async (
     client: Client,
-    overrides: Record<string, string> = {},
+    overrides: Record<string, string | undefined> = {},
     sessionCookie?: string,
   ): Promise<Started> => {
     const params = new URLSearchParams({
@@ -78,8 +78,11 @@ export function harness(clock = new FakeClock(1_800_000_000)): Harness {
       code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
       code_challenge_method: "S256",
       nonce: "n-1",
-      ...overrides,
     });
+    for (const [name, value] of Object.entries(overrides)) {
+      if (value === undefined) params.delete(name);
+      else params.set(name, value);
+    }
     const res = await send(`/authorize?${params}`, { origin: null, cookie: sessionCookie ?? null });
     if (res.status !== 303) throw new Error(`authorize answered ${res.status}`);
     const location = new URL(res.headers.get("location") as string);

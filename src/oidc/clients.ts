@@ -64,6 +64,7 @@ export const ClientInputSchema = z
     allowed_groups: z.array(z.string()).nullable().default(null),
     skip_consent: z.boolean().default(false),
     require_par: z.boolean().default(false),
+    require_pkce: z.boolean().default(true),
     offline_access: z.boolean().default(false),
     access_token_ttl: ttl("access_token_ttl"),
     id_token_ttl: ttl("id_token_ttl"),
@@ -93,6 +94,7 @@ export interface Client {
   allowed_groups: string[] | null;
   skip_consent: boolean;
   require_par: boolean;
+  require_pkce: boolean;
   offline_access: boolean;
   access_token_ttl: number | null;
   id_token_ttl: number | null;
@@ -173,6 +175,10 @@ export function validateClientInput(input: ClientInput, context: ValidationConte
     violations.push(
       "grant_types: client_credentials requires a confidential authentication method",
     );
+  }
+  // PKCE is a public client's only binding (TIO-AUTHZ-008, Appendix B #37).
+  if (method === "none" && !input.require_pkce) {
+    violations.push("require_pkce: a public client cannot clear it");
   }
   if (method === "private_key_jwt") {
     if ((input.jwks === null) === (input.jwks_uri === null)) {
@@ -256,6 +262,7 @@ export function clientFromInput(
     allowed_groups: input.allowed_groups,
     skip_consent: input.skip_consent,
     require_par: input.require_par,
+    require_pkce: input.require_pkce,
     offline_access: input.offline_access,
     access_token_ttl: input.access_token_ttl,
     id_token_ttl: input.id_token_ttl,

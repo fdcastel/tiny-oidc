@@ -285,6 +285,59 @@ describe("POST /token: authorization_code", () => {
     expect(await (await exchange(web, late.code)).json()).toMatchObject({ error: "invalid_grant" });
   });
 
+  it("[TIO-TOKEN-011] [TIO-AUTHZ-008] a code issued without a challenge to a require_pkce = 0 client redeems without a verifier and refuses one; the same client's code with a challenge still needs its verifier", async () => {
+    const unpinned = await createTestClient(db, clock, {
+      redirect_uris: [RP_REDIRECT],
+      token_endpoint_auth_method: "client_secret_basic",
+      require_pkce: false,
+      skip_consent: true,
+      scopes_allowed: ["openid"],
+    });
+    const authorization = `Basic ${btoa(`${unpinned.client.client_id}:${unpinned.secret}`)}`;
+    const user = await userWithPasskey(clock);
+    const noPkce = await login(unpinned.client, user, {
+      scope: "openid",
+      code_challenge: undefined,
+      code_challenge_method: undefined,
+    } as Record<string, string>);
+    const withVerifier = await token(
+      {
+        grant_type: "authorization_code",
+        code: noPkce.code,
+        redirect_uri: RP_REDIRECT,
+        code_verifier: VERIFIER,
+      },
+      { authorization },
+    );
+    expect(withVerifier.status).toBe(400);
+    expect(await withVerifier.json()).toMatchObject({ error: "invalid_grant" });
+    // The refusal consumed nothing: the code is still redeemable without a verifier.
+    const plain = await token(
+      { grant_type: "authorization_code", code: noPkce.code, redirect_uri: RP_REDIRECT },
+      { authorization },
+    );
+    expect(plain.status).toBe(200);
+    const body = (await plain.json()) as TokenBody;
+    expect(body.id_token).toMatch(/^eyJ/);
+    await verify(body.id_token as string, "JWT", unpinned.client.client_id);
+    const withPkce = await login(unpinned.client, user, { scope: "openid" });
+    const missing = await token(
+      { grant_type: "authorization_code", code: withPkce.code, redirect_uri: RP_REDIRECT },
+      { authorization },
+    );
+    expect(await missing.json()).toMatchObject({ error: "invalid_grant" });
+    const matched = await token(
+      {
+        grant_type: "authorization_code",
+        code: withPkce.code,
+        redirect_uri: RP_REDIRECT,
+        code_verifier: VERIFIER,
+      },
+      { authorization },
+    );
+    expect(matched.status).toBe(200);
+  });
+
   it("[TIO-TOKEN-014] [TIO-RT-010] offline_access with an enabled client makes the family offline: no sid in the tokens and survival of the session's end", async () => {
     const user = await userWithPasskey(clock);
     const { code, session } = await login(offlineClient, user, {

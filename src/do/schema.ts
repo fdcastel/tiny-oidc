@@ -1,7 +1,7 @@
 // UserDO SQLite schema (spec §4.2), versioned for lazy migration. Each entry
 // is one idempotent step; `migrate()` applies the steps above the stored version.
 
-export const USER_SCHEMA_VERSION = 2;
+export const USER_SCHEMA_VERSION = 3;
 
 export const USER_SCHEMA_STEPS: readonly string[] = [
   `
@@ -130,5 +130,29 @@ CREATE TABLE IF NOT EXISTS challenges (
   value      TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );
+`,
+  // Version 3: a code issued to a `require_pkce = 0` client that sent no challenge binds none
+  // (TIO-AUTHZ-008, Appendix B #37). SQLite cannot drop NOT NULL, so the table is rebuilt with
+  // its live rows copied.
+  `
+CREATE TABLE auth_codes_v3 (
+  secret_hash     BLOB PRIMARY KEY,
+  client_id       TEXT NOT NULL,
+  redirect_uri    TEXT NOT NULL,
+  scope           TEXT NOT NULL,
+  nonce           TEXT,
+  code_challenge  TEXT,
+  sid             TEXT NOT NULL,
+  auth_time       INTEGER NOT NULL,
+  amr             TEXT NOT NULL,
+  acr             TEXT NOT NULL,
+  created_at      INTEGER NOT NULL,
+  expires_at      INTEGER NOT NULL,
+  consumed_at     INTEGER
+);
+INSERT INTO auth_codes_v3 SELECT secret_hash, client_id, redirect_uri, scope, nonce, code_challenge, sid, auth_time, amr, acr, created_at, expires_at, consumed_at FROM auth_codes;
+DROP TABLE auth_codes;
+ALTER TABLE auth_codes_v3 RENAME TO auth_codes;
+CREATE INDEX IF NOT EXISTS auth_codes_expires ON auth_codes(expires_at);
 `,
 ];

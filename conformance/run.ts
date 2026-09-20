@@ -20,10 +20,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
-  CONFIG_SOURCES,
+  CONFIG_FILES,
   expectedFailures,
   placeholders,
   planRuns,
+  RELYING_PARTIES,
+  type RelyingParty,
   type RunValues,
   renderPlan,
   runnerArgs,
@@ -94,33 +96,29 @@ async function admin<T>(
 
 // --- the suite's relying parties on staging ----------------------------------------------
 
-type Variant = "basic" | "post" | "none";
-const METHOD: Record<Variant, string> = {
-  basic: "client_secret_basic",
-  post: "client_secret_post",
-  none: "none",
-};
-
-/** Creates or re-points one relying party and returns its fresh secret (null for a public client). */
-async function relyingParty(
-  variant: Variant,
-  second: boolean,
-): Promise<{ id: string; secret: string | null }> {
-  const id = `conformance-${variant}${second ? "-2" : ""}`;
+/**
+ * Creates or re-points one relying party and returns its fresh secret. The
+ * suite's modules send no PKCE (only its one PKCE test does), so the parties
+ * are confidential clients registered without the requirement (TIO-AUTHZ-008).
+ */
+async function relyingParty(party: RelyingParty): Promise<{ id: string; secret: string }> {
+  const id = `conformance-${party}`;
+  const method = RELYING_PARTIES[party];
   const uris = suiteUris(publicUrl, alias);
   const body = {
-    client_name: `Conformance suite (${METHOD[variant]}${second ? ", second client" : ""})`,
+    client_name: `Conformance suite (${method}${party === "basic2" ? ", second client" : ""})`,
     redirect_uris: uris.redirect_uris,
     post_logout_redirect_uris: uris.post_logout_redirect_uris,
     backchannel_logout_uri: uris.backchannel_logout_uri,
     grant_types: ["authorization_code", "refresh_token"],
-    token_endpoint_auth_method: METHOD[variant],
+    token_endpoint_auth_method: method,
     scopes_allowed: ["openid", "email", "profile", "offline_access"],
     skip_consent: true,
     offline_access: true,
+    require_pkce: false,
   };
   const existing = await admin<{ error?: string }>("GET", `clients/${id}`);
-  let secret: string | null = null;
+  let secret: string | undefined;
   if (existing.status === 404) {
     const created = await admin<{
       client_secret?: string;
@@ -129,7 +127,7 @@ async function relyingParty(
     }>("POST", "clients", { client_id: id, ...body });
     if (created.status !== 201)
       throw new Error(`client ${id}: ${created.status} ${JSON.stringify(created.body)}`);
-    secret = created.body.client_secret ?? null;
+    secret = created.body.client_secret;
     log(`client ${id}: created`);
   } else if (existing.status === 200) {
     const updated = await admin<{ error?: string; error_description?: string }>(
@@ -139,19 +137,14 @@ async function relyingParty(
     );
     if (updated.status !== 200)
       throw new Error(`client ${id}: ${updated.status} ${JSON.stringify(updated.body)}`);
-    if (variant !== "none") {
-      const rotated = await admin<{ client_secret?: string }>(
-        "POST",
-        `clients/${id}/rotate-secret`,
-      );
-      if (rotated.status !== 200 || !rotated.body.client_secret)
-        throw new Error(`client ${id}: rotate ${rotated.status}`);
-      secret = rotated.body.client_secret;
-    }
+    const rotated = await admin<{ client_secret?: string }>("POST", `clients/${id}/rotate-secret`);
+    if (rotated.status !== 200) throw new Error(`client ${id}: rotate ${rotated.status}`);
+    secret = rotated.body.client_secret;
     log(`client ${id}: re-pointed at ${publicUrl}`);
   } else {
     throw new Error(`client ${id}: ${existing.status} ${JSON.stringify(existing.body)}`);
   }
+  if (secret === undefined) throw new Error(`client ${id}: no secret returned`);
   return { id, secret };
 }
 
@@ -174,23 +167,16 @@ async function main(): Promise<number> {
     suite: publicUrl,
     alias,
     clients: {
-      basic: await relyingParty("basic", false),
-      post: await relyingParty("post", false),
-      none: await relyingParty("none", false),
-    },
-    clients2: {
-      basic: await relyingParty("basic", true),
-      post: await relyingParty("post", true),
-      none: await relyingParty("none", true),
+      basic: await relyingParty("basic"),
+      basic2: await relyingParty("basic2"),
+      post: await relyingParty("post"),
     },
   };
   const browser = readFileSync("conformance/plans/browser.json", "utf8");
-  for (const [file, source] of Object.entries(CONFIG_SOURCES)) {
-    const template = readFileSync(`conformance/plans/${source.template}`, "utf8");
-    writeFileSync(
-      join(configDir, file),
-      renderPlan(template, browser, placeholders(run, source.variant)),
-    );
+  const values = placeholders(run);
+  for (const file of CONFIG_FILES) {
+    const template = readFileSync(`conformance/plans/${file}`, "utf8");
+    writeFileSync(join(configDir, file), renderPlan(template, browser, values));
   }
   const runs = planRuns(configDir);
   const args = runnerArgs(runs, exportDir, expectedFile);

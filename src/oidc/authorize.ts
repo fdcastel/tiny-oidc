@@ -15,7 +15,8 @@ export interface AuthorizeRequest {
   scope: Scope[];
   state: string;
   nonce: string | null;
-  code_challenge: string;
+  /** Null when a `require_pkce = 0` client sent none (TIO-AUTHZ-008). */
+  code_challenge: string | null;
   prompt: PromptValue[];
   max_age: number | null;
   login_hint: string | null;
@@ -110,16 +111,22 @@ export function validateAuthorizeRequest(
   if (rawState === undefined || rawState.length === 0 || state === null) {
     return reject("invalid_request", "state is required: 1-2048 printable ASCII characters");
   }
-  // 8. PKCE (TIO-AUTHZ-008).
-  const code_challenge = params.get("code_challenge") ?? "";
-  if (!CODE_CHALLENGE.test(code_challenge)) {
-    return reject(
-      "invalid_request",
-      "code_challenge is required: 43-128 characters of [A-Za-z0-9._~-]",
-    );
-  }
-  if (params.get("code_challenge_method") !== CAPABILITIES.code_challenge_methods_supported[0]) {
-    return reject("invalid_request", "code_challenge_method must be S256");
+  // 8. PKCE (TIO-AUTHZ-008): required unless the client is registered without it, in which
+  // case both parameters may be absent; whatever is sent is validated as if required.
+  const challengeParam = params.get("code_challenge");
+  const methodParam = params.get("code_challenge_method");
+  let code_challenge: string | null = null;
+  if (client.require_pkce || challengeParam !== undefined || methodParam !== undefined) {
+    if (challengeParam === undefined || !CODE_CHALLENGE.test(challengeParam)) {
+      return reject(
+        "invalid_request",
+        "code_challenge is required: 43-128 characters of [A-Za-z0-9._~-]",
+      );
+    }
+    if (methodParam !== CAPABILITIES.code_challenge_methods_supported[0]) {
+      return reject("invalid_request", "code_challenge_method must be S256");
+    }
+    code_challenge = challengeParam;
   }
   // 9. scope (TIO-AUTHZ-009, TIO-SCOPE-001).
   const scopeParam = params.get("scope");

@@ -14,9 +14,22 @@ export interface RunValues {
   suite: string;
   /** The alias the suite uses in its callback paths (`/test/a/<alias>/…`). */
   alias: string;
-  clients: Record<"basic" | "post" | "none", { id: string; secret: string | null }>;
-  clients2: Record<"basic" | "post" | "none", { id: string; secret: string | null }>;
+  /**
+   * The suite's relying parties: `client` and `client2` (client_secret_basic) for every
+   * plan, and `client_secret_post` for the basic plan's client_secret_post module.
+   */
+  clients: Record<RelyingParty, { id: string; secret: string }>;
 }
+
+/** The relying parties the plans read from their configuration (`client`, `client2`, `client_secret_post`). */
+export type RelyingParty = "basic" | "basic2" | "post";
+
+/** The registered authentication method of each relying party. */
+export const RELYING_PARTIES: Record<RelyingParty, "client_secret_basic" | "client_secret_post"> = {
+  basic: "client_secret_basic",
+  basic2: "client_secret_basic",
+  post: "client_secret_post",
+};
 
 /** Fills `{NAME}` placeholders; a placeholder without a value is an error. */
 export function render(template: string, values: Record<string, string>): string {
@@ -27,13 +40,8 @@ export function render(template: string, values: Record<string, string>): string
   });
 }
 
-/** The placeholder values of one client-authentication variant. */
-export function placeholders(
-  values: RunValues,
-  variant: "basic" | "post" | "none",
-): Record<string, string> {
-  const client = values.clients[variant];
-  const client2 = values.clients2[variant];
+/** The placeholder values of a run. */
+export function placeholders(values: RunValues): Record<string, string> {
   return {
     ISSUER: values.issuer,
     LOGIN_URL: values.loginUrl,
@@ -41,19 +49,14 @@ export function placeholders(
     UPSTREAM_ALIAS: values.upstreamAlias,
     SUITE: values.suite,
     ALIAS: values.alias,
-    CLIENT_ID: client.id,
-    CLIENT_SECRET: client.secret ?? "",
-    CLIENT2_ID: client2.id,
-    CLIENT2_SECRET: client2.secret ?? "",
+    CLIENT_ID: values.clients.basic.id,
+    CLIENT_SECRET: values.clients.basic.secret,
+    CLIENT2_ID: values.clients.basic2.id,
+    CLIENT2_SECRET: values.clients.basic2.secret,
+    POST_CLIENT_ID: values.clients.post.id,
+    POST_CLIENT_SECRET: values.clients.post.secret,
   };
 }
-
-/** The suite's variant name for a client-authentication variant of ours. */
-export const CLIENT_AUTH_TYPE = {
-  basic: "client_secret_basic",
-  post: "client_secret_post",
-  none: "none",
-} as const;
 
 export interface PlanRun {
   /** The plan as `run-test-plan.py` takes it: `name[variant=value]…`. */
@@ -63,52 +66,39 @@ export interface PlanRun {
 }
 
 /**
- * The four plans of TIO-TEST-040 with their variants: config, basic in the
- * three client-authentication variants, RP-initiated logout and back-channel
- * logout (both with the basic client).
+ * The four plans of TIO-TEST-040 with the variants each one leaves to the
+ * user, exactly as the suite's own CI invokes them (`.gitlab-ci/run-tests.sh`):
+ * the config plan fixes every variant; the basic plan fixes the response type,
+ * the client authentication (it runs client_secret_basic and one
+ * client_secret_post module itself) and the response mode; the logout plans
+ * fix the metadata source, the client authentication and the response mode.
+ * A variant a plan fixes is refused on the command line.
  */
 export function planRuns(configDir: string): PlanRun[] {
-  // The certification plans fix the response type and mode themselves, and the config plan its
-  // metadata source: only the selectable variants are given (the suite refuses the rest).
-  const server = "[server_metadata=discovery][client_registration=static_client]";
-  const auth = (v: keyof typeof CLIENT_AUTH_TYPE) => `[client_auth_type=${CLIENT_AUTH_TYPE[v]}]`;
   return [
     { plan: "oidcc-config-certification-test-plan", config: `${configDir}/config.json` },
     {
-      plan: `oidcc-basic-certification-test-plan${server}${auth("basic")}`,
-      config: `${configDir}/basic-client_secret_basic.json`,
+      plan: "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client]",
+      config: `${configDir}/basic.json`,
     },
     {
-      plan: `oidcc-basic-certification-test-plan${server}${auth("post")}`,
-      config: `${configDir}/basic-client_secret_post.json`,
-    },
-    {
-      plan: `oidcc-basic-certification-test-plan${server}${auth("none")}`,
-      config: `${configDir}/basic-none.json`,
-    },
-    {
-      plan: `oidcc-rp-initiated-logout-certification-test-plan${server}${auth("basic")}`,
+      plan: "oidcc-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]",
       config: `${configDir}/rp-initiated-logout.json`,
     },
     {
-      plan: `oidcc-backchannel-rp-initiated-logout-certification-test-plan${server}${auth("basic")}`,
+      plan: "oidcc-backchannel-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]",
       config: `${configDir}/backchannel-logout.json`,
     },
   ];
 }
 
-/** Which template and variant each rendered configuration comes from. */
-export const CONFIG_SOURCES: Record<
-  string,
-  { template: string; variant: "basic" | "post" | "none" }
-> = {
-  "config.json": { template: "config.json", variant: "basic" },
-  "basic-client_secret_basic.json": { template: "basic.json", variant: "basic" },
-  "basic-client_secret_post.json": { template: "basic.json", variant: "post" },
-  "basic-none.json": { template: "basic.json", variant: "none" },
-  "rp-initiated-logout.json": { template: "rp-initiated-logout.json", variant: "basic" },
-  "backchannel-logout.json": { template: "backchannel-logout.json", variant: "basic" },
-};
+/** The rendered configurations, each from the template of the same name. */
+export const CONFIG_FILES = [
+  "config.json",
+  "basic.json",
+  "rp-initiated-logout.json",
+  "backchannel-logout.json",
+] as const;
 
 /** The one reason a waiver may carry (TIO-TEST-040). */
 export const WAIVER_REASON =

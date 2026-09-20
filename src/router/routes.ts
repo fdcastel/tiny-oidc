@@ -63,6 +63,7 @@ export const ROUTES: readonly Route[] = [
     cacheable: true,
   },
   { method: "GET", path: "/authorize", cors: "none", navigation: true, cacheable: false },
+  { method: "POST", path: "/authorize", cors: "none", navigation: true, cacheable: false },
   { method: "POST", path: "/par", cors: "public", navigation: false, cacheable: false },
   { method: "POST", path: "/token", cors: "public", navigation: false, cacheable: false },
   { method: "GET", path: "/userinfo", cors: "public", navigation: false, cacheable: false },

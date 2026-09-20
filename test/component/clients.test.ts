@@ -182,6 +182,7 @@ describe("client service and repository", () => {
         allowed_groups: null,
         skip_consent: 0,
         require_par: 0,
+        require_pkce: 1,
         offline_access: 0,
         access_token_ttl: null,
         id_token_ttl: null,

@@ -109,7 +109,7 @@ interface CodeRow extends Record<string, SqlStorageValue> {
   redirect_uri: string;
   scope: string;
   nonce: string | null;
-  code_challenge: string;
+  code_challenge: string | null;
   sid: string;
   auth_time: number;
   amr: string;
@@ -242,7 +242,8 @@ export interface CodeInput {
   redirect_uri: string;
   scope: string[];
   nonce: string | null;
-  code_challenge: string;
+  /** Null when the client sent none (a `require_pkce = 0` client, TIO-AUTHZ-008). */
+  code_challenge: string | null;
 }
 
 /** The claims a token endpoint needs, as snapshotted at issuance time. */
@@ -294,7 +295,8 @@ export interface ExchangeCodeInput {
   secret_hash: Uint8Array;
   client: ClientRef;
   redirect_uri: string;
-  code_verifier: string;
+  /** Null when the request carried none; a code that binds a challenge then fails. */
+  code_verifier: string | null;
   now: number;
   /** The first refresh token of the family; null when the client has no refresh_token grant. */
   refresh: {
@@ -1104,9 +1106,10 @@ export class UserDO extends DurableObject<Env> {
     const user = this.guard();
     if (typeof user === "string") return fail(user);
     // RFC 7636 §4.6: verifier alphabet and length are part of the check.
-    const expectedChallenge = PKCE_VERIFIER.test(input.code_verifier)
-      ? encodeBase64Url(await sha256(input.code_verifier))
-      : null;
+    const expectedChallenge =
+      input.code_verifier !== null && PKCE_VERIFIER.test(input.code_verifier)
+        ? encodeBase64Url(await sha256(input.code_verifier))
+        : null;
     return this.ctx.storage.transactionSync((): ExchangeOutcome => {
       this.purgeIfDue(input.now, PURGE_GRACE_SECONDS);
       const sql = this.ctx.storage.sql;
@@ -1127,7 +1130,11 @@ export class UserDO extends DurableObject<Env> {
       if (code.client_id !== input.client.client_id) return fail("invalid_grant");
       // RFC 6749 §4.1.3: redirect_uri must match the one bound to the code, byte for byte.
       if (code.redirect_uri !== input.redirect_uri) return fail("invalid_grant");
-      if (expectedChallenge === null || expectedChallenge !== code.code_challenge) {
+      // A bound challenge needs its verifier; a code without one refuses any verifier
+      // (TIO-TOKEN-011): a mismatch either way is a confused or replayed request.
+      if (code.code_challenge === null) {
+        if (input.code_verifier !== null) return fail("invalid_grant");
+      } else if (expectedChallenge === null || expectedChallenge !== code.code_challenge) {
         return fail("invalid_grant");
       }
       if (user.disabled_at !== null) return fail("invalid_grant");

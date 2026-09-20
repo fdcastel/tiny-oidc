@@ -241,8 +241,10 @@ export function tokenHandler(clock: Clock): Handler<AppEnv> {
       const code = await openCodeHandle(config.keys, params.get("code") ?? "");
       if (code === null) return invalidGrant("code is invalid");
       const redirectUri = params.get("redirect_uri");
-      const verifier = params.get("code_verifier") ?? "";
-      if (redirectUri === undefined || !PKCE_VERIFIER.test(verifier)) {
+      // The verifier is optional here: whether the code binds a challenge is the object's
+      // to know (TIO-TOKEN-011); a present one must at least be well formed.
+      const verifier = params.get("code_verifier") ?? null;
+      if (redirectUri === undefined || (verifier !== null && !PKCE_VERIFIER.test(verifier))) {
         return invalidGrant("redirect_uri and a valid code_verifier are required");
       }
       const wantsRefresh = (client.grant_types as readonly string[]).includes("refresh_token");

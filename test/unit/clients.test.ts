@@ -207,6 +207,25 @@ describe("client validation (TIO-CLIENT-002)", () => {
     ]);
   });
 
+  it("[TIO-CLIENT-002] [TIO-AUTHZ-008] require_pkce defaults to true and may be cleared only by a confidential client", () => {
+    expect(violations({})).toEqual([]);
+    expect(violations({ require_pkce: true })).toEqual([]);
+    expect(violations({ require_pkce: false })).toEqual([
+      "require_pkce: a public client cannot clear it",
+    ]);
+    expect(violations({ require_pkce: "no" })).toEqual(["schema:require_pkce"]);
+    expect(
+      violations({ require_pkce: false, token_endpoint_auth_method: "client_secret_basic" }),
+    ).toEqual([]);
+    expect(
+      violations({
+        require_pkce: false,
+        token_endpoint_auth_method: "private_key_jwt",
+        jwks_uri: "https://rp.example.com/jwks",
+      }),
+    ).toEqual([]);
+  });
+
   it("[TIO-CLIENT-002] token_endpoint_auth_method: keys only for private_key_jwt, exactly one of jwks or jwks_uri", () => {
     expect(violations({ token_endpoint_auth_method: "private_key_jwt" })).toEqual([
       "jwks: private_key_jwt requires exactly one of jwks or jwks_uri",

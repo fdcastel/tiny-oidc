@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | 1.0.0-draft.2 |
-| **Date** | 2026-09-19 |
+| **Date** | 2026-09-20 |
 | **Status** | Authoritative for the v1 build. Supersedes `tmp/INITIAL_TINY_OIDC_SPEC.md`. |
 | **Runtime** | TypeScript on Cloudflare Workers (workerd) |
 | **Storage** | Durable Objects (SQLite) for per-entity state, D1 for the directory, R2 for the audit archive |
@@ -107,7 +107,7 @@ Each principle is a decision filter. When a proposal conflicts with one, the pro
 **In v1**
 
 - OIDC Core (code flow), discovery (OIDC and RFC 8414), JWKS, UserInfo.
-- PKCE S256 required for every authorization request. Exact redirect URI matching (loopback port exception for native apps).
+- PKCE S256 required for every authorization request by default; a confidential client may be registered with `require_pkce = 0` (relying parties that cannot send one, including the OpenID Foundation conformance suite, §13.9), and a `code_challenge` it does send is still verified. Public clients always require it. Exact redirect URI matching (loopback port exception for native apps).
 - Pushed Authorization Requests (RFC 9126), `iss` authorization response parameter (RFC 9207), JWT access tokens (RFC 9068) with a static per-client audience list, token revocation (RFC 7009).
 - Grants: `authorization_code`, `refresh_token` (rotating, family-tracked, reuse-detected), `client_credentials`.
 - Client authentication: `none` (public clients), `client_secret_basic`, `client_secret_post`, `private_key_jwt`.
@@ -645,6 +645,7 @@ CREATE TABLE clients (
   allowed_groups              TEXT,                 -- NULL = everyone; JSON array of group names otherwise
   skip_consent                INTEGER NOT NULL DEFAULT 0,
   require_par                 INTEGER NOT NULL DEFAULT 0,
+  require_pkce                INTEGER NOT NULL DEFAULT 1,   -- 0 only for confidential clients (TIO-AUTHZ-008)
   offline_access              INTEGER NOT NULL DEFAULT 0,
   access_token_ttl            INTEGER,              -- seconds; NULL = setting default
   id_token_ttl                INTEGER,
@@ -817,7 +818,7 @@ CREATE TABLE auth_codes (
   redirect_uri    TEXT NOT NULL,
   scope           TEXT NOT NULL,                    -- space-delimited, validated
   nonce           TEXT,
-  code_challenge  TEXT NOT NULL,
+  code_challenge  TEXT,                             -- NULL when a require_pkce = 0 client sent none
   sid             TEXT NOT NULL,
   auth_time       INTEGER NOT NULL,
   amr             TEXT NOT NULL,
@@ -890,7 +891,7 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
   "client_id": "…",
   "request": {                            // validated /authorize or /par parameters
     "redirect_uri": "…", "scope": ["openid","email"], "state": "…", "nonce": "…",
-    "code_challenge": "…", "prompt": ["login"], "max_age": 3600, "login_hint": "…",
+    "code_challenge": "…" | null, "prompt": ["login"], "max_age": 3600, "login_hint": "…",
     "ui_locales": "…", "acr_values": []
   },
   "existing_session": { "uid": "…", "sid": "…", "auth_time": 0 } | null,
@@ -964,7 +965,7 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 | GET | `/.well-known/oauth-authorization-server` | RFC 8414 metadata (same document) | none | `*` |
 | GET | `/.well-known/jwks.json` | Public signing keys | none | `*` |
 | GET | `/.well-known/webauthn` | WebAuthn Related Origins | none | `*` |
-| GET | `/authorize` | Authorization endpoint | browser | — |
+| GET, POST | `/authorize` | Authorization endpoint | browser | — |
 | POST | `/par` | Pushed authorization request | client | `*` |
 | POST | `/token` | Token endpoint | client | `*` |
 | GET, POST | `/userinfo` | UserInfo | bearer | `*` |
@@ -1040,18 +1041,19 @@ Reference document:
 GET /authorize?client_id&redirect_uri&response_type=code&scope&state&code_challenge&code_challenge_method=S256
               [&nonce&prompt&max_age&login_hint&ui_locales&acr_values]
 GET /authorize?client_id&request_uri=urn:ietf:params:oauth:request_uri:…
+POST /authorize  (application/x-www-form-urlencoded, the same parameters in the body)
 ```
 
 **Validation order.** The order matters because it determines whether an error may be redirected to the client.
 
-1. **[TIO-AUTHZ-001]** Method SHALL be GET. Query string SHALL be ≤ 8 KB. Duplicate parameters SHALL be rejected (`invalid_request`).
+1. **[TIO-AUTHZ-001]** Method SHALL be GET or POST (OIDC Core §3.1.2.1). Query string SHALL be ≤ 8 KB. A POST SHALL carry `application/x-www-form-urlencoded` (anything else is non-redirectable `invalid_request`) and its parameters are read from the body, as `/logout` does. Duplicate parameters SHALL be rejected (`invalid_request`).
 2. **[TIO-AUTHZ-002]** `client_id` SHALL be present and refer to an enabled client with `authorization_code` in `grant_types`. Otherwise the error is non-redirectable.
 3. **[TIO-AUTHZ-003]** If `request_uri` is present, it SHALL be a PAR reference issued to this `client_id`, unexpired and unconsumed; all other query parameters except `client_id` SHALL be absent. The stored parameters replace the query. A consumed or unknown `request_uri` is non-redirectable `invalid_request`.
 4. **[TIO-AUTHZ-004]** If the client has `require_par = 1` and no `request_uri` is present, the error SHALL be non-redirectable `invalid_request`.
 5. **[TIO-AUTHZ-005]** `redirect_uri` SHALL be present and SHALL match one registered URI by the rules in §5.11.3. Otherwise non-redirectable `invalid_request`. From here on errors are redirected to `redirect_uri`.
 6. **[TIO-AUTHZ-006]** `response_type` SHALL equal `code`; else `unsupported_response_type`.
 7. **[TIO-AUTHZ-007]** `state` SHALL be present, 1–2048 characters, printable ASCII; else `invalid_request`.
-8. **[TIO-AUTHZ-008]** `code_challenge` SHALL be present, 43–128 characters of `[A-Za-z0-9._~-]`, and `code_challenge_method` SHALL equal `S256`; a missing method or `plain` is `invalid_request`.
+8. **[TIO-AUTHZ-008]** `code_challenge` SHALL be present when the client has `require_pkce = 1` (every public client; the default). When present, it SHALL be 43–128 characters of `[A-Za-z0-9._~-]` and `code_challenge_method` SHALL equal `S256`; a missing method, `plain`, or a method without a challenge is `invalid_request`. A `require_pkce = 0` client may omit both, and the code is then issued without a challenge (§5.6.2). The exemption exists because the OpenID Foundation conformance suite sends no PKCE in its certification plans (§13.9); it is a registered, audited client property, never a test-only path.
 9. **[TIO-AUTHZ-009]** `scope` SHALL be present, contain `openid`, contain only scopes in `scopes_supported` and in the client's `scopes_allowed`, with no duplicates; else `invalid_scope`. `admin` SHALL additionally require the user to be in `admins` at authentication time (checked in step 14).
 10. **[TIO-AUTHZ-010]** `nonce`, if present, SHALL be 1–512 characters. `login_hint` ≤ 256, `ui_locales` ≤ 64, `acr_values` ≤ 256 characters; each is passed to the login app verbatim and never interpreted by the OP except that `acr_values` is echoed.
 11. **[TIO-AUTHZ-011]** `prompt`, if present, SHALL be a space-separated subset of `none`, `login`, `consent`, `select_account`; `none` SHALL NOT be combined with others; else `invalid_request`. `select_account` is treated as `login`.
@@ -1113,7 +1115,7 @@ Parameters: `code`, `redirect_uri`, `code_verifier`, `client_id` (public clients
 
 **[TIO-TOKEN-010]** The OP SHALL decrypt `code` as a `tio_ac` handle; any malformed code is `invalid_grant` with no storage access.
 
-**[TIO-TOKEN-011]** `UserDO.exchangeCode` SHALL, atomically: find the code by secret hash; reject if absent, expired or consumed; reject if `client_id` differs; reject if `redirect_uri` differs byte-for-byte from the bound value; reject if `BASE64URL(SHA-256(code_verifier)) ≠ code_challenge` (`code_verifier` 43–128 chars of the PKCE alphabet); reject if the user is disabled, the session is revoked, or `allowed_groups` no longer holds; then mark the code consumed. Every rejection is `invalid_grant`.
+**[TIO-TOKEN-011]** `UserDO.exchangeCode` SHALL, atomically: find the code by secret hash; reject if absent, expired or consumed; reject if `client_id` differs; reject if `redirect_uri` differs byte-for-byte from the bound value; when the code binds a `code_challenge`, reject if `code_verifier` is absent or `BASE64URL(SHA-256(code_verifier)) ≠ code_challenge` (`code_verifier` 43–128 chars of the PKCE alphabet); when it binds none (a `require_pkce = 0` client that sent no challenge), reject if a `code_verifier` is present at all; reject if the user is disabled, the session is revoked, or `allowed_groups` no longer holds; then mark the code consumed. Every rejection is `invalid_grant`.
 
 **[TIO-TOKEN-012]** Presenting an already-consumed code SHALL, in addition to `invalid_grant`, revoke every refresh family created from that code (RFC 6749 §4.1.2 replay handling) and emit `token.code_replay`.
 
@@ -1256,6 +1258,7 @@ GET|POST /logout?[id_token_hint][&post_logout_redirect_uri][&state][&client_id][
 - `backchannel_logout_uri`: `https` absolute URL, no fragment.
 - `grant_types`: non-empty subset of `authorization_code`, `refresh_token`, `client_credentials`; `refresh_token` requires `authorization_code`.
 - `token_endpoint_auth_method`: `none` requires `grant_types = ["authorization_code"]` or `["authorization_code","refresh_token"]`; `client_credentials` requires `client_secret_basic`, `client_secret_post` or `private_key_jwt`.
+- `require_pkce`: defaults to `1`; `0` requires `token_endpoint_auth_method ≠ none` (a public client's only binding is PKCE, TIO-AUTHZ-008).
 - `client_secret_basic` and `client_secret_post` require a generated secret (§5.11.1 below); `private_key_jwt` requires exactly one of `jwks` (≤ 8 keys, each a public EC/RSA/OKP key with `kid`) or `jwks_uri` (`https`).
 - `scopes_allowed`: non-empty subset of `scopes_supported`; `admin` may be granted only by an actor that itself holds `admin`.
 - `audiences`: 0–16 entries, each an absolute `https` URI or URN without fragment, no duplicates, never equal to `ISSUER` (which is added by scope, not configured).
@@ -2175,7 +2178,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 ### 13.9 Conformance
 
-**[TIO-TEST-040]** (V: conformance) Before every release and nightly, the OpenID Foundation conformance suite SHALL run against staging with these plans, and the results SHALL be archived in the release: `oidcc-config-certification-test-plan`, `oidcc-basic-certification-test-plan` (variants `client_secret_basic`, `client_secret_post`, and `none` with PKCE where the suite offers it), `oidcc-rp-initiated-logout-certification-test-plan`, `oidcc-backchannel-rp-initiated-logout-certification-test-plan`. Every test SHALL pass or be explicitly waived in `conformance/waivers.json` with a reason limited to "feature intentionally unsupported and advertised as such in discovery" (for example request objects).
+**[TIO-TEST-040]** (V: conformance) Before every release and nightly, the OpenID Foundation conformance suite SHALL run against staging with these plans, and the results SHALL be archived in the release: `oidcc-config-certification-test-plan`, `oidcc-basic-certification-test-plan` (the plan itself exercises `client_secret_basic` and `client_secret_post` on static clients; the suite offers no plan that sends PKCE with `none`, so the public-client flow is verified by the `oauth4webapi` interop suite of §13.5), `oidcc-rp-initiated-logout-certification-test-plan`, `oidcc-backchannel-rp-initiated-logout-certification-test-plan`. The plans' own fixed variants are not repeated on the command line (the suite refuses them). The suite's relying parties are confidential clients registered with `require_pkce = 0` because its modules send no `code_challenge` (TIO-AUTHZ-008). Every test SHALL pass or be explicitly waived in `conformance/waivers.json` with a reason limited to "feature intentionally unsupported and advertised as such in discovery" (for example request objects).
 
 **[TIO-TEST-041]** (V: conformance) The suite's browser automation SHALL complete login through the reference login app by selecting the staging-only fake upstream (auto-approving); no test-only code path exists in the OP. Logout confirmation is automated by clicking the reference login app's confirm control.
 
@@ -2383,6 +2386,7 @@ Each entry: what the draft said → what this spec does → why.
 34. **Client-secret rotation grace period; `revoke_existing` on recovery invitations** → removed. *Why:* the grace period contradicted the single-hash schema, and `private_key_jwt` with several keys already gives zero-downtime rotation; recovery now has one behavior.
 35. **Improvements adopted from the references:** `kid` as the RFC 7638 thumbprint with a 512-byte header test (authenti-kate `tests/test_key_id.py`, after a PEM-derived `kid` produced a 1,702-byte header); one `capabilities.ts` constant driving validators and discovery with an equality test (authenti-kate `app/prompts.py`, `tests/test_discovery_jwks.py`); the stale-parameter requirement TIO-AUTHZ-024 (authenti-kate `authorize.py:242-249` documents the exact bug); `prompt=none` never touching the session; lazy cleanup of grants and families when a client is deleted or re-created (tinyauth reconciles consents of vanished clients, `oidc_service.go:1051-1079`; a sweep over 1,000,000 Durable Objects is impossible, so ours is lazy); no `Date.now()` outside `Clock` (authenti-kate `app/times.py`); the e2e relying party never touches OP storage (authenti-kate `tests/e2e/rp_app.py`); generated `doc/CONFIG.md` and `.dev.vars.example` with a drift check (tinyauth `gen/docs/gen_env.go` and its `git diff --exit-code` CI step); an outbound-host allow-list with a no-network test (tinyauth's default-on heartbeat to its vendor); RFC citations as a code convention; introspection and telemetry named as exclusions; the unused `RL_INTERACTION` binding removed.
 36. **Kept deliberately although a reference does it more simply:** immutable `sub` (TIO-DATA-001; tinyauth derives it from `username:client_id`); S256-only PKCE (TIO-AUTHZ-008; both accept `plain`); rolling keys with pre-publication (TIO-KEYS-012; neither rotates); Durable-Object-backed codes and state (TIO-ARCH-002; tinyauth uses in-memory caches); refresh families with reuse detection (TIO-RT-002); unknown scopes rejected (TIO-SCOPE-001; tinyauth filters silently); no request objects (TIO-DISC-003; tinyauth parses them unverified); claims gated by scope (TIO-TOKEN-030); `email_verified` only from trusted sources (TIO-DATA-008; tinyauth infers it from a non-empty email); `Secure` cookies always (TIO-SESS-001); one JWKS per issuer (TIO-KEYS-001; authenti-kate publishes a key per client); exact redirect matching (TIO-CLIENT-011; authenti-kate uses an unanchored regex); no plaintext secrets and no tokens in logs (TIO-ARCH-007, TIO-KEYS-011, TIO-TOKEN-004, TIO-AUDIT-002); remembered consent (TIO-CONSENT-001); no public dynamic registration (TIO-CLIENT-001); a blocking coverage gate (TIO-TEST-002; tinyauth's is informational); `client_secret_post` (conformance); the `account` and `admin` scopes; the bundled reference login app.
+37. **PKCE mandatory for every client** → mandatory by default, with a per-client `require_pkce = 0` for confidential clients (2026-09-20, ADR 0013). *Why:* the OpenID Foundation conformance suite sends no `code_challenge` in any module of the certification plans except its one PKCE test (verified in the suite's source), so TIO-TEST-040 and the old TIO-AUTHZ-008 could not both hold; a waiver was not available because the reason is limited to unsupported features advertised in discovery. Public clients keep the requirement (PKCE is their only binding); a confidential client's code is bound by client authentication and `nonce`; a present `code_challenge` is verified regardless; the option is a registered, audited client property rather than a test-only path (TIO-TEST-041). `POST /authorize` was added at the same time (OIDC Core §3.1.2.1 requires both methods; the suite warns without it and warnings fail a plan).
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 

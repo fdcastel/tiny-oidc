@@ -8,5 +8,10 @@
     "scope": "openid email profile"
   },
   "client2": { "client_id": "{CLIENT2_ID}", "client_secret": "{CLIENT2_SECRET}" },
+  "client_secret_post": {
+    "client_id": "{POST_CLIENT_ID}",
+    "client_secret": "{POST_CLIENT_SECRET}",
+    "scope": "openid email profile"
+  },
   "browser": "{BROWSER}"
 }

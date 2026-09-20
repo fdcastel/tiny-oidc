@@ -112,6 +112,7 @@ describe("clients", () => {
       client_name: "Web",
       token_endpoint_auth_method: "none",
       client_secret: null,
+      require_pkce: true,
       disabled_at: null,
       created_at: clock.now(),
     });
@@ -235,6 +236,13 @@ describe("clients", () => {
     expect((await call("PATCH", "clients/web-app", { client_id: "other" })).status).toBe(400);
     expect((await call("PATCH", "clients/web-app", { client_name: 5 })).status).toBe(400);
     expect((await call("PATCH", "clients/web-app", "{oops")).status).toBe(400);
+    // A public client cannot clear the PKCE requirement (TIO-CLIENT-002, TIO-AUTHZ-008).
+    const unpinnedPublic = await call("PATCH", "clients/web-app", { require_pkce: false });
+    expect(unpinnedPublic.status).toBe(400);
+    expect(await unpinnedPublic.json()).toMatchObject({
+      error: "invalid_client",
+      error_description: "require_pkce: a public client cannot clear it",
+    });
     // Every optional column round-trips through an update.
     const widened = (await (
       await call("PATCH", "clients/web-app", {
@@ -259,6 +267,18 @@ describe("clients", () => {
       token_endpoint_auth_method: "private_key_jwt",
       client_secret: null,
     });
+    const unpinned = (await (
+      await call("PATCH", "clients/web-app", { require_pkce: false })
+    ).json()) as ClientBody;
+    expect(unpinned).toMatchObject({ require_pkce: false });
+    expect(lastEvent("client.updated")).toMatchObject({
+      data: { diff: { require_pkce: { from: true, to: false } } },
+    });
+    // Back to a public client: the requirement must come back with it.
+    expect(
+      (await call("PATCH", "clients/web-app", { token_endpoint_auth_method: "none", jwks: null }))
+        .status,
+    ).toBe(400);
     expect(((await (await call("GET", "clients/web-app")).json()) as ClientBody)["jwks"]).toEqual({
       keys: [{ kty: "EC", kid: "k1", crv: "P-256", x: "x", y: "y" }],
     });
@@ -269,6 +289,7 @@ describe("clients", () => {
           jwks: null,
           allowed_groups: null,
           require_par: false,
+          require_pkce: true,
           offline_access: false,
           scopes_allowed: ["openid", "email"],
         })

@@ -67,7 +67,7 @@ Current phase: 7. Requirements: 284 (ci: 19, conformance: 2, covered: 241, load:
 | TIO-AUTHZ-005 | §5.4 | test | 2 | covered | test/http/authorize.test.ts<br>test/security/redirects.test.ts |
 | TIO-AUTHZ-006 | §5.4 | test | 2 | covered | test/http/authorize.test.ts |
 | TIO-AUTHZ-007 | §5.4 | test | 2 | covered | test/http/authorize.test.ts |
-| TIO-AUTHZ-008 | §5.4 | test | 2 | covered | test/http/authorize.test.ts<br>test/security/redirects.test.ts |
+| TIO-AUTHZ-008 | §5.4 | test | 2 | covered | test/http/authorize.test.ts<br>test/http/token.test.ts<br>test/security/redirects.test.ts<br>test/unit/clients.test.ts |
 | TIO-AUTHZ-009 | §5.4 | test | 2 | covered | test/http/authorize.test.ts<br>test/http/token.test.ts |
 | TIO-AUTHZ-010 | §5.4 | test | 2 | covered | test/http/authorize.test.ts |
 | TIO-AUTHZ-011 | §5.4 | test | 2 | covered | test/http/authorize.test.ts |

@@ -25,6 +25,7 @@ interface RawClientRow extends Record<string, unknown> {
   allowed_groups: string | null;
   skip_consent: number;
   require_par: number;
+  require_pkce: number;
   offline_access: number;
   access_token_ttl: number | null;
   id_token_ttl: number | null;
@@ -78,6 +79,7 @@ export function decodeClientRow(raw: RawClientRow): Client | null {
     allowed_groups: groups === null ? null : groups.value,
     skip_consent: raw.skip_consent === 1,
     require_par: raw.require_par === 1,
+    require_pkce: raw.require_pkce === 1,
     offline_access: raw.offline_access === 1,
     access_token_ttl: raw.access_token_ttl,
     id_token_ttl: raw.id_token_ttl,
@@ -92,7 +94,7 @@ export function decodeClientRow(raw: RawClientRow): Client | null {
 export async function getClient(db: Db, clientId: string): Promise<Client | null> {
   const raw = await db
     .prepare(
-      "SELECT client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at FROM clients WHERE client_id = ?",
+      "SELECT client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, require_pkce, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at FROM clients WHERE client_id = ?",
     )
     .bind(clientId)
     .first<RawClientRow>();
@@ -105,7 +107,7 @@ export type InsertClientResult = "created" | "client_exists";
 export async function insertClient(db: Db, client: Client): Promise<InsertClientResult> {
   const result = await db
     .prepare(
-      "INSERT INTO clients (client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client_id) DO NOTHING",
+      "INSERT INTO clients (client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, require_pkce, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client_id) DO NOTHING",
     )
     .bind(
       client.client_id,
@@ -125,6 +127,7 @@ export async function insertClient(db: Db, client: Client): Promise<InsertClient
       client.allowed_groups === null ? null : JSON.stringify(client.allowed_groups),
       client.skip_consent ? 1 : 0,
       client.require_par ? 1 : 0,
+      client.require_pkce ? 1 : 0,
       client.offline_access ? 1 : 0,
       client.access_token_ttl,
       client.id_token_ttl,
@@ -174,7 +177,7 @@ export async function deleteClient(db: Db, clientId: string): Promise<boolean> {
 export async function updateClient(db: Db, client: Client, now: number): Promise<boolean> {
   const result = await db
     .prepare(
-      "UPDATE clients SET client_name = ?, client_uri = ?, logo_uri = ?, redirect_uris = ?, post_logout_redirect_uris = ?, backchannel_logout_uri = ?, grant_types = ?, token_endpoint_auth_method = ?, client_secret_hash = ?, jwks = ?, jwks_uri = ?, scopes_allowed = ?, audiences = ?, allowed_groups = ?, skip_consent = ?, require_par = ?, offline_access = ?, access_token_ttl = ?, id_token_ttl = ?, refresh_token_ttl = ?, refresh_idle_ttl = ?, updated_at = ? WHERE client_id = ?",
+      "UPDATE clients SET client_name = ?, client_uri = ?, logo_uri = ?, redirect_uris = ?, post_logout_redirect_uris = ?, backchannel_logout_uri = ?, grant_types = ?, token_endpoint_auth_method = ?, client_secret_hash = ?, jwks = ?, jwks_uri = ?, scopes_allowed = ?, audiences = ?, allowed_groups = ?, skip_consent = ?, require_par = ?, require_pkce = ?, offline_access = ?, access_token_ttl = ?, id_token_ttl = ?, refresh_token_ttl = ?, refresh_idle_ttl = ?, updated_at = ? WHERE client_id = ?",
     )
     .bind(
       client.client_name,
@@ -193,6 +196,7 @@ export async function updateClient(db: Db, client: Client, now: number): Promise
       client.allowed_groups === null ? null : JSON.stringify(client.allowed_groups),
       client.skip_consent ? 1 : 0,
       client.require_par ? 1 : 0,
+      client.require_pkce ? 1 : 0,
       client.offline_access ? 1 : 0,
       client.access_token_ttl,
       client.id_token_ttl,
@@ -211,7 +215,7 @@ export interface ClientKeyset {
 }
 
 const CLIENT_COLUMNS =
-  "client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at";
+  "client_id, client_name, client_uri, logo_uri, redirect_uris, post_logout_redirect_uris, backchannel_logout_uri, grant_types, token_endpoint_auth_method, client_secret_hash, jwks, jwks_uri, scopes_allowed, audiences, allowed_groups, skip_consent, require_par, require_pkce, offline_access, access_token_ttl, id_token_ttl, refresh_token_ttl, refresh_idle_ttl, disabled_at, created_at, updated_at";
 
 export interface ListedClient {
   keyset: ClientKeyset;
