@@ -16,13 +16,13 @@ import {
   record,
   summary,
   thresholds,
-  tokens,
-} from "./lib.js";
+  tokens,, SUMMARY_TREND_STATS } from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 50);
 const ALIAS = __ENV.TIO_PERF_UPSTREAM_ALIAS || "fake";
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { login_federated: arrival("loginFederated", RATE) },
   thresholds: thresholds("login_federated"),
 };

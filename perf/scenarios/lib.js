@@ -71,6 +71,9 @@ export function thresholds(scenario) {
   };
 }
 
+/** The trend statistics every summary carries: the thresholds are on p(99), which k6 omits by default. */
+export const SUMMARY_TREND_STATS = ["avg", "min", "med", "p(90)", "p(95)", "p(99)", "max"];
+
 /** A constant-arrival-rate scenario with enough VUs for the rate at the p99 budget's latency. */
 export function arrival(exec_, rate, duration = DURATION, extra = {}) {
   return {

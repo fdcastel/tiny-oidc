@@ -841,7 +841,8 @@ describe("objects that vanish mid-request", () => {
       "POST",
       "users",
       { identities: [{ issuer: "https://idp.example.com", subject: "vanish" }] },
-      { env: sabotageDo("*", "addIdentity", 1, [rootId]) },
+      // Creation links identities inside init: the object vanishing on that call is a 503.
+      { env: sabotageDo("*", "init", 1, [rootId]) },
     );
     expect(created.status).toBe(503);
   });

@@ -402,17 +402,27 @@ describe("a person's events", () => {
       ).json()) as { access_token: string };
       return tokens.access_token;
     })();
+    // The login that minted the token emits events of its own, which reach audit_hot
+    // asynchronously: the administrator's newest event is somewhere in the person's first page.
     const mine = (await (
-      await h.send("/api/v1/me/events?limit=3", {
+      await h.send("/api/v1/me/events?limit=20", {
         origin: null,
         headers: { authorization: `Bearer ${own}` },
       })
     ).json()) as Page<Record<string, unknown>>;
-    expect(mine.items).toHaveLength(3);
-    expect(mine.items[0]).toEqual(viaAdmin.items[0]);
-    expect(Object.keys(mine.items[0] as object).sort()).toEqual(
-      ["client_id", "country", "id", "outcome", "ts", "type", "ua_family"].sort(),
-    );
-    expect(mine.next_cursor).not.toBeNull();
+    expect(mine.items.length).toBeGreaterThanOrEqual(3);
+    expect(mine.items).toContainEqual(viaAdmin.items[0]);
+    for (const item of mine.items) {
+      expect(Object.keys(item as object).sort()).toEqual(
+        ["client_id", "country", "id", "outcome", "ts", "type", "ua_family"].sort(),
+      );
+    }
+    const firstPage = (await (
+      await h.send("/api/v1/me/events?limit=1", {
+        origin: null,
+        headers: { authorization: `Bearer ${own}` },
+      })
+    ).json()) as Page<Record<string, unknown>>;
+    expect(firstPage.next_cursor).not.toBeNull();
   });
 });

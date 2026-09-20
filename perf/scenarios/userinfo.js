@@ -4,12 +4,22 @@
 // in setup are not written back: the sustained scenarios own the families.
 import { check } from "k6";
 import http from "k6/http";
-import { arrival, ISSUER, record, refresh, summary, thresholds, tokens } from "./lib.js";
+import {
+  arrival,
+  ISSUER,
+  record,
+  refresh,
+  SUMMARY_TREND_STATS,
+  summary,
+  thresholds,
+  tokens,
+} from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 200);
 const HOLDERS = Number(__ENV.TIO_PERF_USERINFO_HOLDERS || 500);
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { userinfo: arrival("userinfo", RATE) },
   thresholds: thresholds("userinfo"),
 };

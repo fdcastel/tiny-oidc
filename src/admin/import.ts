@@ -6,7 +6,7 @@ import type { Clock, Settings } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
 import { errorResponse } from "../router/errors.ts";
 import { setUserDisabled } from "../users/admin.ts";
-import { createUser, userStub } from "../users/create.ts";
+import { type CreateUserResult, createUsers, type NewUser, userStub } from "../users/create.ts";
 import { isValidEmail, normalizeEmail } from "../users/email.ts";
 import { createInvitation } from "../users/invitations.ts";
 import { parseJson } from "../util/json.ts";
@@ -20,6 +20,8 @@ import { invitationUrl } from "./invitations.ts";
 
 export const IMPORT_MAX_LINES = 1_000;
 export const IMPORT_CONCURRENCY = 50;
+/** Lines whose claims and activations travel in one D1 batch each (TIO-ADMIN-021). */
+export const IMPORT_CLAIM_BATCH = 25;
 
 const GROUP_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
@@ -122,19 +124,29 @@ export function importUsersHandler(clock: Clock): Handler<AppEnv> {
     const now = clock.now();
     const uuids = new UuidV7(clock);
 
-    const one = async (raw: string, index: number): Promise<ImportResult> => {
+    /** A line that passed its checks and waits for its group's creation. */
+    interface Creatable {
+      line: number;
+      input: ImportLine;
+      user: NewUser;
+    }
+    type Checked = { done: ImportResult } | { create: Creatable };
+
+    const check = async (raw: string, index: number): Promise<Checked> => {
       const line = index + 1;
       const parsed = parseJson(ImportLineSchema, raw);
-      if (!parsed.ok) return { line, status: "error", error: `invalid line: ${parsed.error}` };
+      if (!parsed.ok) {
+        return { done: { line, status: "error", error: `invalid line: ${parsed.error}` } };
+      }
       const input = parsed.value;
       const email = input.email === undefined ? null : input.email;
       if (email !== null && !isValidEmail(email)) {
-        return { line, status: "error", error: "email_invalid" };
+        return { done: { line, status: "error", error: "email_invalid" } };
       }
       const groups = [...new Set(input.groups ?? [])];
       const unknownGroup = groups.find((name) => !knownGroups.has(name));
       if (unknownGroup !== undefined) {
-        return { line, status: "error", error: `group_unknown: ${unknownGroup}` };
+        return { done: { line, status: "error", error: `group_unknown: ${unknownGroup}` } };
       }
       try {
         // A line with an id that exists is compared, never modified (TIO-ADMIN-020).
@@ -144,21 +156,29 @@ export function importUsersHandler(clock: Clock): Handler<AppEnv> {
             const profile = await userStub(c.env, input.id).getProfile();
             const held = profile.ok ? profile.profile.groups : [];
             const disabled = existing.status === "disabled";
-            return sameAsExisting(input, existing, held, disabled)
-              ? { line, status: "unchanged", id: input.id }
-              : { line, status: "conflict", id: input.id, error: "id_exists_with_other_data" };
+            return {
+              done: sameAsExisting(input, existing, held, disabled)
+                ? { line, status: "unchanged", id: input.id }
+                : { line, status: "conflict", id: input.id, error: "id_exists_with_other_data" },
+            };
           }
         } else if (email !== null && input.email_verified === true) {
           const holder = await findVerifiedUser(db, normalizeEmail(email));
           if (holder !== null) {
-            return { line, status: "conflict", id: holder.id, error: "email_taken" };
+            return { done: { line, status: "conflict", id: holder.id, error: "email_taken" } };
           }
         }
-        const id = input.id ?? uuids.next();
-        const created = await createUser(
-          c.env,
-          db,
-          {
+      } catch (error) {
+        return {
+          done: { line, status: "error", error: `storage: ${String(error).slice(0, 120)}` },
+        };
+      }
+      const id = input.id ?? uuids.next();
+      return {
+        create: {
+          line,
+          input,
+          user: {
             id,
             email,
             email_verified: input.email_verified ?? false,
@@ -172,15 +192,16 @@ export function importUsersHandler(clock: Clock): Handler<AppEnv> {
               email_verified: identity.email_verified ?? null,
               name: null,
             })),
+            ...(input.created_at === undefined ? {} : { created_at: input.created_at }),
           },
-          input.created_at ?? now,
-        );
-        if (!created.ok) {
-          if (created.error === "account_exists" || created.error === "identity_already_linked") {
-            return { line, status: "conflict", error: created.error };
-          }
-          return { line, status: "error", error: created.error };
-        }
+        },
+      };
+    };
+
+    /** What follows a creation: the event, the disable, the invitation (TIO-ADMIN-020). */
+    const created = async ({ line, input, user }: Creatable): Promise<ImportResult> => {
+      const id = user.id;
+      try {
         auditAdmin(c, {
           type: "user.created",
           target: id,
@@ -237,7 +258,43 @@ export function importUsersHandler(clock: Clock): Handler<AppEnv> {
       }
     };
 
-    const results = await pooled(rawLines, IMPORT_CONCURRENCY, one);
+    // The checks run in parallel (reads); the creations go in groups whose D1 claims and
+    // activations are one batch each, because D1 serializes writes (TIO-ADMIN-021).
+    const checked = await pooled(rawLines, IMPORT_CONCURRENCY, check);
+    const results: ImportResult[] = new Array(rawLines.length);
+    const creatable: { index: number; entry: Creatable }[] = [];
+    for (const [index, outcome] of checked.entries()) {
+      if ("done" in outcome) results[index] = outcome.done;
+      else creatable.push({ index, entry: outcome.create });
+    }
+    const groups: { index: number; entry: Creatable }[][] = [];
+    for (let i = 0; i < creatable.length; i += IMPORT_CLAIM_BATCH) {
+      groups.push(creatable.slice(i, i + IMPORT_CLAIM_BATCH));
+    }
+    await pooled(groups, 2, async (group) => {
+      let outcomes: CreateUserResult[];
+      try {
+        outcomes = await createUsers(
+          c.env,
+          db,
+          group.map(({ entry }) => entry.user),
+          now,
+        );
+      } catch (error) {
+        const message = `storage: ${String(error).slice(0, 120)}`;
+        for (const { index, entry } of group) {
+          results[index] = { line: entry.line, status: "error", error: message };
+        }
+        return;
+      }
+      for (const [i, { index, entry }] of group.entries()) {
+        const outcome = outcomes[i] as CreateUserResult;
+        if (outcome.ok) results[index] = await created(entry);
+        else if (outcome.error === "account_exists" || outcome.error === "identity_already_linked")
+          results[index] = { line: entry.line, status: "conflict", error: outcome.error };
+        else results[index] = { line: entry.line, status: "error", error: outcome.error };
+      }
+    });
     const counts = { created: 0, unchanged: 0, conflict: 0, error: 0 };
     for (const result of results) counts[result.status]++;
     auditAdmin(c, {

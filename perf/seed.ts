@@ -10,7 +10,7 @@
 //                              [--from 0 --batch 1000 --clients 8 --sample 100 --report FILE --skip-if-seeded]
 //       The import benchmark: batches through parallel clients, then the count and a sampled
 //       deep comparison; the report is JSON. `--skip-if-seeded` does nothing when the
-//       directory already holds that many active users.
+//       population's first and last users are already in the directory.
 //   node perf/seed.ts harvest  --issuer OP --client-id ID --client-secret S --login-url URL
 //                              --count 100000 [--from 0 --rate 50 --concurrency 20 --out FILE]
 //       Federated logins through the fake upstream, one per user, each leaving a session cookie
@@ -228,13 +228,20 @@ async function importUsers(): Promise<void> {
   const users = int("users");
   const from = int("from");
   if (values["skip-if-seeded"]) {
-    const stats = await a.json<{ users: Record<string, number> }>("GET", "stats");
-    const active = stats.body.users?.["active"] ?? 0;
-    if (active >= from + users) {
-      log(`import: ${active} active users already there (target ${from + users}); skipped`);
+    // The population's first and last users exist: this seed was imported already.
+    const present = async (n: number) => {
+      const found = await a.json<{ items: unknown[] }>(
+        "GET",
+        `users?email=${encodeURIComponent(emailOf(population, n))}`,
+      );
+      return (found.body.items?.length ?? 0) > 0;
+    };
+    if ((await present(from)) && (await present(from + users - 1))) {
+      log(
+        `import: population "${population.seed}" (${from}..${from + users - 1}) already there; skipped`,
+      );
       return;
     }
-    log(`import: ${active} active users, target ${from + users}`);
   }
   const batches = chunks(from, users, int("batch"));
   const statuses: Record<string, number> = {};

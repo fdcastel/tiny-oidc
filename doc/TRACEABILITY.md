@@ -224,7 +224,7 @@ Current phase: 7. Requirements: 284 (ci: 19, conformance: 2, covered: 241, load:
 | TIO-ADMIN-010 | §9.3 | test | 2 | covered | test/concurrency/creation.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-011 | §9.3 | test | 2 | covered | test/http/admin-auth.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-020 | §9.4 | test | 3 | covered | test/http/admin-import.test.ts |
-| TIO-ADMIN-021 | §9.4 | load | — | load |  |
+| TIO-ADMIN-021 | §9.4 | load | — | load | test/component/users.test.ts<br>test/http/admin-import.test.ts |
 | TIO-ADMIN-030 | §9.5 | withdrawn | — | withdrawn |  |
 | TIO-CRYPTO-001 | §10.1 | ci | — | ci | test/scripts/lint-rules.test.ts |
 | TIO-CRYPTO-002 | §10.1 | test | 0 | covered | test/scripts/lint-rules.test.ts<br>test/unit/crypto.test.ts |

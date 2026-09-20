@@ -11,12 +11,12 @@ import {
   record,
   sessionHit,
   summary,
-  thresholds,
-} from "./lib.js";
+  thresholds,, SUMMARY_TREND_STATS } from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 50);
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { sso_authorize: arrival("ssoAuthorize", RATE) },
   thresholds: thresholds("sso_authorize"),
 };

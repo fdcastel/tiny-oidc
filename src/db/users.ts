@@ -57,16 +57,20 @@ export function insertUserStatement(db: Db, user: NewUserRow, now: number) {
     );
 }
 
+/** The statement behind `setUserStatus`, for batches that activate many rows at once (§4.6 step 3). */
+export function setUserStatusStatement(db: Db, id: string, status: UserStatus, now: number) {
+  return db
+    .prepare("UPDATE users SET status = ?, updated_at = ? WHERE id = ?")
+    .bind(status, now, id);
+}
+
 export async function setUserStatus(
   db: Db,
   id: string,
   status: UserStatus,
   now: number,
 ): Promise<void> {
-  await db
-    .prepare("UPDATE users SET status = ?, updated_at = ? WHERE id = ?")
-    .bind(status, now, id)
-    .run();
+  await setUserStatusStatement(db, id, status, now).run();
 }
 
 export async function getUser(db: Db, id: string): Promise<UserRow | null> {

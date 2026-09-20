@@ -500,10 +500,17 @@ export class UserDO extends DurableObject<Env> {
   }
 
   /**
-   * Creates the user record (step 2 of user creation, §4.6). Idempotent for the
-   * same id so the repair cron may retry; a different id is refused.
+   * Creates the user record (step 2 of user creation, §4.6), with the upstream
+   * identities claimed at creation in the same transaction: one call per new
+   * user, which is what the bulk import's throughput hangs on (a Worker holds
+   * six outbound calls at a time). Idempotent for the same id so the repair
+   * cron may retry (the identities are then left to it); a different id is refused.
    */
-  init(profile: InitProfile, now: number): DoResult<{ profile: UserProfile }, UserDoError> {
+  init(
+    profile: InitProfile,
+    now: number,
+    identities: NewIdentity[] = [],
+  ): DoResult<{ profile: UserProfile }, UserDoError> {
     if (this.destroyed) return fail("user_destroyed");
     this.migrate();
     const existing = this.readUser();
@@ -512,6 +519,14 @@ export class UserDO extends DurableObject<Env> {
         ? { ok: true, profile: UserDO.profile(existing) }
         : fail("user_id_mismatch");
     }
+    return this.ctx.storage.transactionSync(() => this.insertUser(profile, now, identities));
+  }
+
+  private insertUser(
+    profile: InitProfile,
+    now: number,
+    identities: NewIdentity[],
+  ): DoResult<{ profile: UserProfile }, UserDoError> {
     const groups = JSON.stringify([...profile.groups].sort());
     this.ctx.storage.sql.exec(
       "INSERT INTO user (id, email, email_norm, email_verified, display_name, groups, disabled_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
@@ -528,6 +543,18 @@ export class UserDO extends DurableObject<Env> {
       "INSERT INTO meta (key, value) VALUES ('user_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       profile.id,
     );
+    for (const identity of identities) {
+      this.ctx.storage.sql.exec(
+        "INSERT INTO identities (id, issuer, subject, email, email_verified, name, created_at, last_login_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+        identity.id,
+        identity.issuer,
+        identity.subject,
+        identity.email,
+        identity.email_verified === null ? null : identity.email_verified ? 1 : 0,
+        identity.name,
+        now,
+      );
+    }
     return { ok: true, profile: UserDO.profile(this.readUser() as UserRow) };
   }
 

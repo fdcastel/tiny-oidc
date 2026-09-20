@@ -12,12 +12,12 @@ import {
   record,
   sessionHit,
   summary,
-  thresholds,
-} from "./lib.js";
+  thresholds,, SUMMARY_TREND_STATS } from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 200);
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { token_code_exchange: arrival("tokenCodeExchange", RATE) },
   thresholds: thresholds("token_code_exchange"),
 };

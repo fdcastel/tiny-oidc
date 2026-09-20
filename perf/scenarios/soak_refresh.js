@@ -17,8 +17,7 @@ import {
   refresh,
   summary,
   thresholds,
-  tokens,
-} from "./lib.js";
+  tokens,, SUMMARY_TREND_STATS } from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 100);
 const DURATION = __ENV.TIO_PERF_SOAK_DURATION || "2h";
@@ -35,6 +34,7 @@ const total = durationMs(DURATION);
 const window = durationMs(WINDOW);
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { soak_refresh: arrival("soakRefresh", RATE, DURATION) },
   thresholds: {
     ...thresholds("soak_refresh"),

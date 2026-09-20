@@ -225,6 +225,52 @@ describe("POST /api/v1/admin/import/users", () => {
     const again = await results(await importLines(lines));
     expect(again.every((r) => r.status === "conflict" && r.error === "email_taken")).toBe(true);
   });
+
+  it("[TIO-ADMIN-020] [TIO-ADMIN-021] the claims of a group travel in one batch: a duplicate within the group makes the group fall back to one claim per line, and only the loser is a conflict", async () => {
+    const twins = await results(
+      await importLines([
+        { email: "twin@example.com", email_verified: true },
+        { email: "solo@example.com", email_verified: true },
+        { email: "twin@example.com", email_verified: true },
+        {
+          email: "pair@example.com",
+          identities: [{ issuer: "https://idp.example.com", subject: "pair" }],
+        },
+        {
+          email: "other@example.com",
+          identities: [{ issuer: "https://idp.example.com", subject: "pair" }],
+        },
+      ]),
+    );
+    expect(twins.map((r) => [r.status, r.error ?? null])).toEqual([
+      ["created", null],
+      ["created", null],
+      ["conflict", "account_exists"],
+      ["created", null],
+      ["conflict", "identity_already_linked"],
+    ]);
+    // A directory failure during the checks is reported per line, without a creation.
+    const unchecked = await results(
+      await importLines([{ email: "check@example.com", email_verified: true }], {
+        env: { ...env, DB: failingD1(/email_verified = 1 AND status IN/) } as Env,
+      }),
+    );
+    expect(unchecked[0]).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("storage:"),
+    });
+    expect(await getUser(db, unchecked[0]?.id ?? "none")).toBeNull();
+    // A failure after the creation (the invitation's storage) is reported on the created line.
+    const afterwards = await results(
+      await importLines([{ email: "after@example.com", create_invitation: true }], {
+        env: { ...env, DB: failingD1(/INSERT INTO invitations/) } as Env,
+      }),
+    );
+    expect(afterwards[0]).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("storage:"),
+    });
+  });
 });
 
 describe("comparison and edge cases", () => {

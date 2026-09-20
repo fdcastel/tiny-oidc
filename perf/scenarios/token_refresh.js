@@ -5,13 +5,23 @@
 // The burst is spread over the relying parties the harvest used, which keeps
 // each client under its own limit of §6.7.
 import { check } from "k6";
-import { arrival, maxVusOf, ownedByThisVu, record, refresh, summary, thresholds } from "./lib.js";
+import {
+  arrival,
+  maxVusOf,
+  ownedByThisVu,
+  record,
+  refresh,
+  SUMMARY_TREND_STATS,
+  summary,
+  thresholds,
+} from "./lib.js";
 
 const SUSTAINED = Number(__ENV.TIO_PERF_RATE || 150);
 const BURST = Number(__ENV.TIO_PERF_BURST_RATE || 500);
 const SUSTAIN_FOR = __ENV.TIO_PERF_DURATION || "4m";
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: {
     token_refresh: arrival("tokenRefresh", SUSTAINED, SUSTAIN_FOR),
     token_refresh_burst: arrival("tokenRefresh", BURST, "60s", { startTime: SUSTAIN_FOR }),

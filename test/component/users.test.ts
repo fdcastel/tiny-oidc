@@ -12,7 +12,7 @@ import {
 } from "../../src/db/users.ts";
 import type { UserDO } from "../../src/do/UserDO.ts";
 import type { Env } from "../../src/env.ts";
-import { createUser, userStub } from "../../src/users/create.ts";
+import { createUser, createUsers, userStub } from "../../src/users/create.ts";
 import { EMAIL_MAX_LENGTH, isValidEmail, normalizeEmail } from "../../src/users/email.ts";
 import { registerPasskey, unregisterPasskey } from "../../src/users/passkeys.ts";
 import { FakeClock } from "../support/clock.ts";
@@ -153,6 +153,50 @@ describe("createUser", () => {
     );
     expect(anonymous.ok && anonymous.profile.email).toBeNull();
     expect(await findVerifiedUser(db, "nobody@example.com")).toBeNull();
+  });
+
+  it("[TIO-ADMIN-021] creates a group with one claim batch and one activation batch, falls back to one claim per user on a duplicate, and lets any other storage failure through", async () => {
+    const statements: string[][] = [];
+    const counting = {
+      prepare: (sql: string) => env.DB.prepare(sql),
+      batch: (batch: D1PreparedStatement[]) => {
+        statements.push(batch.map(() => "stmt"));
+        return env.DB.batch(batch);
+      },
+    } as unknown as D1Database;
+    const three = [input({ groups: [] }), input({ groups: [] }), input({ groups: [] })];
+    const created = await createUsers(env, Db.from(counting), three, clock.now());
+    expect(created.every((r) => r.ok)).toBe(true);
+    // One claim batch (a row per user) and one activation batch.
+    expect(statements.map((s) => s.length)).toEqual([3, 3]);
+    for (const user of three) expect((await getUser(db, user.id))?.status).toBe("active");
+    // A duplicate inside the group: the batch fails, the claims go one by one, the loser is told.
+    const twin = input({ groups: [] });
+    const mixed = [input({ groups: [] }), { ...input({ groups: [] }), email: twin.email }, twin];
+    const outcomes = await createUsers(env, db, mixed, clock.now());
+    expect(outcomes.map((r) => (r.ok ? "ok" : r.error))).toEqual(["ok", "ok", "account_exists"]);
+    // A failure that is not a uniqueness violation, in the group batch or in the fallback, propagates.
+    let batches = 0;
+    const failing = {
+      prepare: (sql: string) => env.DB.prepare(sql),
+      batch: (batch: D1PreparedStatement[]) => {
+        batches++;
+        if (batches === 1) throw new Error("UNIQUE constraint failed: users.email_norm");
+        throw new Error("D1 down");
+      },
+    } as unknown as D1Database;
+    await expect(
+      createUsers(env, Db.from(failing), [input({ groups: [] })], clock.now()),
+    ).rejects.toThrow("D1 down");
+    const down = {
+      prepare: (sql: string) => env.DB.prepare(sql),
+      batch: () => {
+        throw new Error("D1 down");
+      },
+    } as unknown as D1Database;
+    await expect(
+      createUsers(env, Db.from(down), [input({ groups: [] })], clock.now()),
+    ).rejects.toThrow("D1 down");
   });
 
   it("[TIO-DATA-021] leaves the row in `creating` when the Durable Object cannot be initialized", async () => {

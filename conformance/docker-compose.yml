@@ -7,7 +7,7 @@ services:
   mongodb:
     image: ${MONGODB_IMAGE:-mongo:6.0.13}
     volumes:
-      - ./results/mongo:/data/db
+      - mongodata:/data/db
     logging:
       driver: json-file
       options: { max-size: "500k", max-file: "5" }
@@ -29,9 +29,12 @@ services:
       BASE_URL: ${BASE_URL:-https://localhost.emobix.co.uk:8443}
       BASE_MTLS_URL: ${BASE_MTLS_URL:-https://localhost.emobix.co.uk:8444}
       MONGODB_HOST: mongodb
+      # The dev profile: no API token, which is what run-test-plan.py's dev mode expects.
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
-      JAVA_EXTRA_ARGS: ${JAVA_EXTRA_ARGS:---fintechlabs.devmode=true --fintechlabs.startredir=true}
     depends_on: [mongodb]
     logging:
       driver: json-file
       options: { max-size: "500k", max-file: "5" }
+
+volumes:
+  mongodata: {}

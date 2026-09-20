@@ -4,11 +4,20 @@
 // than the token's life).
 import { check } from "k6";
 import http from "k6/http";
-import { adminToken, arrival, ISSUER, record, summary, thresholds } from "./lib.js";
+import {
+  adminToken,
+  arrival,
+  ISSUER,
+  record,
+  SUMMARY_TREND_STATS,
+  summary,
+  thresholds,
+} from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 20);
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { admin_list: arrival("adminList", RATE) },
   thresholds: thresholds("admin_list"),
 };

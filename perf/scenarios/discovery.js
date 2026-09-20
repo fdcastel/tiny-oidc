@@ -2,11 +2,12 @@
 // served from cache, at 100 requests per second.
 import { check } from "k6";
 import http from "k6/http";
-import { arrival, ISSUER, record, summary, thresholds } from "./lib.js";
+import { arrival, ISSUER, record, SUMMARY_TREND_STATS, summary, thresholds } from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 100);
 
 export const options = {
+  summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { discovery: arrival("discovery", RATE) },
   thresholds: thresholds("discovery"),
 };
