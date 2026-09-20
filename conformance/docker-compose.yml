@@ -31,6 +31,11 @@ services:
       MONGODB_HOST: mongodb
       # The dev profile: no API token, which is what run-test-plan.py's dev mode expects.
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # The suite's own sign-in providers (unused here) must be configured or Spring refuses to start.
+      OIDC_GOOGLE_CLIENTID: google-client
+      OIDC_GOOGLE_SECRET: google-secret
+      OIDC_GITLAB_CLIENTID: gitlab-client
+      OIDC_GITLAB_SECRET: gitlab-secret
     depends_on: [mongodb]
     logging:
       driver: json-file
