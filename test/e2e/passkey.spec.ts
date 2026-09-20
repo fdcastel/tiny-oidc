@@ -142,3 +142,19 @@ test("cancelling sends the browser back to the relying party with access_denied"
   });
   await context.close();
 });
+
+test("a browser without WebAuthn is told so on the sign-in screen instead of being offered a passkey button (federation, when registered, is still offered — the conformance suite's browser relies on it)", async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  // The page-side script runs in the browser, which the Node tsconfig knows nothing about.
+  await context.addInitScript("delete window.PublicKeyCredential;");
+  const page = await context.newPage();
+  await page.goto(`${RP}/login`);
+  await expect(page).toHaveURL(/\/login\/\?interaction=/);
+  // No upstream is registered in the e2e environment, so nothing can be offered at all.
+  await expect(page.getByRole("heading", { name: "Unsupported browser" })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveText(/does not support passkeys/);
+  await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toHaveCount(0);
+  await context.close();
+});

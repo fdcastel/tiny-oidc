@@ -223,21 +223,42 @@
     };
   }
 
+  /** Whether this browser can do WebAuthn; without it only federation is offered. */
+  const passkeysSupported = () => Boolean(window.PublicKeyCredential);
+
   function loginScreen(id, doc) {
     const hint = doc.request?.login_hint;
+    const upstreams = doc.methods.upstreams || [];
+    const passkeys = passkeysSupported();
+    // Registration creates a passkey, so it needs the browser's support too.
     const canRegister =
-      doc.methods.registration !== "closed" || sessionStorage.getItem(INVITATION_KEY);
-    const signInButton = el(
-      "button",
-      { class: "primary", id: "signin-passkey" },
-      "Sign in with a passkey",
-    );
-    signInButton.addEventListener(
-      "click",
-      busy(() => signIn(id)),
-    );
-    const actions = el("div", { class: "actions" }, signInButton);
-    for (const upstream of doc.methods.upstreams || []) {
+      passkeys && (doc.methods.registration !== "closed" || sessionStorage.getItem(INVITATION_KEY));
+    if (!passkeys && upstreams.length === 0) {
+      render(
+        clientHeader(doc.client),
+        el("h1", {}, "Unsupported browser"),
+        errorBox("This browser does not support passkeys, and no other sign-in method is offered."),
+      );
+      return;
+    }
+    const actions = el("div", { class: "actions" });
+    if (passkeys) {
+      const signInButton = el(
+        "button",
+        { class: "primary", id: "signin-passkey" },
+        "Sign in with a passkey",
+      );
+      signInButton.addEventListener(
+        "click",
+        busy(() => signIn(id)),
+      );
+      actions.append(signInButton);
+    } else {
+      actions.append(
+        el("p", { class: "muted", id: "no-passkeys" }, "This browser does not support passkeys."),
+      );
+    }
+    for (const upstream of upstreams) {
       const b = el(
         "button",
         { id: `upstream-${upstream.alias}` },
@@ -386,7 +407,9 @@
         {},
         `An account with the email ${doc.link.email_masked} already exists. Sign in with its passkey to link your ${doc.link.upstream} identity to it.`,
       ),
-      el("div", { class: "actions" }, signInButton),
+      passkeysSupported()
+        ? el("div", { class: "actions" }, signInButton)
+        : errorBox("This browser does not support passkeys; link from one that does."),
     );
   }
 
@@ -477,13 +500,6 @@
             ? "Your invitation is saved in this browser. Open the application you want to sign in to and choose “Create an account”."
             : "Open an application that uses this identity provider to sign in.",
         ),
-      );
-      return;
-    }
-    if (!window.PublicKeyCredential) {
-      render(
-        el("h1", {}, "Unsupported browser"),
-        errorBox("This browser does not support passkeys."),
       );
       return;
     }

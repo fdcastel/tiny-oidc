@@ -150,7 +150,12 @@ only an administrator can issue one (TIO-REG-001). Rules the OP applies:
 
 ## 6. Upstream providers (federation)
 
-For each entry of `methods.upstreams`, offer a button:
+For each entry of `methods.upstreams`, offer a button. Offer them even in a
+browser without WebAuthn (`window.PublicKeyCredential` absent): federation
+needs no passkey, and the reference app only says that passkeys are
+unavailable there — the OpenID Foundation conformance suite's own browser
+signs in this way. Only a browser with neither passkeys nor an upstream has
+nothing to offer.
 
 ```text
 POST …/upstream/{alias} {}  → { redirect_to: "<upstream authorization URL>" }
