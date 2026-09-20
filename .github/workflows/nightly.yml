@@ -11,6 +11,11 @@ on:
     - cron: "17 5 * * 0" # weekly: the soak
   workflow_dispatch:
     inputs:
+      only:
+        description: Run one job instead of the nightly set (iterating on a gate)
+        type: choice
+        options: [all, conformance, load, mutation]
+        default: all
       soak:
         description: Also run the two-hour soak
         type: boolean
@@ -29,7 +34,7 @@ jobs:
     # scripts/run-test-plan.py. The exported results are the archive
     # TIO-TEST-040 asks for.
     name: OpenID conformance suite (TIO-TEST-040, TIO-TEST-041)
-    if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' }}
+    if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' && (!inputs.only || inputs.only == 'all' || inputs.only == 'conformance') }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -111,7 +116,7 @@ jobs:
     # credentials — never a Cloudflare token (TIO-DEPLOY-006). The harvested
     # tokens never leave the runner; only reports and summaries are archived.
     name: k6 load thresholds (TIO-PERF-001, TIO-TEST-050, TIO-TEST-051)
-    if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' }}
+    if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' && (!inputs.only || inputs.only == 'all' || inputs.only == 'load') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
@@ -215,7 +220,7 @@ jobs:
     # The Workers project stays out until the Vitest runner stops pinning
     # pool=threads, which displaces the Cloudflare pool (stryker.config.json).
     name: mutation testing baseline (report only)
-    if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' }}
+    if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' && (!inputs.only || inputs.only == 'all' || inputs.only == 'mutation') }}
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 120
