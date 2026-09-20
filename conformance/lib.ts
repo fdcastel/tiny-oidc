@@ -68,29 +68,30 @@ export interface PlanRun {
  * logout (both with the basic client).
  */
 export function planRuns(configDir: string): PlanRun[] {
+  // The certification plans fix the response type and mode themselves, and the config plan its
+  // metadata source: only the selectable variants are given (the suite refuses the rest).
   const server = "[server_metadata=discovery][client_registration=static_client]";
-  const code = "[response_type=code][response_mode=default]";
   const auth = (v: keyof typeof CLIENT_AUTH_TYPE) => `[client_auth_type=${CLIENT_AUTH_TYPE[v]}]`;
   return [
-    { plan: `oidcc-config-certification-test-plan${server}`, config: `${configDir}/config.json` },
+    { plan: "oidcc-config-certification-test-plan", config: `${configDir}/config.json` },
     {
-      plan: `oidcc-basic-certification-test-plan${server}${auth("basic")}${code}`,
+      plan: `oidcc-basic-certification-test-plan${server}${auth("basic")}`,
       config: `${configDir}/basic-client_secret_basic.json`,
     },
     {
-      plan: `oidcc-basic-certification-test-plan${server}${auth("post")}${code}`,
+      plan: `oidcc-basic-certification-test-plan${server}${auth("post")}`,
       config: `${configDir}/basic-client_secret_post.json`,
     },
     {
-      plan: `oidcc-basic-certification-test-plan${server}${auth("none")}${code}`,
+      plan: `oidcc-basic-certification-test-plan${server}${auth("none")}`,
       config: `${configDir}/basic-none.json`,
     },
     {
-      plan: `oidcc-rp-initiated-logout-certification-test-plan${server}${auth("basic")}${code}`,
+      plan: `oidcc-rp-initiated-logout-certification-test-plan${server}${auth("basic")}`,
       config: `${configDir}/rp-initiated-logout.json`,
     },
     {
-      plan: `oidcc-backchannel-rp-initiated-logout-certification-test-plan${server}${auth("basic")}${code}`,
+      plan: `oidcc-backchannel-rp-initiated-logout-certification-test-plan${server}${auth("basic")}`,
       config: `${configDir}/backchannel-logout.json`,
     },
   ];

@@ -41,12 +41,12 @@ describe("conformance plans", () => {
   it("run the four plans of TIO-TEST-040, the basic one in the three client-authentication variants", () => {
     const runs = planRuns("cfg");
     expect(runs.map((r) => r.plan)).toEqual([
-      "oidcc-config-certification-test-plan[server_metadata=discovery][client_registration=static_client]",
-      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic][response_type=code][response_mode=default]",
-      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_post][response_type=code][response_mode=default]",
-      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=none][response_type=code][response_mode=default]",
-      "oidcc-rp-initiated-logout-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic][response_type=code][response_mode=default]",
-      "oidcc-backchannel-rp-initiated-logout-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic][response_type=code][response_mode=default]",
+      "oidcc-config-certification-test-plan",
+      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic]",
+      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_post]",
+      "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=none]",
+      "oidcc-rp-initiated-logout-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic]",
+      "oidcc-backchannel-rp-initiated-logout-certification-test-plan[server_metadata=discovery][client_registration=static_client][client_auth_type=client_secret_basic]",
     ]);
     // Every rendered configuration has a template, and every template is used.
     for (const r of runs) expect(CONFIG_SOURCES[r.config.replace("cfg/", "")]).toBeDefined();
@@ -56,7 +56,7 @@ describe("conformance plans", () => {
     const named = new Set(Object.values(config.conformance_plans).flat());
     for (const plan of named)
       expect(
-        runs.some((r) => r.plan.startsWith(`${plan}[`)),
+        runs.some((r) => r.plan === plan || r.plan.startsWith(`${plan}[`)),
         plan,
       ).toBe(true);
     expect(runnerArgs(runs.slice(0, 1), "out", "expected.json")).toEqual([
