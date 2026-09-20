@@ -65,7 +65,7 @@ async function token(body: Record<string, string> | string, options: Options = {
 async function login(
   client: Client,
   user: PasskeyUser,
-  overrides: Record<string, string> = {},
+  overrides: Record<string, string | undefined> = {},
   sessionCookie?: string,
 ): Promise<{ code: string; session: string; started: Started }> {
   const started = await h.start(client, overrides, sessionCookie);
@@ -299,7 +299,7 @@ describe("POST /token: authorization_code", () => {
       scope: "openid",
       code_challenge: undefined,
       code_challenge_method: undefined,
-    } as Record<string, string>);
+    });
     const withVerifier = await token(
       {
         grant_type: "authorization_code",
