@@ -14,9 +14,11 @@ import {
   pkce,
   RP_REDIRECT,
   record,
+  SUMMARY_TREND_STATS,
   summary,
   thresholds,
-  tokens,, SUMMARY_TREND_STATS } from "./lib.js";
+  tokens,
+} from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 50);
 const ALIAS = __ENV.TIO_PERF_UPSTREAM_ALIAS || "fake";

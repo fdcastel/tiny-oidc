@@ -13,6 +13,7 @@ import {
 import type { Clock } from "../env.ts";
 import { utf8 } from "../util/base64url.ts";
 import { parseJson } from "../util/json.ts";
+import { Refresher } from "../util/swr.ts";
 import type { DerivedKeys } from "./master-keys.ts";
 import { openSecret, sealedUnderVersion, sealSecret } from "./secretbox.ts";
 
@@ -281,6 +282,8 @@ export async function rekeySigningKeys(
 export class KeyStore {
   private cached: { loaded: LoadedKeys; at: number } | undefined;
   private readonly clock: Clock;
+  /** The early refresh (§2.8): the request path never waits for D1 while the keys are under the TTL. */
+  readonly refresher = new Refresher();
 
   constructor(clock: Clock) {
     this.clock = clock;
@@ -288,22 +291,39 @@ export class KeyStore {
 
   async get(db: Db, keys: DerivedKeys): Promise<LoadedKeys> {
     const now = this.clock.now();
-    if (this.cached && now - this.cached.at < KEYS_TTL_SECONDS) return this.cached.loaded;
+    const cached = this.cached;
+    if (cached) {
+      const verdict = Refresher.verdict(now - cached.at, KEYS_TTL_SECONDS);
+      if (verdict !== "expired") {
+        if (verdict === "early") this.refresher.start(() => this.refresh(db, keys, now));
+        return cached.loaded;
+      }
+    }
     let rows: SigningKeyRow[];
     try {
-      rows = await listSigningKeys(db);
-      if (!rows.some((r) => r.retired_at === null)) {
-        // Empty store: create the first key, guarded against concurrent isolates.
-        await insertGenerated(db, keys, now, now, true);
-        rows = await listSigningKeys(db);
-      }
+      rows = await this.rows(db, keys, now);
     } catch (error) {
-      if (this.cached && now - this.cached.at < KEYS_STALE_SECONDS) return this.cached.loaded;
+      if (cached && now - cached.at < KEYS_STALE_SECONDS) return cached.loaded;
       throw new KeysUnavailableError(error);
     }
     const loaded = await this.load(rows, keys, now);
     this.cached = { loaded, at: now };
     return loaded;
+  }
+
+  /** The unretired rows, creating the first key on an empty store (guarded against concurrent isolates). */
+  private async rows(db: Db, keys: DerivedKeys, now: number): Promise<SigningKeyRow[]> {
+    let rows = await listSigningKeys(db);
+    if (!rows.some((r) => r.retired_at === null)) {
+      await insertGenerated(db, keys, now, now, true);
+      rows = await listSigningKeys(db);
+    }
+    return rows;
+  }
+
+  private async refresh(db: Db, keys: DerivedKeys, now: number): Promise<void> {
+    const loaded = await this.load(await this.rows(db, keys, now), keys, now);
+    this.cached = { loaded, at: now };
   }
 
   private async load(rows: SigningKeyRow[], keys: DerivedKeys, now: number): Promise<LoadedKeys> {

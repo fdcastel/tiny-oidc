@@ -9,9 +9,11 @@ import {
   ownedByThisVu,
   pkce,
   record,
+  SUMMARY_TREND_STATS,
   sessionHit,
   summary,
-  thresholds,, SUMMARY_TREND_STATS } from "./lib.js";
+  thresholds,
+} from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 50);
 

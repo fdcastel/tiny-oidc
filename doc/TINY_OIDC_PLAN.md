@@ -299,6 +299,7 @@ These rules bind whoever works on the repository, human or agent. The plan is on
 | 2026-09-19 | Recorded 90ae144 for P7-01. |
 | 2026-09-19 | Recorded 764fbda for P7-02. |
 | 2026-09-19 | Recorded 8bea435 for P7-05 (still in progress on the sign-off) and e1eaf82 for P7-07. |
+| 2026-09-20 | Isolate caches (settings, keys, clients) refresh early in the background from three quarters of their TTL (TIO-ARCH-011 wording extended; `src/util/swr.ts`), after the second nightly run put the refresh p99 at 238 ms against a 33 ms median. k6 scenario scripts are syntax-checked by the unit suite after a broken import list silently skipped three scenarios. |
 | 2026-09-19 | Batched user creation (`createUsers`: one claim batch, parallel `init` with the identities linked inside it, one activation batch) behind the import and `createUser`; the first nightly run's numbers and the object-placement lesson recorded in P7-04; the conformance compose fixed. |
 | 2026-09-19 | First staging measurements (P7-04): a 1,000-line import emitted 3,000 audit events in one request and hit the Analytics Engine per-invocation write limit, turning a finished import into a 500 — TIO-OBS-002 now aggregates event points per type and outcome with a count and a refused write never fails a request. Throughput measured at 7 users/s (D1 write round trips serialized per user; see the P7-04 row). |
 | 2026-09-19 | Spec §6.7: the per-address class on `/token`, `/par`, `/revoke` counts failed client authentication only (owner's decision on the P7-04 conflict; ADR 0012). |

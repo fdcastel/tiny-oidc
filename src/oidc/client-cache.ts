@@ -1,6 +1,7 @@
 import { getClient } from "../db/clients.ts";
 import type { Db } from "../db/db.ts";
 import type { Clock } from "../env.ts";
+import { type Background, Refresher } from "../util/swr.ts";
 import type { Client } from "./clients.ts";
 
 // Isolate cache of client records (spec §2.8): LRU of 1,000 entries, 60 s TTL
@@ -22,11 +23,15 @@ export class ClientsUnavailableError extends Error {
 interface Entry {
   client: Client | null;
   at: number;
+  /** The early refresh of this entry (§2.8). */
+  refresher: Refresher;
 }
 
 export class ClientCache {
   private readonly entries = new Map<string, Entry>();
   private readonly clock: Clock;
+  /** Keeps a background refresh alive past the current request; set per request by the app. */
+  keepAlive: Background["keepAlive"] = () => {};
 
   constructor(clock: Clock) {
     this.clock = clock;
@@ -36,18 +41,39 @@ export class ClientCache {
   async get(db: Db, clientId: string): Promise<Client | null> {
     const now = this.clock.now();
     const cached = this.entries.get(clientId);
-    if (cached && now - cached.at < CLIENT_CACHE_TTL_SECONDS) {
-      this.touch(clientId, cached);
-      return cached.client;
+    if (cached) {
+      const verdict = Refresher.verdict(now - cached.at, CLIENT_CACHE_TTL_SECONDS);
+      if (verdict !== "expired") {
+        if (verdict === "early") {
+          cached.refresher.keepAlive = this.keepAlive;
+          cached.refresher.start(() => this.refresh(db, clientId, now, cached.refresher));
+        }
+        this.touch(clientId, cached);
+        return cached.client;
+      }
     }
     try {
-      const client = await getClient(db, clientId);
-      this.touch(clientId, { client, at: now });
-      return client;
+      return await this.refresh(db, clientId, now, cached?.refresher ?? new Refresher());
     } catch (error) {
       if (cached && now - cached.at < CLIENT_CACHE_STALE_SECONDS) return cached.client;
       throw new ClientsUnavailableError(error);
     }
+  }
+
+  private async refresh(
+    db: Db,
+    clientId: string,
+    now: number,
+    refresher: Refresher,
+  ): Promise<Client | null> {
+    const client = await getClient(db, clientId);
+    this.touch(clientId, { client, at: now, refresher });
+    return client;
+  }
+
+  /** Resolves when no entry is refreshing in the background (tests). */
+  async settled(): Promise<void> {
+    await Promise.all([...this.entries.values()].map((e) => e.refresher.settled()));
   }
 
   /** Re-inserts as most recently used and evicts the oldest entry beyond capacity. */

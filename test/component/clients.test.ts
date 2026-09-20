@@ -237,6 +237,21 @@ describe("client cache", () => {
     expect((await cache.get(db, "web"))?.disabled_at).toBeNull();
     clock.advance(CLIENT_CACHE_TTL_SECONDS);
     expect((await cache.get(db, "web"))?.disabled_at).toBe(clock.now() - CLIENT_CACHE_TTL_SECONDS);
+    // From three quarters of the TTL the entry refreshes in the background while still served.
+    await setClientDisabled(db, "web", null, clock.now());
+    clock.advance(CLIENT_CACHE_TTL_SECONDS * 0.75);
+    expect((await cache.get(db, "web"))?.disabled_at).not.toBeNull();
+    await cache.settled();
+    expect((await cache.get(db, "web"))?.disabled_at).toBeNull();
+    // The app hands the refresh to the runtime so it outlives the request.
+    await setClientDisabled(db, "web", clock.now(), clock.now());
+    clock.advance(CLIENT_CACHE_TTL_SECONDS * 0.75);
+    const kept: Promise<unknown>[] = [];
+    cache.keepAlive = (work) => kept.push(work);
+    expect((await cache.get(db, "web"))?.disabled_at).toBeNull();
+    expect(kept).toHaveLength(1);
+    await cache.settled();
+    expect((await cache.get(db, "web"))?.disabled_at).not.toBeNull();
     cache.invalidate("web");
     await setClientDisabled(db, "web", null, clock.now());
     expect((await cache.get(db, "web"))?.disabled_at).toBeNull();

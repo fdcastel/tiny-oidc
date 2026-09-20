@@ -144,22 +144,41 @@ describe("Db wrapper and settings repository", () => {
 describe("SettingsLoader", () => {
   beforeEach(resetStorage);
 
-  it("[TIO-ARCH-011] serves cached settings for 60 seconds and picks up a change on the next refresh", async () => {
+  it("[TIO-ARCH-011] serves cached settings for 60 seconds, refreshes early in the background from 45 s so the request path never waits, and blocks only past the TTL", async () => {
     const clock = new FakeClock();
     const loader = new SettingsLoader(clock);
+    const kept: Promise<unknown>[] = [];
+    loader.refresher.keepAlive = (work) => kept.push(work);
     const db = Db.from(env.DB);
     const first = await loader.get(db, config());
     expect(first["registration.mode"]).toBe("invite");
     await writeSettings(db, { "registration.mode": "open" }, "t", clock.now());
-    clock.advance(SETTINGS_TTL_SECONDS - 1);
+    // Under three quarters of the TTL: served from memory, no read.
+    clock.advance(SETTINGS_TTL_SECONDS * 0.75 - 1);
     expect((await loader.get(db, config()))["registration.mode"]).toBe("invite");
     expect(db.counters.reads).toBe(1);
+    // From there on: still the cached value, and one background refresh (kept alive for the runtime).
     clock.advance(1);
-    expect((await loader.get(db, config()))["registration.mode"]).toBe("open");
+    expect((await loader.get(db, config()))["registration.mode"]).toBe("invite");
+    expect((await loader.get(db, config()))["registration.mode"]).toBe("invite");
+    expect(kept).toHaveLength(1);
+    await loader.refresher.settled();
     expect(db.counters.reads).toBe(2);
+    expect((await loader.get(db, config()))["registration.mode"]).toBe("open");
+    // A cache that outlived the TTL without a request in between blocks on the read.
+    await writeSettings(db, { "registration.mode": "closed" }, "t", clock.now());
+    clock.advance(SETTINGS_TTL_SECONDS);
+    expect((await loader.get(db, config()))["registration.mode"]).toBe("closed");
+    expect(db.counters.reads).toBe(3);
     loader.invalidate();
     await loader.get(db, config());
-    expect(db.counters.reads).toBe(3);
+    expect(db.counters.reads).toBe(4);
+    // A failing background refresh is silent; the blocking path reports past the TTL.
+    clock.advance(SETTINGS_TTL_SECONDS * 0.75);
+    const broken = Db.from(brokenD1());
+    expect((await loader.get(broken, config()))["registration.mode"]).toBe("closed");
+    await loader.refresher.settled();
+    expect((await loader.get(db, config()))["registration.mode"]).toBe("closed");
   });
 
   it("[TIO-ARCH-012] serves stale settings while D1 fails for at most one hour, then fails closed", async () => {

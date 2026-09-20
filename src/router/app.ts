@@ -185,6 +185,11 @@ export function createApp(deps: AppDeps) {
     c.set("metrics", metrics);
     const db = Db.from(c.env.DB);
     c.set("db", db);
+    // Background cache refreshes (§2.8) outlive the request that started them.
+    const keepAlive = (work: Promise<unknown>) => c.executionCtx.waitUntil(work);
+    settingsLoader.refresher.keepAlive = keepAlive;
+    keyStore.refresher.keepAlive = keepAlive;
+    clients.keepAlive = keepAlive;
     c.set("settingsLoader", settingsLoader);
     c.set("keyStore", keyStore);
     c.set("clients", clients);

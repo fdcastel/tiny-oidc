@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BUDGETS, MAX_D1_WRITE_RATE, MAX_FAILED_RATE } from "../../perf/scenarios/budgets.js";
@@ -56,6 +57,14 @@ describe("k6 budgets", () => {
       const script = readFileSync(`perf/scenarios/${scenario}.js`, "utf8");
       expect(script, scenario).toContain(`thresholds("${scenario}")`);
       expect(script, scenario).toContain("record(");
+      expect(script, scenario).toContain("summaryTrendStats: SUMMARY_TREND_STATS");
+    }
+    // k6 parses the scripts itself; a syntax error would surface only in the nightly.
+    for (const file of ["lib.js", "budgets.js", ...[...named].map((s) => `${s}.js`)]) {
+      expect(
+        () => execFileSync(process.execPath, ["--check", `perf/scenarios/${file}`]),
+        file,
+      ).not.toThrow();
     }
   });
 });

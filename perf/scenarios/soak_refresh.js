@@ -15,9 +15,11 @@ import {
   ownedByThisVu,
   record,
   refresh,
+  SUMMARY_TREND_STATS,
   summary,
   thresholds,
-  tokens,, SUMMARY_TREND_STATS } from "./lib.js";
+  tokens,
+} from "./lib.js";
 
 const RATE = Number(__ENV.TIO_PERF_RATE || 100);
 const DURATION = __ENV.TIO_PERF_SOAK_DURATION || "2h";

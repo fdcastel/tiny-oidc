@@ -6,6 +6,7 @@ import { readAllSettings } from "./db/settings.ts";
 import type { InteractionDO } from "./do/InteractionDO.ts";
 import type { UserDO } from "./do/UserDO.ts";
 import { registrableDomain, sameSite } from "./util/domain.ts";
+import { Refresher } from "./util/swr.ts";
 
 // The single declaration of the Worker's bindings, vars, secrets and settings
 // (spec §2.2, §12.2, TIO-CFG-005). scripts/gen-config-docs.ts renders doc/CONFIG.md
@@ -274,29 +275,42 @@ export class SettingsUnavailableError extends Error {
 export class SettingsLoader {
   private cached: { settings: Settings; at: number } | undefined;
   private readonly clock: Clock;
+  /** The early refresh (§2.8): the request path never waits for D1 while the value is under the TTL. */
+  readonly refresher = new Refresher();
 
   constructor(clock: Clock) {
     this.clock = clock;
   }
 
   /**
-   * Effective settings: refreshed from D1 every 60 s (TIO-ARCH-011); when D1
-   * fails, served stale for at most one hour, then fails closed (TIO-ARCH-012).
+   * Effective settings: refreshed from D1 every 60 s (TIO-ARCH-011), early and
+   * in the background once three quarters of that have passed; when D1 fails,
+   * served stale for at most one hour, then fails closed (TIO-ARCH-012).
    */
   async get(db: Db, config: Config): Promise<Settings> {
     const now = this.clock.now();
-    if (this.cached && now - this.cached.at < SETTINGS_TTL_SECONDS) return this.cached.settings;
+    const cached = this.cached;
+    if (cached) {
+      const verdict = Refresher.verdict(now - cached.at, SETTINGS_TTL_SECONDS);
+      if (verdict !== "expired") {
+        if (verdict === "early") this.refresher.start(() => this.refresh(db, config, now));
+        return cached.settings;
+      }
+    }
     try {
-      const stored = await readAllSettings(db);
-      const resolved = resolveSettings(stored, config);
-      if (!resolved.ok)
-        throw new Error(`stored settings invalid: ${resolved.violations.join("; ")}`);
-      this.cached = { settings: resolved.settings, at: now };
-      return resolved.settings;
+      return await this.refresh(db, config, now);
     } catch (error) {
-      if (this.cached && now - this.cached.at < SETTINGS_STALE_SECONDS) return this.cached.settings;
+      if (cached && now - cached.at < SETTINGS_STALE_SECONDS) return cached.settings;
       throw new SettingsUnavailableError(error);
     }
+  }
+
+  private async refresh(db: Db, config: Config, now: number): Promise<Settings> {
+    const stored = await readAllSettings(db);
+    const resolved = resolveSettings(stored, config);
+    if (!resolved.ok) throw new Error(`stored settings invalid: ${resolved.violations.join("; ")}`);
+    this.cached = { settings: resolved.settings, at: now };
+    return resolved.settings;
   }
 
   /** Drops the cache; used after an in-process write so the next read sees it. */

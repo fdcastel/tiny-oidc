@@ -258,7 +258,12 @@ describe("key store", () => {
     clock.advance(1);
     const k2 = await rotateSigningKey(db, keys, clock.now(), 0, true);
     expect((await store.get(db, keys)).signing.kid).toBe(k1);
-    clock.advance(KEYS_TTL_SECONDS - 1);
+    // From three quarters of the TTL: the cached keys, and a background refresh.
+    clock.advance(KEYS_TTL_SECONDS * 0.75);
+    expect((await store.get(db, keys)).signing.kid).toBe(k1);
+    await store.refresher.settled();
+    expect((await store.get(db, keys)).signing.kid).toBe(k2);
+    clock.advance(KEYS_TTL_SECONDS);
     expect((await store.get(db, keys)).signing.kid).toBe(k2);
     const broken = Db.from(brokenD1());
     clock.advance(KEYS_TTL_SECONDS);
