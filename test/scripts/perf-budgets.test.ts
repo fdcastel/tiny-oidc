@@ -48,11 +48,11 @@ describe("k6 budgets", () => {
     }
     expect(MAX_FAILED_RATE).toBe(0.001);
     expect(MAX_D1_WRITE_RATE).toBe(5);
-    // The budget is on the requests that read no D1; the D1-touching ones are bounded at
-    // four times it; the two rows that read D1 by design are budgeted over every request.
+    // The budget is on the requests that read no D1; the p99 over every request is bounded
+    // at four times it; the two rows that read D1 by design are budgeted over every request.
     expect(TAIL_FACTOR).toBe(4);
     const spec = readFileSync("doc/TINY_OIDC_SPEC.md", "utf8");
-    expect(spec).toContain("bounded separately at four times the row's p99");
+    expect(spec).toContain("the p99 over every request at four times the row's p99");
     expect(
       Object.entries(BUDGETS)
         .filter(([, b]) => b.d1)

@@ -34,8 +34,11 @@ the load gate report-only until production.
 
 A row's p99 budget applies to the requests whose path read no D1
 (`Server-Timing` `d1r` = 0, TIO-OBS-004), the work the Worker's code controls.
-The requests that did read D1 are bounded at four times the row's p99, so a
-regression there still fails the gate. The two rows whose path reads D1 by
+The p99 over every request, the D1-touching ones included, is bounded at
+four times the row's p99, so a regression in the tail still fails the gate.
+(The D1-touching requests alone are 2–8 % of a run; their own p99 is a
+handful of samples that swung twofold between two runs of identical code,
+and a gate that flaps on identical code is no gate.) The two rows whose path reads D1 by
 design — the federation callback (600/1200 ms) and the admin lists
 (300/1000 ms) — are budgeted over every request, at values set from the
 measurements above. TIO-PERF-001 and §2.7 say so; `perf/scenarios/budgets.js`
@@ -54,7 +57,13 @@ D1 read.
 
 - The gate distinguishes "our code got slower" from "the platform placed us
   farther from D1 tonight": the first fails the warm budget, the second the
-  tail bound only when it is four times worse than the budget.
+  tail bound only when the p99 of everything is four times the budget.
+- `sso_authorize` runs over a slice of 200 sessions, as `token_refresh` and
+  `userinfo` run over slices of theirs: spread over all 1,000 sessions at
+  50/s, each user's object was hit once every 20 s and evicted in between,
+  and the scenario measured Durable Object cold starts (warm p99 383 ms
+  against a p95 of 97) rather than the session hit. A cold object costs
+  200–400 ms and is a platform property the callback row already carries.
 - The `d1_reads` counter and the split trends (`server_ms_warm`,
   `server_ms_d1`) stay in every summary, so the share of cold requests is
   visible night to night.

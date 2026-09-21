@@ -7,8 +7,8 @@
 // D1 writes the row allows on the request path (the §13.10 write-rate
 // assertion is on the same counter); `d1` marks the rows whose path reads
 // D1 by design — their budget covers every request, the others' the requests
-// that read no D1, with the D1-touching ones bounded at TAIL_FACTOR times the
-// budget (§2.7, ADR 0016).
+// that read no D1, with the p99 over every request bounded at TAIL_FACTOR
+// times the budget (§2.7, ADR 0016).
 
 export const BUDGETS = {
   discovery: { endpoint: "GET /.well-known/*", p50: 5, p99: 20, d1w: 0, d1: false },
@@ -27,7 +27,7 @@ export const BUDGETS = {
   soak_refresh: { endpoint: "POST /token refresh", p50: 30, p99: 150, d1w: 0, d1: false },
 };
 
-/** The bound on the requests that had to read D1, as a multiple of the row's p99 (§2.7). */
+/** The bound on the p99 over every request, the D1-touching ones included, as a multiple of the row's p99 (§2.7). */
 export const TAIL_FACTOR = 4;
 
 /** `http_req_failed` for every scenario (§13.10: below 0.1%). */

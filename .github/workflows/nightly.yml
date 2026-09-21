@@ -179,7 +179,9 @@ jobs:
             echo "::endgroup::"
           }
           run discovery
-          run sso_authorize
+          # A slice keeps the objects warm (one hit every 4 s at 50/s); over every session each
+          # object was evicted between hits and the scenario measured cold starts (ADR 0016).
+          TIO_PERF_SLICE="0:200" run sso_authorize
           run login_federated
           run token_code_exchange
           run admin_list

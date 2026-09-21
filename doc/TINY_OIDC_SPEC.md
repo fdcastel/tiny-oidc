@@ -403,7 +403,7 @@ GET /logout (no hint, session present)
 
 ### 2.7 Performance budgets and capacity model
 
-Budgets are server-side, measured inside the Worker from request receipt to response send, at the load in §1.3, over a five-minute window. A row's budget applies to the requests whose path read no D1 (`Server-Timing` `d1r` = 0, TIO-OBS-004): the work the Worker's code controls. A request that had to read D1 — a cold isolate loading its caches (§2.8), a value past its TTL — is bounded separately at four times the row's p99, so a regression there still fails without the budget measuring the platform's isolate churn and the single-region D1 round trip. The two rows whose path reads D1 by design, the federation callback and the admin lists, carry their budgets over every request (ADR 0016).
+Budgets are server-side, measured inside the Worker from request receipt to response send, at the load in §1.3, over a five-minute window. A row's budget applies to the requests whose path read no D1 (`Server-Timing` `d1r` = 0, TIO-OBS-004): the work the Worker's code controls. The requests that had to read D1 — a cold isolate loading its caches (§2.8), a value past its TTL — are covered by a second bound, the p99 over every request at four times the row's p99, so a regression there still fails without the budget measuring the platform's isolate churn and the single-region D1 round trip. The two rows whose path reads D1 by design, the federation callback and the admin lists, carry their budgets over every request (ADR 0016).
 
 | Endpoint | p50 | p99 | DO hops | D1 | Signatures |
 |---|---|---|---|---|---|
@@ -420,7 +420,7 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 | `GET /federation/callback` | 600 ms | 1200 ms | 2 | 1 read | 0 |
 | Admin list endpoints | 300 ms | 1000 ms | 0 | 1–2 reads | 0 |
 
-**[TIO-PERF-001]** (V: load) The k6 suite SHALL enforce the p99 budgets above as thresholds at 200 token requests per second with 1,000,000 seeded users: on the requests that read no D1 for every row but the two that read D1 by design, and four times the budget on the requests that did read D1.
+**[TIO-PERF-001]** (V: load) The k6 suite SHALL enforce the p99 budgets above as thresholds at 200 token requests per second with 1,000,000 seeded users: on the requests that read no D1 for every row but the two that read D1 by design, and four times the budget on the p99 over every request.
 
 **[TIO-PERF-002]** (V: ci) Worker CPU time per request SHALL stay below 30 ms at p99 in the load test; the uncompressed bundle SHALL stay below 1.5 MB. CI fails on bundle growth beyond the budget.
 

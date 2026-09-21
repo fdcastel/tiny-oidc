@@ -67,9 +67,12 @@ export function record(res, scenario = exec.scenario.name) {
 
 /**
  * The thresholds of one scenario (`tagged` when a burst or a step of it carries
- * its own tag): the §2.7 p99 on the requests that read no D1 and TAIL_FACTOR
- * times it on those that did — or on every request for a row that reads D1
- * by design —, the failure rate, the D1 write rate.
+ * its own tag): the §2.7 p99 on the requests that read no D1, and TAIL_FACTOR
+ * times it on the p99 over every request, the D1-touching ones included — or
+ * the budget itself over every request for a row that reads D1 by design —,
+ * the failure rate, the D1 write rate. (The D1-touching requests alone are a
+ * few per cent of a run; their own p99 is a handful of samples that swings
+ * twofold between identical runs, so the tail is bounded over everything.)
  */
 export function thresholds(scenario, tagged = scenario) {
   const budget = BUDGETS[scenario];
@@ -77,7 +80,7 @@ export function thresholds(scenario, tagged = scenario) {
     ? { [`server_ms{scenario:${tagged}}`]: [`p(99)<=${budget.p99}`] }
     : {
         [`server_ms_warm{scenario:${tagged}}`]: [`p(99)<=${budget.p99}`],
-        [`server_ms_d1{scenario:${tagged}}`]: [`p(99)<=${budget.p99 * TAIL_FACTOR}`],
+        [`server_ms{scenario:${tagged}}`]: [`p(99)<=${budget.p99 * TAIL_FACTOR}`],
       };
   return {
     ...timing,
