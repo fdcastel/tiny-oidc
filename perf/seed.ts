@@ -134,7 +134,17 @@ class Admin {
       },
     };
     if (body !== undefined) init.body = typeof body === "string" ? body : JSON.stringify(body);
-    return fetch(`${this.issuer}/api/v1/admin/${path}`, init);
+    // A connection reset under a thousand parallel calls is transport, not an answer: an
+    // idempotent call is repeated; a POST is not (an import line must not run twice).
+    const retries = method === "GET" || method === "DELETE" ? TRANSPORT_RETRIES : 0;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fetch(`${this.issuer}/api/v1/admin/${path}`, init);
+      } catch (error) {
+        if (attempt >= retries) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
   }
 
   async json<T>(
@@ -150,6 +160,8 @@ class Admin {
 const admin = () => new Admin(need("issuer"), need("client-id"), need("client-secret"));
 const rpIds = (count: number) => Array.from({ length: count }, (_, i) => `perf-rp-${i + 1}`);
 const RP_REDIRECT = "https://perf-rp.invalid/callback";
+/** How often an idempotent admin call is repeated after a transport error (a reset connection). */
+const TRANSPORT_RETRIES = 2;
 /** How often a delete retries a 503 (an object restarting under a deploy). */
 const DELETE_RETRIES = 3;
 /** A harvest whose first logins all fail stops here instead of running to its count. */
@@ -388,10 +400,17 @@ async function deleteUsers(): Promise<void> {
     int("concurrency"),
     async (n) => {
       const email = emailOf(population, n);
-      const found = await a.json<{ items?: { id: string }[] }>(
-        "GET",
-        `users?email=${encodeURIComponent(email)}`,
-      );
+      let found: { body: { items?: { id: string }[] } };
+      try {
+        found = await a.json<{ items?: { id: string }[] }>(
+          "GET",
+          `users?email=${encodeURIComponent(email)}`,
+        );
+      } catch (error) {
+        counts.failed += 1;
+        if (errors.length < 20) errors.push(`${email}: ${String(error)}`);
+        return;
+      }
       const id = found.body.items?.[0]?.id;
       if (id === undefined) {
         counts.absent += 1;
