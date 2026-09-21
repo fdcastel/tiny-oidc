@@ -2,7 +2,6 @@ import type { Handler } from "hono";
 import { z } from "zod";
 import { sha256 } from "../crypto/hash.ts";
 import { newSecret, randomBytes } from "../crypto/random.ts";
-import { getUpstream } from "../db/upstreams.ts";
 import type { Clock } from "../env.ts";
 import { guard } from "../interaction/api.ts";
 import { sealFederationHandle } from "../oidc/handles.ts";
@@ -14,6 +13,7 @@ import { encodeBase64Url } from "../util/base64url.ts";
 import { readJsonBody } from "../util/json.ts";
 import type { UpstreamMetadata } from "./discovery.ts";
 import type { UpstreamUnavailableError } from "./metadata.ts";
+import type { Upstream } from "./upstreams.ts";
 
 // The outbound leg of a federated login (spec §6.4.2): `POST
 // …/upstream/{alias}` starts a leg on the interaction (TIO-IX-040) and answers
@@ -51,9 +51,9 @@ export function upstreamHandler(clock: Clock): Handler<AppEnv> {
     const db = c.get("db");
     const config = c.get("config");
     // Unknown and disabled aliases are the same 404 (TIO-IX-040).
-    let upstream: Awaited<ReturnType<typeof getUpstream>>;
+    let upstream: Upstream | null;
     try {
-      upstream = await getUpstream(db, alias);
+      upstream = await c.get("upstreams").get(db, alias);
     } catch {
       return errorResponse(c, 503, "temporarily_unavailable", "upstream directory unavailable");
     }

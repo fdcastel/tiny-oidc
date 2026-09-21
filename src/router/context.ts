@@ -6,7 +6,7 @@ import type { Config, Env, Settings, SettingsLoader } from "../env.ts";
 import type { UpstreamMetadataCache } from "../federation/metadata.ts";
 import type { Account } from "../me/auth.ts";
 import type { Logger } from "../obs/log.ts";
-import type { ClientCache } from "../oidc/client-cache.ts";
+import type { ClientCache, UpstreamCache } from "../oidc/client-cache.ts";
 import type { RemoteJwksCache } from "../oidc/jwks-cache.ts";
 
 /** Per-request counters reported in the log line (TIO-OBS-001, TIO-ARCH-005). */
@@ -27,6 +27,8 @@ export interface Variables {
   settingsLoader: SettingsLoader;
   keyStore: KeyStore;
   clients: ClientCache;
+  /** Upstream records by alias (§2.8); administrative reads bypass it. */
+  upstreams: UpstreamCache;
   jwks: RemoteJwksCache;
   /** Upstream discovery metadata and JWKS (§2.8). */
   upstreamMetadata: UpstreamMetadataCache;

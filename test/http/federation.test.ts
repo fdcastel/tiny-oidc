@@ -492,11 +492,13 @@ describe("claims and account resolution", () => {
     });
     fake.person({ sub: "erin", email: "erin@example.com", email_verified: true });
     await db.prepare("UPDATE upstreams SET trust_email_verified = 0 WHERE alias = 'idp'").run();
+    h.invalidate();
     const untrusted = await driveFederation(h, fake, web, { sub: "erin" });
     expect(await claimsOf((await finish(untrusted)).id_token)).toMatchObject({
       email_verified: false,
     });
     await db.prepare("UPDATE upstreams SET trust_email_verified = 1 WHERE alias = 'idp'").run();
+    h.invalidate();
     const idTokenString = await driveFederation(h, fake, web, {
       sub: "frank",
       faults: ["string_email_verified"],
@@ -832,6 +834,8 @@ describe("failure paths", () => {
 
   it("[TIO-IX-040] the start answers 503 when the upstream directory is unreachable and 409 when the interaction moved on under its feet", async () => {
     const started = await h.start(web);
+    // With no cached record the read reaches D1 (a cached one would be served, §2.8).
+    h.invalidate();
     const down = await h.post(
       started,
       "upstream/idp",
@@ -942,12 +946,16 @@ describe("failure paths", () => {
       sub: "someone",
       beforeCallback: async () => {
         await db.prepare("UPDATE upstreams SET enabled = 0 WHERE alias = 'idp'").run();
+        h.invalidate();
       },
     });
     expect((await failure(disabled)).error_description).toBe("upstream_not_found");
     await db.prepare("UPDATE upstreams SET enabled = 1 WHERE alias = 'idp'").run();
+    h.invalidate();
+    // The record cached by the start would be served through the outage (§2.8): drop it first.
     const unreadable = await driveFederation(h, fake, web, {
       sub: "someone",
+      beforeCallback: async () => h.invalidate(),
       env: { ...env, DB: failingD1(/FROM upstreams/) },
     });
     expect((await failure(unreadable)).error_description).toBe("temporarily_unavailable");
@@ -1066,8 +1074,10 @@ describe("failure paths", () => {
     const step = await driveFederation(h, fake, web, { sub: "linker" });
     expect((await docOf(step, clock.now())).status).toBe("link_required");
     await db.prepare("UPDATE upstreams SET alias = 'idp-renamed' WHERE alias = 'idp'").run();
+    h.invalidate();
     expect((await prove(step.started, owner)).status).toBe(503);
     await db.prepare("UPDATE upstreams SET alias = 'idp' WHERE alias = 'idp-renamed'").run();
+    h.invalidate();
     await insertIdentityStatement(db, IDP, "linker", third, clock.now()).run();
     expect((await prove(step.started, owner)).status).toBe(503);
     const failing = { ...env, DB: failingD1(/INSERT INTO identity_index/) };

@@ -101,7 +101,7 @@ import {
 import { metricPoints, writeMetrics } from "../obs/metrics.ts";
 import { sessionMetadata } from "../obs/request-meta.ts";
 import { authorizeHandler } from "../oidc/authorize-endpoint.ts";
-import { ClientCache } from "../oidc/client-cache.ts";
+import { ClientCache, UpstreamCache } from "../oidc/client-cache.ts";
 import { RemoteJwksCache } from "../oidc/jwks-cache.ts";
 import { parHandler } from "../oidc/par-endpoint.ts";
 import { revokeHandler } from "../oidc/revoke-endpoint.ts";
@@ -134,6 +134,7 @@ export function createApp(deps: AppDeps) {
   const settingsLoader = new SettingsLoader(deps.clock);
   const keyStore = new KeyStore(deps.clock);
   const clients = new ClientCache(deps.clock);
+  const upstreamRecords = new UpstreamCache(deps.clock);
   const jwks = new RemoteJwksCache();
   const upstreamMetadata = new UpstreamMetadataCache(deps.clock);
   const upstreamJwks = new RemoteJwksCache({ cooldownMs: UPSTREAM_JWKS_COOLDOWN_MS });
@@ -190,9 +191,11 @@ export function createApp(deps: AppDeps) {
     settingsLoader.refresher.keepAlive = keepAlive;
     keyStore.refresher.keepAlive = keepAlive;
     clients.keepAlive = keepAlive;
+    upstreamRecords.keepAlive = keepAlive;
     c.set("settingsLoader", settingsLoader);
     c.set("keyStore", keyStore);
     c.set("clients", clients);
+    c.set("upstreams", upstreamRecords);
     c.set("jwks", jwks);
     c.set("upstreamMetadata", upstreamMetadata);
     c.set("upstreamJwks", upstreamJwks);
@@ -415,5 +418,15 @@ export function createApp(deps: AppDeps) {
     return errorResponse(c, 500, "server_error", "internal error");
   });
 
-  return app;
+  return Object.assign(app, {
+    /** The isolate caches (§2.8): dropped together when the storage under them is replaced. */
+    caches: {
+      invalidate(): void {
+        settingsLoader.invalidate();
+        keyStore.invalidate();
+        clients.invalidate();
+        upstreamRecords.invalidate();
+      },
+    },
+  });
 }

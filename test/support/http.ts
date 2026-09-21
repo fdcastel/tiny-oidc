@@ -5,6 +5,7 @@ import type { Client } from "../../src/oidc/clients.ts";
 import { createApp } from "../../src/router/app.ts";
 import { FakeClock } from "./clock.ts";
 import { env, url } from "./op.ts";
+import { dropCachesOnReset } from "./reset.ts";
 
 // An app instance driven directly with a fake clock and a log collector, for
 // HTTP suites that need to move time or inspect log lines. Redirects are never
@@ -45,11 +46,14 @@ export interface Harness {
   get(started: Started, options?: CallOptions): Promise<Response>;
   /** POST an Interaction API operation. */
   post(started: Started, op: string, body?: unknown, options?: CallOptions): Promise<Response>;
+  /** Drops the app's isolate caches (a record changed under them in this test). */
+  invalidate(): void;
 }
 
 export function harness(clock = new FakeClock(1_800_000_000)): Harness {
   const lines: LogLine[] = [];
   const app = createApp({ clock, sink: (line) => lines.push(line) });
+  dropCachesOnReset(() => app.caches.invalidate());
   const send = async (path: string, options: CallOptions = {}): Promise<Response> => {
     const headers: Record<string, string> = { ...options.headers };
     if (options.origin !== null) headers["origin"] = options.origin ?? LOGIN_ORIGIN;
@@ -98,6 +102,7 @@ export function harness(clock = new FakeClock(1_800_000_000)): Harness {
     lines,
     send,
     start,
+    invalidate: () => app.caches.invalidate(),
     get: (started, options = {}) => send(api(started.id), { cookie: started.cookie, ...options }),
     post: (started, op, body, options = {}) =>
       send(`${api(started.id)}/${op}`, {

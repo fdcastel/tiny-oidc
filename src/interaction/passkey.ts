@@ -9,7 +9,6 @@ import {
 } from "../auth/passkey.ts";
 import { bytesToUuid, UuidV7 } from "../crypto/uuid.ts";
 import { insertIdentityStatement, releaseIdentity } from "../db/identities.ts";
-import { getUpstream } from "../db/upstreams.ts";
 import { lookupCredential, releaseCredential } from "../db/users.ts";
 import type { InteractionAuth, InteractionDocument, LinkCandidate } from "../do/InteractionDO.ts";
 import type { PasskeyRecord, UserProfile } from "../do/UserDO.ts";
@@ -215,7 +214,7 @@ async function linkIdentity(
 ): Promise<boolean> {
   const db = c.get("db");
   const now = clock.now();
-  const upstream = await getUpstream(db, link.alias);
+  const upstream = await c.get("upstreams").get(db, link.alias);
   if (upstream === null) return false;
   try {
     await insertIdentityStatement(db, upstream.issuer, link.subject, uid, now).run();

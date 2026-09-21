@@ -4,7 +4,6 @@ import { UuidV7 } from "../crypto/uuid.ts";
 import type { Db } from "../db/db.ts";
 import { lookupIdentity, releaseIdentity } from "../db/identities.ts";
 import { consumeInvitation, getInvitation } from "../db/invitations.ts";
-import { getUpstream } from "../db/upstreams.ts";
 import { findVerifiedUser } from "../db/users.ts";
 import type { FederationLeg, InteractionDO } from "../do/InteractionDO.ts";
 import type { UserProfile } from "../do/UserDO.ts";
@@ -310,7 +309,7 @@ export function federationCallbackHandler(clock: Clock): Handler<AppEnv> {
     let upstream: Upstream | null;
     let metadata: UpstreamMetadata;
     try {
-      upstream = await getUpstream(db, leg.alias);
+      upstream = await c.get("upstreams").get(db, leg.alias);
       if (upstream === null || !upstream.enabled) {
         return fail("upstream_error", "upstream_not_found", "upstream_not_found");
       }

@@ -11,4 +11,16 @@ import { env } from "cloudflare:workers";
 export async function resetStorage(): Promise<void> {
   await reset();
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  for (const drop of cacheDrops) drop();
+}
+
+const cacheDrops: (() => void)[] = [];
+
+/**
+ * Registers an app's isolate caches to be dropped with the storage: a file's
+ * harness outlives its tests, and a record cached from the previous test
+ * would otherwise survive a store that no longer holds it (§2.8).
+ */
+export function dropCachesOnReset(drop: () => void): void {
+  cacheDrops.push(drop);
 }

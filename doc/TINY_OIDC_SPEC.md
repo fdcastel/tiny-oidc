@@ -448,12 +448,13 @@ The D1 directory is the first ceiling. Its size is dominated by `audit_hot` rete
 |---|---|---|---|---|
 | Discovery document, JWKS | Cloudflare edge cache via `Cache-Control: public, max-age=300` + Worker `caches.default` | 5 min | — | Time |
 | Client record | Isolate memory (LRU 1,000) | 60 s | up to 1 h | Time |
+| Upstream record | Isolate memory (LRU 1,000) | 60 s | up to 1 h | Time |
 | Settings | Isolate memory | 60 s | up to 1 h | Time |
 | Signing keys (public and decrypted private) | Isolate memory | 60 s (so that retirement meets TIO-ARCH-011) | up to 1 h | Time |
 | Upstream discovery metadata | Isolate memory | 1 h | up to 24 h | Time |
 | Upstream JWKS | `jose` remote JWK set (isolate) | 1 h; refetch on unknown `kid` at most once per 5 min | up to 24 h | `kid` miss |
 
-**[TIO-ARCH-011]** Disabling a client, retiring a key or changing a setting SHALL take effect on every isolate within 60 seconds under normal D1 availability. Tests advance a fake clock and assert refresh. From three quarters of the TTL a read SHALL serve the cached value and refresh it in the background (one refresh in flight per cache, kept alive past the request), so that under steady traffic no request waits for D1 on a cache expiry; a value past the TTL is refreshed before it is served.
+**[TIO-ARCH-011]** Disabling a client or an upstream, retiring a key or changing a setting SHALL take effect on every isolate within 60 seconds under normal D1 availability. Tests advance a fake clock and assert refresh. From three quarters of the TTL a read SHALL serve the cached value and refresh it in the background (one refresh in flight per cache, kept alive past the request), so that under steady traffic no request waits for D1 on a cache expiry; a value past the TTL is refreshed before it is served.
 
 **[TIO-ARCH-012]** When D1 is unavailable, the OP SHALL serve client, settings and key reads from stale cache for at most one hour, then fail closed. Tests simulate D1 errors.
 
