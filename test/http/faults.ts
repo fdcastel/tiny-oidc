@@ -74,6 +74,38 @@ export function brokenDoFor(userIds: string | string[], spare: string[] = []): E
 }
 
 /**
+ * An environment where the first `failures` calls of `method` on every user's
+ * object (the spared ones excepted) throw before reaching it, as a restarting
+ * object does, and later calls go through.
+ */
+export function flakyDoFor(method: string, failures: number, spare: string[] = []): Env {
+  let calls = 0;
+  const spared = spare.map((id) => env.USER_DO.idFromName(id));
+  return {
+    ...env,
+    USER_DO: {
+      idFromName: (name: string) => env.USER_DO.idFromName(name),
+      get: (id: DurableObjectId) => {
+        const real = env.USER_DO.get(id);
+        if (spared.some((s) => s.equals(id))) return real;
+        return new Proxy(real, {
+          get(target, property) {
+            const value = Reflect.get(target, property) as unknown;
+            if (property !== method || typeof value !== "function") return value;
+            return async (...args: unknown[]) => {
+              calls++;
+              if (calls <= failures) throw new Error("DO unavailable");
+              const invoke = (target as unknown as Record<string, Method>)[property] as Method;
+              return invoke(...args);
+            };
+          },
+        });
+      },
+    },
+  } as unknown as Env;
+}
+
+/**
  * An environment where the nth call of `method` on one user's object destroys
  * the object first, so the call answers as a vanished user would
  * (TIO-DATA-021). `"*"` applies to every object except those in `spare`.

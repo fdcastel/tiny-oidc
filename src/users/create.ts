@@ -95,25 +95,36 @@ function uniquenessFailure(error: unknown): Failure | null {
   return message.includes("identity_index") ? "identity_already_linked" : "account_exists";
 }
 
-/** Step 2 for one claimed user: the object with its identities, in one call. */
+/** How many times a thrown `init` call is repeated before the creation is given up. */
+const INIT_RETRIES = 1;
+
+/**
+ * Step 2 for one claimed user: the object with its identities, in one call.
+ * A call that throws is transport (the object restarting under a deploy, a
+ * reset) rather than an answer; `init` is idempotent under the D1 claim
+ * already held, so it is repeated once before the line is reported failed —
+ * one of a thousand imported users hit this on staging.
+ */
 async function initialize(env: Env, p: Prepared): Promise<CreateUserResult> {
-  try {
-    const initialized = await userStub(env, p.input.id).init(
-      {
-        id: p.input.id,
-        email: p.email,
-        email_norm: p.emailNorm,
-        email_verified: p.input.email_verified,
-        display_name: p.input.display_name,
-        groups: [...p.input.groups].sort(),
-      },
-      p.at,
-      p.identities,
-    );
-    if (!initialized.ok) return { ok: false, error: "temporarily_unavailable" };
-    return { ok: true, profile: initialized.profile };
-  } catch {
-    return { ok: false, error: "temporarily_unavailable" };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const initialized = await userStub(env, p.input.id).init(
+        {
+          id: p.input.id,
+          email: p.email,
+          email_norm: p.emailNorm,
+          email_verified: p.input.email_verified,
+          display_name: p.input.display_name,
+          groups: [...p.input.groups].sort(),
+        },
+        p.at,
+        p.identities,
+      );
+      if (!initialized.ok) return { ok: false, error: "temporarily_unavailable" };
+      return { ok: true, profile: initialized.profile };
+    } catch {
+      if (attempt >= INIT_RETRIES) return { ok: false, error: "temporarily_unavailable" };
+    }
   }
 }
 

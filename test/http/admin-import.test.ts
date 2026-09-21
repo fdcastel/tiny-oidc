@@ -13,7 +13,7 @@ import { harness, LOGIN_ORIGIN } from "../support/http.ts";
 import { testKeys } from "../support/keys.ts";
 import { env } from "../support/op.ts";
 import { newUser, userWithPasskey } from "../support/passkeys.ts";
-import { brokenDoFor, failingD1, sabotageDo } from "./faults.ts";
+import { brokenDoFor, failingD1, flakyDoFor, sabotageDo } from "./faults.ts";
 
 // Bulk import (spec §9.4 Import, TIO-ADMIN-020): NDJSON in, one result per
 // line in order, idempotent per line, bounded concurrency.
@@ -317,6 +317,19 @@ describe("comparison and edge cases", () => {
       await importLines([{ email: "nodo@example.com" }], { env: brokenDoFor("*", [rootId]) }),
     );
     expect(unreachable[0]).toMatchObject({ status: "error", error: "temporarily_unavailable" });
+    // A thrown init is repeated once (the object restarting), not twice.
+    const once = await results(
+      await importLines([{ email: "flaky-once@example.com" }], {
+        env: flakyDoFor("init", 1, [rootId]),
+      }),
+    );
+    expect(once[0]).toMatchObject({ status: "created" });
+    const twice = await results(
+      await importLines([{ email: "flaky-twice@example.com" }], {
+        env: flakyDoFor("init", 2, [rootId]),
+      }),
+    );
+    expect(twice[0]).toMatchObject({ status: "error", error: "temporarily_unavailable" });
     const vanishing = await results(
       await importLines(
         [{ email: "vanish@example.com", disabled: true, create_invitation: true }],
