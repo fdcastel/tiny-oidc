@@ -151,6 +151,38 @@ async function relyingParty(party: RelyingParty): Promise<{ id: string; secret: 
   return { id, secret };
 }
 
+// --- the person the suite signs in as ---------------------------------------------------
+
+/** The fake upstream's default subject, the one it acts as when the login app's button starts the login. */
+const PERSON = "person-1";
+
+/**
+ * Provisions the person the suite logs in as, once: an account with the fake
+ * upstream's identity, exactly as an operator imports federated users. A
+ * first-time federated login would otherwise be a registration, which
+ * staging's policy refuses (`registration.mode`, `federation.auto_create`,
+ * TIO-FED-040); the policy stays as it is.
+ */
+async function conformancePerson(): Promise<void> {
+  const upstream = await admin<{ issuer?: string; error?: string }>(
+    "GET",
+    `upstreams/${encodeURIComponent(upstreamAlias)}`,
+  );
+  if (upstream.status !== 200 || !upstream.body.issuer)
+    throw new Error(
+      `upstream ${upstreamAlias}: ${upstream.status} ${JSON.stringify(upstream.body)} (register the fake upstream on staging first)`,
+    );
+  const created = await admin<{ error?: string; error_description?: string }>("POST", "users", {
+    email: `${PERSON}@upstream.example`,
+    email_verified: true,
+    display_name: `Person ${PERSON}`,
+    identities: [{ issuer: upstream.body.issuer, subject: PERSON }],
+  });
+  if (created.status === 201) log(`person ${PERSON}: created with the ${upstreamAlias} identity`);
+  else if (created.status === 409) log(`person ${PERSON}: exists (${created.body.error})`);
+  else throw new Error(`person ${PERSON}: ${created.status} ${JSON.stringify(created.body)}`);
+}
+
 // --- the suite's logs -------------------------------------------------------------------
 
 /** GET from the suite over its self-signed local address (dev mode, no token). */
@@ -235,6 +267,7 @@ async function main(): Promise<number> {
       post: await relyingParty("post"),
     },
   };
+  await conformancePerson();
   const browser = readFileSync("conformance/plans/browser.json", "utf8");
   const placeholderValues = placeholders(run);
   for (const file of CONFIG_FILES) {

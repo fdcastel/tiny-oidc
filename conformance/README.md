@@ -41,6 +41,16 @@ registered with `require_pkce: false` (spec TIO-AUTHZ-008, ADR 0013).
 re-pointed at the run's tunnel URL afterwards, their secrets rotated on every
 run and never stored.
 
+## The person the suite signs in as
+
+The fake upstream acts as its default subject, `person-1`, when the login
+app's button starts the login. `run.ts` provisions that person on staging
+once (`POST /admin/users` with the fake upstream's identity), the way an
+operator imports federated users, so the login resolves by identity
+(TIO-FED-040 rule 1). Staging's registration policy stays as it is: a
+first-time federated login without `federation.auto_create` is a
+registration, and `registration.mode = invite` refuses it.
+
 ## How the browser automation works
 
 The suite opens the OP's `/authorize` in its own browser. The OP sends it to
