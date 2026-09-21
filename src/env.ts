@@ -300,9 +300,11 @@ export class SettingsLoader {
       }
     }
     try {
+      const shared = this.loading !== undefined;
       this.loading ??= this.refresh(db, config, now).finally(() => {
         this.loading = undefined;
       });
+      if (shared) db.countSharedRead();
       return await this.loading;
     } catch (error) {
       if (cached && now - cached.at < SETTINGS_STALE_SECONDS) return cached.settings;

@@ -1936,7 +1936,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-003]** `GET /api/v1/health` SHALL return `{ "status": "ok" | "degraded", "version": "<git sha>", "active_kid": "…", "d1": "ok" | "error", "time": <now> }` with status 200 for `ok` and 503 for `degraded`; it SHALL touch no Durable Object.
 
-**[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
+**[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line — `d1r` counting the reads the request issued and the cache loads of §2.8 it waited for another request to finish, since its latency carries them —, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
 
 ### 11.5 Privacy
 

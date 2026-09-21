@@ -302,9 +302,11 @@ export class KeyStore {
       }
     }
     try {
+      const shared = this.loading !== undefined;
       this.loading ??= this.loadNow(db, keys, now).finally(() => {
         this.loading = undefined;
       });
+      if (shared) db.countSharedRead();
       return await this.loading;
     } catch (error) {
       if (error instanceof NoSigningKeyError || error instanceof KeysUnavailableError) throw error;

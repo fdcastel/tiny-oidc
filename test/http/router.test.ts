@@ -274,7 +274,11 @@ describe("health and observability", () => {
     gate.open();
     const answers = await Promise.all(inFlight);
     expect(answers.map((r) => r.status)).toEqual([200, 200, 200]);
-    expect(lines.filter((l) => l.msg === "request")).toHaveLength(3);
+    const requests = lines.filter((l) => l.msg === "request");
+    expect(requests).toHaveLength(3);
+    // The request that started the loads counts them; the ones that waited for them count the
+    // wait as reads too (TIO-OBS-004), so none of the three looks like a warm request.
+    for (const line of requests) expect(line["d1_reads"] as number).toBeGreaterThanOrEqual(2);
   });
 
   it("[TIO-OBS-002] writes one data point per request and one per audit event type and outcome when metrics are bound, and a refused write never fails the request", async () => {

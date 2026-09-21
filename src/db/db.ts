@@ -72,6 +72,15 @@ export class Db {
     return new Statement(this.d1.prepare(sql), classify(sql), this.counters);
   }
 
+  /**
+   * Counts a read this request waited for without issuing: a cache load another
+   * request started (§2.8). The request's latency carries that round trip, so its
+   * `d1r` says so (TIO-OBS-004) and the load suite files it with the D1-touching ones.
+   */
+  countSharedRead(): void {
+    this.counters.reads++;
+  }
+
   /** Runs the statements as one transaction (TIO-DATA-016). */
   batch<T = Record<string, unknown>>(statements: Statement[]): Promise<D1Result<T>[]> {
     for (const s of statements) {
