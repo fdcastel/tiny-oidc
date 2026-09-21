@@ -276,10 +276,12 @@ describe("GET /authorize", () => {
 
   it("[TIO-AUTHZ-025] a request object by value is request_not_supported — redirected with state and iss when the redirect_uri is registered, to the login app otherwise — and its contents never stand in for the query", async () => {
     // An unsigned request object carrying every parameter the query lacks (what the suite sends).
-    const claims = Buffer.from(
+    const b64url = (text: string) =>
+      btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const claims = b64url(
       JSON.stringify({ state: "inside", nonce: "n", scope: "openid", response_type: "code" }),
-    ).toString("base64url");
-    const requestObject = `${Buffer.from('{"alg":"none"}').toString("base64url")}.${claims}.`;
+    );
+    const requestObject = `${b64url('{"alg":"none"}')}.${claims}.`;
     const redirected = await authorize(valid(web, { request: requestObject }));
     expect(query(redirected)).toEqual({
       error: "request_not_supported",

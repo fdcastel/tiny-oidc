@@ -45,10 +45,9 @@ test("a person adds a passkey from the settings page right after signing in, and
   await page.getByLabel("Passkey name").fill("Second key");
   await page.getByRole("button", { name: "Add a passkey" }).click();
   await expect(page.getByLabel("Result")).toContainText('"status":201');
-  expect((await passkeys(page)).items.map((p) => p.name).sort()).toEqual([
-    "First key",
-    "Second key",
-  ]);
+  await expect
+    .poll(async () => (await passkeys(page)).items.map((p) => p.name).sort())
+    .toEqual(["First key", "Second key"]);
   await provider.remember(page);
   // Past the maximum authentication age the OP refuses; the page re-authorizes with max_age=0.
   await page.waitForTimeout(6_000);
@@ -61,10 +60,8 @@ test("a person adds a passkey from the settings page right after signing in, and
   await page.getByLabel("Passkey name").fill("Third key");
   await page.getByRole("button", { name: "Add a passkey" }).click();
   await expect(page.getByLabel("Result")).toContainText('"status":201');
-  expect((await passkeys(page)).items.map((p) => p.name).sort()).toEqual([
-    "First key",
-    "Second key",
-    "Third key",
-  ]);
+  await expect
+    .poll(async () => (await passkeys(page)).items.map((p) => p.name).sort())
+    .toEqual(["First key", "Second key", "Third key"]);
   await context.close();
 });
