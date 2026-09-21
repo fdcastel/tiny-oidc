@@ -17,11 +17,14 @@
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  browserDiagnostics,
   CONFIG_FILES,
   expectedProblems,
+  type LogEntry,
   placeholders,
   planRuns,
   RELYING_PARTIES,
@@ -148,6 +151,61 @@ async function relyingParty(party: RelyingParty): Promise<{ id: string; secret: 
   return { id, secret };
 }
 
+// --- the suite's logs -------------------------------------------------------------------
+
+/** GET from the suite over its self-signed local address (dev mode, no token). */
+function suiteGet(path: string): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      `${suiteUrl}${path}`,
+      { method: "GET", rejectUnauthorized: false, headers: { accept: "application/json" } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          if ((res.statusCode ?? 0) >= 300) {
+            reject(new Error(`suite ${path}: ${res.statusCode} ${body.slice(0, 200)}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/**
+ * The event log of every test module the suite ran, whatever the outcome: the
+ * runner exports a plan only when it completes, and the browser automation's
+ * own trace (what the browser fetched, what the script did) lives in these
+ * logs and nowhere else. `<module>--<id>.json` is the whole log and
+ * `<module>--<id>.browser.txt` the browser lines.
+ */
+async function dumpModuleLogs(): Promise<void> {
+  const dir = join(results, "logs");
+  mkdirSync(dir, { recursive: true });
+  const listing = (await suiteGet("/api/log?length=1000")) as {
+    data?: { _id: string; testName?: string; status?: string; result?: string }[];
+  };
+  let count = 0;
+  for (const info of listing.data ?? []) {
+    const entries = (await suiteGet(`/api/log/${encodeURIComponent(info._id)}`)) as LogEntry[];
+    const name = `${info.testName ?? "module"}--${info._id}`;
+    writeFileSync(join(dir, `${name}.json`), `${JSON.stringify(entries, null, 2)}\n`);
+    const lines = browserDiagnostics(entries);
+    if (lines.length > 0) writeFileSync(join(dir, `${name}.browser.txt`), `${lines.join("\n")}\n`);
+    count++;
+  }
+  log(`${count} module log(s) → ${dir}`);
+}
+
 // --- the run ----------------------------------------------------------------------------
 
 async function main(): Promise<number> {
@@ -200,6 +258,11 @@ async function main(): Promise<number> {
       DISABLE_SSL_VERIFY: "1",
     },
   });
+  try {
+    await dumpModuleLogs();
+  } catch (error) {
+    log(`module logs not collected: ${String(error)}`);
+  }
   return child.status ?? 1;
 }
 

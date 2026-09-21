@@ -101,6 +101,7 @@ jobs:
           name: conformance-results
           path: |
             conformance/results/export/
+            conformance/results/logs/
             conformance/results/config/
             conformance/results/expected-failures.json
             conformance/results/expected-skips.json

@@ -77,8 +77,13 @@ node conformance/run.ts --suite-scripts conformance/suite/scripts --public-url h
 
 `--dry-run` registers the clients and renders the configurations without
 running the suite. Results land in `conformance/results/` (ignored by git):
-the rendered configurations, the expected-failures and expected-skips files and the suite's
-exported zips.
+the rendered configurations, the expected-failures and expected-skips files, the suite's
+exported zips (a plan is exported only when it completes) and, under `logs/`,
+the event log of every module the suite ran whatever its outcome, with a
+`.browser.txt` next to it holding the browser automation's own trace: every
+request the suite's browser made and every script error, since the plans set
+`browser_verbose`. That trace is the only evidence when a login-dependent
+module is `INTERRUPTED` (the automation timed out) rather than failed.
 
 ## Waivers
 

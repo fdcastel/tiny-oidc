@@ -224,3 +224,40 @@ export function renderPlan(
   const rendered = render(withBrowser, values);
   return `${JSON.stringify(JSON.parse(rendered), null, 2)}\n`;
 }
+
+/** One entry of a test module's event log (`GET /api/log/{id}`); the suite adds arbitrary fields. */
+export interface LogEntry {
+  src?: string;
+  time?: number;
+  msg?: string;
+  result?: string;
+  [key: string]: unknown;
+}
+
+const DIAGNOSTIC_SOURCES = new Set(["BROWSER", "WebRunner"]);
+const BODY_LIMIT = 600;
+
+/**
+ * The lines worth reading when the browser automation fails: the suite's own
+ * WebRunner entries (with `browser_verbose`, every request the browser made
+ * and every response it got) and the BROWSER entries (script errors, console
+ * output). Bodies are cut at BODY_LIMIT characters; headers are one line.
+ */
+export function browserDiagnostics(entries: LogEntry[]): string[] {
+  const lines: string[] = [];
+  for (const entry of entries) {
+    if (!entry.src || !DIAGNOSTIC_SOURCES.has(entry.src)) continue;
+    const at = entry.time === undefined ? "" : `${new Date(entry.time).toISOString()} `;
+    lines.push(`${at}${entry.src}: ${entry.msg ?? ""}`);
+    for (const [key, value] of Object.entries(entry)) {
+      if (["src", "time", "msg", "result", "_id", "testId", "testOwner", "seq"].includes(key))
+        continue;
+      if (value === undefined || value === null || value === "") continue;
+      const text = typeof value === "string" ? value : JSON.stringify(value);
+      lines.push(
+        `    ${key}: ${text.length > BODY_LIMIT ? `${text.slice(0, BODY_LIMIT)}…` : text}`,
+      );
+    }
+  }
+  return lines;
+}

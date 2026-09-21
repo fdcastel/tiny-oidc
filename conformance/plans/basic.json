@@ -13,5 +13,6 @@
     "client_secret": "{POST_CLIENT_SECRET}",
     "scope": "openid email profile"
   },
-  "browser": "{BROWSER}"
+  "browser": "{BROWSER}",
+  "browser_verbose": true
 }

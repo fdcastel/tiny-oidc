@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  browserDiagnostics,
   CONFIG_FILES,
   expectedProblems,
   placeholders,
@@ -84,6 +85,7 @@ describe("conformance plans", () => {
         client2?: { client_id: string; client_secret: string };
         client_secret_post?: { client_id: string; client_secret: string };
         browser?: { match: string; tasks: { match: string; commands?: unknown[][] }[] }[];
+        browser_verbose?: boolean;
       };
       expect(rendered.alias, file).toBe("tiny-oidc");
       expect(rendered.server.discoveryUrl).toBe(
@@ -113,6 +115,8 @@ describe("conformance plans", () => {
         expect(authorize?.tasks[1]?.match).toBe(
           "https://suite.example.net/test/a/tiny-oidc/callback*",
         );
+        // The suite logs every request its browser makes and every script error (the only trace of TIO-TEST-041 failures).
+        expect(rendered.browser_verbose, file).toBe(true);
         expect(logout?.match).toBe("https://auth.example.com/logout*");
         expect(logout?.tasks[0]?.commands).toContainEqual([
           "click",
@@ -129,6 +133,44 @@ describe("conformance plans", () => {
       expect(app).toContain(`id: "${id}"`);
     }
     expect(() => render("{NOPE}", {})).toThrow("no value for {NOPE}");
+  });
+
+  it("summarizes a module log to its browser and WebRunner lines, bodies cut short, for the results artifact", () => {
+    const lines = browserDiagnostics([
+      { src: "TestRunner", time: 1_790_000_000_000, msg: "not a browser line" },
+      {
+        src: "BROWSER",
+        time: 1_790_000_000_000,
+        msg: "Error during JavaScript execution",
+        detail: "TypeError: x",
+        _id: "a",
+        testId: "t",
+      },
+      {
+        src: "WebRunner",
+        msg: "Request GET https://login.example.com/",
+        headers: { a: "1" },
+        params: {},
+        body: "",
+        result: "INFO",
+      },
+      {
+        src: "WebRunner",
+        time: 1_790_000_001_000,
+        msg: "Response 200 OK GET https://login.example.com/app.js",
+        body: "x".repeat(700),
+      },
+    ]);
+    expect(lines).toEqual([
+      "2026-09-21T14:13:20.000Z BROWSER: Error during JavaScript execution",
+      "    detail: TypeError: x",
+      "WebRunner: Request GET https://login.example.com/",
+      '    headers: {"a":"1"}',
+      "    params: {}",
+      "2026-09-21T14:13:21.000Z WebRunner: Response 200 OK GET https://login.example.com/app.js",
+      `    body: ${"x".repeat(600)}…`,
+    ]);
+    expect(browserDiagnostics([])).toEqual([]);
   });
 
   it("register the suite's callback, post-logout and back-channel URIs for the alias", () => {
