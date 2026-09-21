@@ -48,6 +48,8 @@ export interface Harness {
   post(started: Started, op: string, body?: unknown, options?: CallOptions): Promise<Response>;
   /** Drops the app's isolate caches (a record changed under them in this test). */
   invalidate(): void;
+  /** The app's isolate caches, for a test that drops one of them. */
+  caches: ReturnType<typeof createApp>["caches"];
 }
 
 export function harness(clock = new FakeClock(1_800_000_000)): Harness {
@@ -103,6 +105,7 @@ export function harness(clock = new FakeClock(1_800_000_000)): Harness {
     send,
     start,
     invalidate: () => app.caches.invalidate(),
+    caches: app.caches,
     get: (started, options = {}) => send(api(started.id), { cookie: started.cookie, ...options }),
     post: (started, op, body, options = {}) =>
       send(`${api(started.id)}/${op}`, {

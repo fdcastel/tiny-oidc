@@ -921,6 +921,8 @@ describe("other revocation paths", () => {
     const mias = await login(mia, web);
     clock.advance(3_601);
     const noKeys = { ...env, DB: failingD1(/FROM signing_keys/) } as Env;
+    // Every request warms the keys; the case is an isolate whose keys cannot be loaded at all.
+    h.caches.keys.invalidate();
     const res = await h.send(`/logout?${new URLSearchParams({ id_token_hint: mias.id_token })}`, {
       origin: null,
       cookie: mias.cookie,
@@ -941,6 +943,7 @@ describe("other revocation paths", () => {
       ).status,
     ).toBe(200);
     received.length = 0;
+    h.caches.keys.invalidate();
     const replaced = await h.send(`/interactions/${takeover.id}/complete`, {
       origin: null,
       cookie: `${takeover.cookie}; ${mias.cookie}`,

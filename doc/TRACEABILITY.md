@@ -20,7 +20,7 @@ Current phase: 7. Requirements: 285 (ci: 19, conformance: 2, covered: 242, load:
 | TIO-ARCH-010 | §2.6 | test | 2 | covered | test/http/interactions.test.ts |
 | TIO-PERF-001 | §2.7 | load | — | load |  |
 | TIO-PERF-002 | §2.7 | ci | — | ci |  |
-| TIO-ARCH-011 | §2.8 | test | 0 | covered | test/component/clients.test.ts<br>test/component/keystore.test.ts<br>test/component/settings.test.ts<br>test/http/token.test.ts |
+| TIO-ARCH-011 | §2.8 | test | 0 | covered | test/component/clients.test.ts<br>test/component/keystore.test.ts<br>test/component/settings.test.ts<br>test/http/router.test.ts<br>test/http/token.test.ts |
 | TIO-ARCH-012 | §2.8 | test | 0 | covered | test/component/clients.test.ts<br>test/component/keystore.test.ts<br>test/component/settings.test.ts<br>test/http/authorize.test.ts |
 | TIO-ARCH-013 | §2.8 | test | 3 | covered | test/http/admin-system.test.ts |
 | TIO-ARCH-014 | §2.9 | test | 2 | covered | test/http/authorize.test.ts<br>test/http/router.test.ts |

@@ -410,6 +410,8 @@ describe("POST /revoke", () => {
       body: `client_id=${web.client_id}`,
     });
     expect(warm.status).toBe(400);
+    // Every request warms the keys; the case is an isolate whose keys cannot be loaded.
+    fresh.caches.keys.invalidate();
     const down = await fresh.send("/revoke", {
       method: "POST",
       origin: null,

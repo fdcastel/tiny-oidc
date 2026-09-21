@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BUDGETS, MAX_D1_WRITE_RATE, MAX_FAILED_RATE } from "../../perf/scenarios/budgets.js";
+import {
+  BUDGETS,
+  MAX_D1_WRITE_RATE,
+  MAX_FAILED_RATE,
+  TAIL_FACTOR,
+} from "../../perf/scenarios/budgets.js";
 
 // The k6 thresholds are the specification's numbers (TIO-PERF-001,
 // TIO-TEST-051): every scenario's p50 and p99 equal the §2.7 row it names,
@@ -43,6 +48,17 @@ describe("k6 budgets", () => {
     }
     expect(MAX_FAILED_RATE).toBe(0.001);
     expect(MAX_D1_WRITE_RATE).toBe(5);
+    // The budget is on the requests that read no D1; the D1-touching ones are bounded at
+    // four times it; the two rows that read D1 by design are budgeted over every request.
+    expect(TAIL_FACTOR).toBe(4);
+    const spec = readFileSync("doc/TINY_OIDC_SPEC.md", "utf8");
+    expect(spec).toContain("bounded separately at four times the row's p99");
+    expect(
+      Object.entries(BUDGETS)
+        .filter(([, b]) => b.d1)
+        .map(([name]) => name)
+        .sort(),
+    ).toEqual(["admin_list", "login_federated"]);
   });
 
   it("cover every scenario trace.config.json maps a load requirement to, each with a script that enforces its thresholds", () => {

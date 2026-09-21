@@ -48,6 +48,80 @@ export const zeroChangesD1 = (pattern: RegExp) =>
     },
   }) as unknown as D1Database;
 
+/**
+ * A D1 whose statements wait at a gate: each one is recorded as pending when
+ * it starts and runs for real once the gate opens, so a test can see which
+ * statements a request has in flight at the same time. `until(n)` resolves
+ * once n statements are pending (no sleeping, TIO-TEST-005); `open()` lets
+ * them and every later one through.
+ */
+export function gatedD1(): {
+  db: D1Database;
+  /** The SQL of the statements started and not yet released, in order. */
+  pending: () => string[];
+  until: (count: number) => Promise<void>;
+  open: () => void;
+} {
+  const waiting: { sql: string; go: () => void }[] = [];
+  const watchers: { count: number; done: () => void }[] = [];
+  let opened = false;
+  const notify = () => {
+    for (const w of watchers.splice(0)) {
+      if (waiting.length >= w.count) w.done();
+      else watchers.push(w);
+    }
+  };
+  const gate = (sql: string) =>
+    new Promise<void>((resolve) => {
+      if (opened) {
+        resolve();
+        return;
+      }
+      waiting.push({ sql, go: resolve });
+      notify();
+    });
+  const db = {
+    prepare(sql: string) {
+      const real = env.DB.prepare(sql);
+      const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
+        new Proxy(statement, {
+          get(target, property) {
+            const value = Reflect.get(target, property) as unknown;
+            if (property === "bind")
+              return (...args: unknown[]) =>
+                wrap((value as (...a: unknown[]) => D1PreparedStatement).apply(target, args));
+            if (
+              typeof value !== "function" ||
+              !["all", "first", "run", "raw"].includes(String(property))
+            )
+              return value;
+            return async (...args: unknown[]) => {
+              await gate(sql);
+              return (value as (...a: unknown[]) => unknown).apply(target, args);
+            };
+          },
+        });
+      return wrap(real);
+    },
+    batch(statements: D1PreparedStatement[]) {
+      return env.DB.batch(statements);
+    },
+  } as unknown as D1Database;
+  return {
+    db,
+    pending: () => waiting.map((w) => w.sql),
+    until: (count) =>
+      new Promise<void>((done) => {
+        watchers.push({ count, done });
+        notify();
+      }),
+    open: () => {
+      opened = true;
+      for (const w of waiting.splice(0)) w.go();
+    },
+  };
+}
+
 type Method = (...args: unknown[]) => unknown;
 
 /**

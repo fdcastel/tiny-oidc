@@ -28,10 +28,7 @@ export const options = {
   },
   thresholds: {
     ...thresholds("token_refresh"),
-    "server_ms{scenario:token_refresh_burst}": ["p(99)<=150"],
-    "http_req_failed{scenario:token_refresh_burst}": ["rate<0.001"],
-    "d1_writes{scenario:token_refresh_burst}": ["rate<5"],
-    "checks{scenario:token_refresh_burst}": ["rate>0.999"],
+    ...thresholds("token_refresh", "token_refresh_burst"),
   },
 };
 

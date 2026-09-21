@@ -10,7 +10,7 @@ import encoding from "k6/encoding";
 import exec from "k6/execution";
 import http from "k6/http";
 import { Counter, Rate, Trend } from "k6/metrics";
-import { BUDGETS, MAX_D1_WRITE_RATE, MAX_FAILED_RATE } from "./budgets.js";
+import { BUDGETS, MAX_D1_WRITE_RATE, MAX_FAILED_RATE, TAIL_FACTOR } from "./budgets.js";
 
 export const ISSUER = __ENV.TIO_PERF_ISSUER;
 /** The origin of a URL without the URL class (k6 has none): scheme, host and port. */
@@ -25,7 +25,7 @@ export const RP_REDIRECT = "https://perf-rp.invalid/callback";
 
 /** The measurements of TIO-OBS-004, one custom metric each, tagged by scenario. */
 export const serverMs = new Trend("server_ms", true);
-/** Diagnostics: the same duration for requests without any D1 read, and with one. */
+/** The same duration split by whether the request read D1 (§2.7: the budget is on the warm ones). */
 export const serverMsWarm = new Trend("server_ms_warm", true);
 export const serverMsD1 = new Trend("server_ms_d1", true);
 export const doCalls = new Counter("do_calls");
@@ -65,13 +65,25 @@ export function record(res, scenario = exec.scenario.name) {
   return timing;
 }
 
-/** The thresholds of one scenario: the §2.7 p99, the failure rate, the D1 write rate. */
-export function thresholds(scenario) {
+/**
+ * The thresholds of one scenario (`tagged` when a burst or a step of it carries
+ * its own tag): the §2.7 p99 on the requests that read no D1 and TAIL_FACTOR
+ * times it on those that did — or on every request for a row that reads D1
+ * by design —, the failure rate, the D1 write rate.
+ */
+export function thresholds(scenario, tagged = scenario) {
+  const budget = BUDGETS[scenario];
+  const timing = budget.d1
+    ? { [`server_ms{scenario:${tagged}}`]: [`p(99)<=${budget.p99}`] }
+    : {
+        [`server_ms_warm{scenario:${tagged}}`]: [`p(99)<=${budget.p99}`],
+        [`server_ms_d1{scenario:${tagged}}`]: [`p(99)<=${budget.p99 * TAIL_FACTOR}`],
+      };
   return {
-    [`server_ms{scenario:${scenario}}`]: [`p(99)<=${BUDGETS[scenario].p99}`],
-    [`http_req_failed{scenario:${scenario}}`]: [`rate<${MAX_FAILED_RATE}`],
-    [`d1_writes{scenario:${scenario}}`]: [`rate<${MAX_D1_WRITE_RATE}`],
-    [`checks{scenario:${scenario}}`]: ["rate>0.999"],
+    ...timing,
+    [`http_req_failed{scenario:${tagged}}`]: [`rate<${MAX_FAILED_RATE}`],
+    [`d1_writes{scenario:${tagged}}`]: [`rate<${MAX_D1_WRITE_RATE}`],
+    [`checks{scenario:${tagged}}`]: ["rate>0.999"],
   };
 }
 

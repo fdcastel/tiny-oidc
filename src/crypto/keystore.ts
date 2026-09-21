@@ -281,6 +281,8 @@ export async function rekeySigningKeys(
  */
 export class KeyStore {
   private cached: { loaded: LoadedKeys; at: number } | undefined;
+  /** The blocking load in progress, shared by every request that finds no usable value (§2.8). */
+  private loading: Promise<LoadedKeys> | undefined;
   private readonly clock: Clock;
   /** The early refresh (§2.8): the request path never waits for D1 while the keys are under the TTL. */
   readonly refresher = new Refresher();
@@ -299,13 +301,21 @@ export class KeyStore {
         return cached.loaded;
       }
     }
-    let rows: SigningKeyRow[];
     try {
-      rows = await this.rows(db, keys, now);
+      this.loading ??= this.loadNow(db, keys, now).finally(() => {
+        this.loading = undefined;
+      });
+      return await this.loading;
     } catch (error) {
+      if (error instanceof NoSigningKeyError || error instanceof KeysUnavailableError) throw error;
       if (cached && now - cached.at < KEYS_STALE_SECONDS) return cached.loaded;
       throw new KeysUnavailableError(error);
     }
+  }
+
+  /** The blocking path: the rows, then the loaded keys, cached as of `now`. */
+  private async loadNow(db: Db, keys: DerivedKeys, now: number): Promise<LoadedKeys> {
+    const rows = await this.rows(db, keys, now);
     const loaded = await this.load(rows, keys, now);
     this.cached = { loaded, at: now };
     return loaded;

@@ -6,6 +6,7 @@ import { createApp } from "../../src/router/app.ts";
 import { ROUTES } from "../../src/router/routes.ts";
 import { FakeClock } from "../support/clock.ts";
 import { env, op, url } from "../support/op.ts";
+import { gatedD1 } from "./faults.ts";
 
 /** An app with a fake clock and a log collector, driven directly (not through SELF). */
 function harness(overrides: Partial<Env> = {}) {
@@ -250,6 +251,30 @@ describe("health and observability", () => {
     });
     expect(notFound.status).toBe(404);
     expect(lines.filter((l) => l.msg === "request")).toHaveLength(2);
+  });
+
+  it("[TIO-ARCH-011] a cold isolate loads settings and keys in one round trip and concurrent requests share the load: both statements are in flight together, once, and every request answers when they land", async () => {
+    // A warmed store, so the loads read rather than create.
+    await harness().fetch(url("/api/v1/health"));
+    const gate = gatedD1();
+    const { fetch, lines } = harness({ DB: gate.db, LOG_LEVEL: "debug" });
+    // Three concurrent requests on the cold isolate: two health checks, one discovery.
+    const inFlight = [
+      fetch(url("/api/v1/health")),
+      fetch(url("/api/v1/health")),
+      fetch(url("/.well-known/openid-configuration")),
+    ];
+    // Settings, keys and the two health pings are all at the gate before any answers:
+    // the loads were started together, not one after the other, and once each.
+    await gate.until(4);
+    const started = gate.pending();
+    expect(started.filter((sql) => /FROM settings/.test(sql))).toHaveLength(1);
+    expect(started.filter((sql) => /FROM signing_keys/.test(sql))).toHaveLength(1);
+    expect(started.filter((sql) => /^SELECT 1/.test(sql))).toHaveLength(2);
+    gate.open();
+    const answers = await Promise.all(inFlight);
+    expect(answers.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(lines.filter((l) => l.msg === "request")).toHaveLength(3);
   });
 
   it("[TIO-OBS-002] writes one data point per request and one per audit event type and outcome when metrics are bound, and a refused write never fails the request", async () => {

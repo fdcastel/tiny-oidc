@@ -604,7 +604,8 @@ describe("POST /token: client_credentials and common rules", () => {
         throw new Error("D1 down");
       },
     } as unknown as D1Database;
-    // A fresh isolate with the client and settings cached but the signing keys never loaded.
+    // An isolate with the client and settings cached but the signing keys expired from its
+    // cache (every request warms all three together, so the keys are dropped by hand).
     const fresh = harness(clock);
     const warm = await fresh.send("/token", {
       method: "POST",
@@ -613,6 +614,7 @@ describe("POST /token: client_credentials and common rules", () => {
       body: `grant_type=password&client_id=${web.client_id}`,
     });
     expect(warm.status).toBe(400);
+    fresh.caches.keys.invalidate();
     const keysDown = await fresh.send("/token", {
       method: "POST",
       origin: null,

@@ -208,6 +208,12 @@ export function createApp(deps: AppDeps) {
       c.res = c.json(errorBody(requestId, "server_error", "server misconfigured"), 500);
     } else {
       c.set("config", config.config);
+      // Warm the isolate caches together (§2.8): both are cache hits on a warm isolate and
+      // one parallel D1 round trip on a cold one. The route's own await reports any error;
+      // a route that needs neither must not let the loads outlive the request unregistered
+      // (cancelled I/O would leave a load pending forever), so they are kept alive.
+      keepAlive(settingsLoader.get(db, config.config).catch(() => undefined));
+      keepAlive(keyStore.get(db, config.config.keys).catch(() => undefined));
       const auditor = new Auditor(
         { request_id: requestId, ...(await sessionMetadata(config.config.keys, c.req.raw)) },
         uuids,
@@ -419,8 +425,12 @@ export function createApp(deps: AppDeps) {
   });
 
   return Object.assign(app, {
-    /** The isolate caches (§2.8): dropped together when the storage under them is replaced. */
+    /** The isolate caches (§2.8), each droppable alone, or together when the storage under them is replaced. */
     caches: {
+      settings: settingsLoader,
+      keys: keyStore,
+      clients,
+      upstreams: upstreamRecords,
       invalidate(): void {
         settingsLoader.invalidate();
         keyStore.invalidate();

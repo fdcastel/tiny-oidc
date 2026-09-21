@@ -53,6 +53,9 @@ describe("enumeration equality", () => {
         redirect_uri: RP_REDIRECT,
         code_verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
       });
+    // A warm isolate first: on a cold one the caches load once for whichever request starts
+    // them, and that request's counts would carry the loads (§2.8).
+    await exchange("warm-up");
     const answers = await Promise.all(
       ["tio_ac_" + "A".repeat(80), "not-a-handle", "", "tio_ac_!!!"].map((c) =>
         exchange(c).then(shape),
