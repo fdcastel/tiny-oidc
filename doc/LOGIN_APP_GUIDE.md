@@ -276,6 +276,12 @@ and body; do not try to tell them apart (TIO-IX-070).
   the rule lives).
 - Localize from `request.ui_locales` if you want; the OP's `description` copy
   for scopes is English.
+- Your own app may use `fetch` and `async`/`await` freely. The *reference*
+  app does not, because the OpenID Foundation conformance suite drives it with
+  HtmlUnit (TIO-TEST-041), whose engine has neither: it is written with Promise
+  chains, an `XMLHttpRequest` fallback and no spread syntax, and
+  `test/scripts/login-app.test.ts` keeps it that way (ADR 0014). Nothing in
+  the Interaction API depends on that.
 - Every response the OP sends to the app carries the security headers of
   TIO-HTTP-002 and a strict CSP; the bundled `/login/` files get the same, with
   same-origin scripts and styles allowed (TIO-IX-081).
