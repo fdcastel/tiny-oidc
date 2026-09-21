@@ -90,6 +90,38 @@ export function withDatabaseId(
   return applyEdits(configText, edits);
 }
 
+/**
+ * The deploy environment's values must be usable before anything is deployed
+ * (TIO-DEPLOY-007: any failing step aborts before traffic changes). A build
+ * variable holding its own name or an unparseable URL would otherwise deploy
+ * a Worker that answers every request with "server misconfigured" in place of
+ * a working one. Same rules as the Worker's startup check (TIO-CFG-002).
+ */
+export function assertDeployVars(env: DeployEnv, profile: Profile): void {
+  if (profile === "button") return;
+  const issuer = env.TIO_ISSUER ?? "";
+  const url = URL.canParse(issuer) ? new URL(issuer) : undefined;
+  if (
+    url?.protocol !== "https:" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    /[?#]/.test(issuer) ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new Error(
+      `TIO_ISSUER must be an https URL with no query, fragment or credentials; got "${issuer}"`,
+    );
+  }
+  const rpId = env.TIO_RP_ID ?? "";
+  if (!(url.hostname === rpId || url.hostname.endsWith(`.${rpId}`))) {
+    throw new Error(
+      `TIO_RP_ID must equal the TIO_ISSUER host or be a parent domain of it; got "${rpId}"`,
+    );
+  }
+  if (!env.TIO_RP_NAME) throw new Error("TIO_RP_NAME must be set");
+}
+
 /** The fake upstream Worker is never deployed outside staging (TIO-TEST-031). */
 export function assertDeployable(configText: string, profile: Profile): void {
   const config = parse(configText) as { name?: string };
@@ -137,6 +169,7 @@ export async function deploy(env: DeployEnv, io: DeployIO): Promise<DeployResult
   const profile = profileOf(env);
   const configText = io.readConfig();
   assertDeployable(configText, profile);
+  assertDeployVars(env, profile);
   const commands: string[][] = [];
   const run = async (args: string[]): Promise<string> => {
     commands.push(args);

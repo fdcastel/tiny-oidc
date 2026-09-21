@@ -3,6 +3,7 @@ import { parse } from "jsonc-parser";
 import { describe, expect, it } from "vitest";
 import {
   assertDeployable,
+  assertDeployVars,
   type DeployIO,
   databaseName,
   deploy,
@@ -14,6 +15,19 @@ import {
   withDatabaseId,
 } from "../../scripts/lib/deploy.ts";
 import { SMOKE_PATHS, smoke } from "../../scripts/lib/smoke.ts";
+
+const PRODUCTION = {
+  TIO_ENV: "production",
+  TIO_ISSUER: "https://auth.example.com",
+  TIO_RP_ID: "example.com",
+  TIO_RP_NAME: "Example",
+};
+const STAGING = {
+  TIO_ENV: "staging",
+  TIO_ISSUER: "https://auth.staging.example.com",
+  TIO_RP_ID: "staging.example.com",
+  TIO_RP_NAME: "Example Staging",
+};
 
 const realConfig = readFileSync("wrangler.jsonc", "utf8");
 const D1_LIST = JSON.stringify([
@@ -64,13 +78,7 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
   it("[TIO-DEPLOY-007] staging resolves the D1 id by name into a generated config and passes the deploy-environment vars", async () => {
     const { io, calls, written } = fakeIo();
     const result = await deploy(
-      {
-        TIO_ENV: "staging",
-        TIO_ISSUER: "https://auth.staging.example.com",
-        TIO_RP_ID: "staging.example.com",
-        TIO_RP_NAME: "Example Staging",
-        WORKERS_CI_COMMIT_SHA: "0123456789abcdef0123456789abcdef01234567",
-      },
+      { ...STAGING, WORKERS_CI_COMMIT_SHA: "0123456789abcdef0123456789abcdef01234567" },
       io,
     );
     expect(result.profile).toBe("staging");
@@ -122,10 +130,7 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
 
   it("[TIO-DEPLOY-007] production uploads a version, smoke-tests its preview URL and only then deploys it to 100%", async () => {
     const { io, calls, logs } = fakeIo();
-    const result = await deploy(
-      { TIO_ENV: "production", TIO_ISSUER: "https://auth.example.com" },
-      io,
-    );
+    const result = await deploy(PRODUCTION, io);
     expect(result.profile).toBe("production");
     expect(calls.map((c) => c.slice(0, 2))).toEqual([
       ["d1", "list"],
@@ -152,19 +157,47 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
 
   it("[TIO-DEPLOY-007] a failing step aborts before traffic changes", async () => {
     const failing = fakeIo({ smokeFails: true });
-    await expect(deploy({ TIO_ENV: "production" }, failing.io)).rejects.toThrow(
-      "smoke test failed",
-    );
+    await expect(deploy(PRODUCTION, failing.io)).rejects.toThrow("smoke test failed");
     expect(failing.calls.map((c) => c[1])).toEqual(["list", "migrations", "upload"]);
     const noPreview = fakeIo({ uploadOutput: "nothing useful" });
-    await expect(deploy({ TIO_ENV: "production" }, noPreview.io)).rejects.toThrow("preview URL");
+    await expect(deploy(PRODUCTION, noPreview.io)).rejects.toThrow("preview URL");
     const unknownDb = fakeIo();
     unknownDb.io.readConfig = () =>
       realConfig.replace('"database_name": "tiny-oidc-staging"', '"database_name": "other"');
-    await expect(deploy({ TIO_ENV: "staging" }, unknownDb.io)).rejects.toThrow(
-      'D1 database "other" not found',
-    );
+    await expect(deploy(STAGING, unknownDb.io)).rejects.toThrow('D1 database "other" not found');
     expect(() => profileOf({ TIO_ENV: "dev" })).toThrow("TIO_ENV must be empty");
+  });
+
+  it("[TIO-DEPLOY-007] staging and production refuse unusable deploy variables before any wrangler command (a build variable holding its own name, a non-https issuer, a foreign RP id)", async () => {
+    const cases: [Partial<typeof STAGING>, string][] = [
+      [{ TIO_ISSUER: "TIO_ISSUER" }, "TIO_ISSUER must be an https URL"],
+      [{ TIO_ISSUER: "" }, "TIO_ISSUER must be an https URL"],
+      [{ TIO_ISSUER: "http://auth.staging.example.com" }, "TIO_ISSUER must be an https URL"],
+      [{ TIO_ISSUER: "https://auth.staging.example.com/?x=1" }, "TIO_ISSUER must be an https URL"],
+      [{ TIO_ISSUER: "https://auth.staging.example.com/#f" }, "TIO_ISSUER must be an https URL"],
+      [{ TIO_ISSUER: "https://u:p@auth.staging.example.com" }, "TIO_ISSUER must be an https URL"],
+      [{ TIO_RP_ID: "TIO_RP_ID" }, "TIO_RP_ID must equal the TIO_ISSUER host"],
+      [{ TIO_RP_ID: "example.org" }, "TIO_RP_ID must equal the TIO_ISSUER host"],
+      [{ TIO_RP_ID: "" }, "TIO_RP_ID must equal the TIO_ISSUER host"],
+      [{ TIO_RP_NAME: "" }, "TIO_RP_NAME must be set"],
+    ];
+    for (const [override, message] of cases) {
+      const { io, calls } = fakeIo();
+      await expect(deploy({ ...STAGING, ...override }, io)).rejects.toThrow(message);
+      await expect(deploy({ ...PRODUCTION, ...override }, io)).rejects.toThrow(message);
+      expect(calls).toEqual([]);
+    }
+    // The host itself and a path prefix are fine; the button profile deploys the committed configuration.
+    expect(() =>
+      assertDeployVars({ ...STAGING, TIO_RP_ID: "auth.staging.example.com" }, "staging"),
+    ).not.toThrow();
+    expect(() =>
+      assertDeployVars(
+        { ...STAGING, TIO_ISSUER: "https://auth.staging.example.com/op" },
+        "staging",
+      ),
+    ).not.toThrow();
+    expect(() => assertDeployVars({ TIO_ISSUER: "TIO_ISSUER" }, "button")).not.toThrow();
   });
 
   it("helpers: vars, database lookup, config edit and the fake-upstream refusal (TIO-TEST-031)", () => {
