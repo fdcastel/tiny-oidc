@@ -107,7 +107,12 @@ import { parHandler } from "../oidc/par-endpoint.ts";
 import { revokeHandler } from "../oidc/revoke-endpoint.ts";
 import { tokenHandler } from "../oidc/token-endpoint.ts";
 import { userinfoHandler } from "../oidc/userinfo-endpoint.ts";
-import { discoveryHandler, jwksHandler, webauthnHandler } from "../oidc/wellknown.ts";
+import {
+  discoveryHandler,
+  forgetDocument,
+  jwksHandler,
+  webauthnHandler,
+} from "../oidc/wellknown.ts";
 import type { AppEnv } from "./context.ts";
 import { errorBody, errorResponse } from "./errors.ts";
 import { cors, securityHeaders } from "./headers.ts";
@@ -281,10 +286,10 @@ export function createApp(deps: AppDeps) {
   });
 
   // Routes
-  app.get("/.well-known/openid-configuration", discoveryHandler);
-  app.get("/.well-known/oauth-authorization-server", discoveryHandler);
-  app.get("/.well-known/jwks.json", jwksHandler);
-  app.get("/.well-known/webauthn", webauthnHandler);
+  app.get("/.well-known/openid-configuration", discoveryHandler(deps.clock));
+  app.get("/.well-known/oauth-authorization-server", discoveryHandler(deps.clock));
+  app.get("/.well-known/jwks.json", jwksHandler(deps.clock));
+  app.get("/.well-known/webauthn", webauthnHandler(deps.clock));
   app.get("/api/v1/health", healthHandler(deps.clock));
   app.on(["GET", "POST"], "/authorize", authorizeHandler(deps.clock));
   app.post("/par", parHandler(deps.clock));
@@ -436,6 +441,7 @@ export function createApp(deps: AppDeps) {
         keyStore.invalidate();
         clients.invalidate();
         upstreamRecords.invalidate();
+        forgetDocument();
       },
     },
   });

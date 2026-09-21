@@ -446,7 +446,7 @@ The D1 directory is the first ceiling. Its size is dominated by `audit_hot` rete
 
 | Cached item | Cache | TTL | Stale-if-error | Invalidation |
 |---|---|---|---|---|
-| Discovery document, JWKS | Cloudflare edge cache via `Cache-Control: public, max-age=300` + Worker `caches.default` | 5 min | — | Time |
+| Discovery document, JWKS, WebAuthn origins | Isolate memory for 60 s, in front of the Worker `caches.default` and the Cloudflare edge cache via `Cache-Control: public, max-age=300` | 60 s / 5 min | — | Time |
 | Client record | Isolate memory (LRU 1,000) | 60 s | up to 1 h | Time |
 | Upstream record | Isolate memory (LRU 1,000) | 60 s | up to 1 h | Time |
 | Settings | Isolate memory | 60 s | up to 1 h | Time |

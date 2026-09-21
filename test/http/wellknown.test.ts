@@ -6,6 +6,7 @@ import { writeSettings } from "../../src/db/settings.ts";
 import type { Env } from "../../src/env.ts";
 import type { LogLine } from "../../src/obs/log.ts";
 import { CAPABILITIES } from "../../src/oidc/capabilities.ts";
+import { forgetDocument } from "../../src/oidc/wellknown.ts";
 import { createApp } from "../../src/router/app.ts";
 import { ROUTES } from "../../src/router/routes.ts";
 import { FakeClock } from "../support/clock.ts";
@@ -18,7 +19,8 @@ const ISSUER = "https://auth.example.com";
 /** An app with a log collector, driven directly, so cache hits show up as d1_reads = 0. */
 function harness(overrides: Partial<Env> = {}) {
   const lines: LogLine[] = [];
-  const app = createApp({ clock: new FakeClock(), sink: (line) => lines.push(line) });
+  const clock = new FakeClock();
+  const app = createApp({ clock, sink: (line) => lines.push(line) });
   const testEnv = { ...env, ...overrides } as Env;
   const fetch = async (path: string, init?: RequestInit) => {
     const ctx = createExecutionContext();
@@ -26,10 +28,13 @@ function harness(overrides: Partial<Env> = {}) {
     await waitOnExecutionContext(ctx);
     return res;
   };
-  return { fetch, lines };
+  return { fetch, lines, clock };
 }
 
-const uncache = (path: string) => caches.default.delete(new Request(url(path)));
+const uncache = (path: string) => {
+  forgetDocument(url(path));
+  return caches.default.delete(new Request(url(path)));
+};
 
 describe("discovery", () => {
   beforeEach(async () => {
@@ -123,14 +128,26 @@ describe("discovery", () => {
     expect(doc["pushed_authorization_request_endpoint"]).toBe(`${ISSUER}/par`);
   });
 
-  it("[TIO-DISC-001] the document is served from the Worker cache on the next request", async () => {
-    const { fetch, lines } = harness();
-    await fetch("/.well-known/openid-configuration");
+  it("[TIO-DISC-001] the document is served from the Worker cache on the next request, and from isolate memory for 60 s in front of it", async () => {
+    const { fetch, lines, clock } = harness();
+    const first = await (await fetch("/.well-known/openid-configuration")).json();
     const second = await fetch("/.well-known/openid-configuration");
     expect(second.status).toBe(200);
     expect(second.headers.get("Cache-Control")).toBe("public, max-age=300");
+    expect(second.headers.get("Content-Type")).toBe("application/json");
     expect(second.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(await second.json()).toEqual(first);
     expect(lines.filter((l) => l.msg === "request")).toHaveLength(2);
+    // Held in memory: with the Worker cache entry gone, the next request neither rebuilds nor
+    // re-puts it; past the memo's 60 s the Worker cache is consulted and refilled.
+    const key = new Request(url("/.well-known/openid-configuration"));
+    await caches.default.delete(key);
+    const third = await fetch("/.well-known/openid-configuration");
+    expect(await third.json()).toEqual(first);
+    expect(await caches.default.match(key)).toBeUndefined();
+    clock.advance(61);
+    await fetch("/.well-known/openid-configuration");
+    expect(await caches.default.match(key)).toBeDefined();
   });
 });
 

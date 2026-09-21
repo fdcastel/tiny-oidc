@@ -1,13 +1,27 @@
 import type { Handler } from "hono";
-import type { Config } from "../env.ts";
+import type { Clock, Config } from "../env.ts";
 import type { AppEnv } from "../router/context.ts";
 import { CAPABILITIES } from "./capabilities.ts";
 
 // Discovery (§5.2), JWKS (§5.3) and WebAuthn related origins (§6.1.1):
 // public, cacheable documents served through the Worker cache with
-// `Cache-Control: public, max-age=300` (TIO-DISC-001, TIO-KEYS-002).
+// `Cache-Control: public, max-age=300` (TIO-DISC-001, TIO-KEYS-002), and
+// held in isolate memory for 60 s in front of it (§2.8): the Worker cache
+// is a round trip of a few milliseconds with a tail past the discovery
+// row's whole budget, and the documents change no faster than the key and
+// settings caches do.
 
 export const PUBLIC_CACHE_CONTROL = "public, max-age=300";
+/** How long a served document is held in isolate memory (the other isolate caches' TTL, TIO-ARCH-011). */
+export const DOCUMENT_MEMO_SECONDS = 60;
+
+const memo = new Map<string, { body: string; at: number }>();
+
+/** Drops a held document by URL, or every one (an in-process write, a test's reset). */
+export function forgetDocument(url?: string): void {
+  if (url === undefined) memo.clear();
+  else memo.delete(url);
+}
 export const SERVICE_DOCUMENTATION =
   "https://github.com/fdcastel/tiny-oidc/blob/main/doc/TINY_OIDC_SPEC.md";
 
@@ -53,33 +67,53 @@ export function discoveryDocument(config: Config): Record<string, unknown> {
   };
 }
 
-/** Serves a public document through the Worker cache (`caches.default`) keyed by URL. */
-function cached(build: (c: Parameters<Handler<AppEnv>>[0]) => Promise<unknown>): Handler<AppEnv> {
+/**
+ * Serves a public document keyed by URL: from isolate memory while held, else
+ * from the Worker cache (`caches.default`), else built and put in both.
+ */
+function cached(
+  clock: Clock,
+  build: (c: Parameters<Handler<AppEnv>>[0]) => Promise<unknown>,
+): Handler<AppEnv> {
   return async (c) => {
+    const url = c.req.url;
+    const now = clock.now();
+    const respond = (text: string) =>
+      c.body(text, 200, {
+        "Content-Type": "application/json",
+        "Cache-Control": PUBLIC_CACHE_CONTROL,
+      });
+    const held = memo.get(url);
+    if (held && now - held.at < DOCUMENT_MEMO_SECONDS) return respond(held.body);
     const cache = caches.default;
-    const key = new Request(c.req.url, { method: "GET" });
+    const key = new Request(url, { method: "GET" });
     const hit = await cache.match(key);
-    // A cached Response has immutable headers; copy it so the header middleware can decorate it.
-    if (hit) return new Response(hit.body, hit);
-    const body = await build(c);
-    const response = c.json(body as never, 200, { "Cache-Control": PUBLIC_CACHE_CONTROL });
+    if (hit) {
+      const text = await hit.text();
+      memo.set(url, { body: text, at: now });
+      return respond(text);
+    }
+    const text = JSON.stringify(await build(c));
+    memo.set(url, { body: text, at: now });
+    const response = respond(text);
     c.executionCtx.waitUntil(cache.put(key, response.clone()));
     return response;
   };
 }
 
-export const discoveryHandler: Handler<AppEnv> = cached(async (c) =>
-  discoveryDocument(c.get("config")),
-);
+export const discoveryHandler = (clock: Clock): Handler<AppEnv> =>
+  cached(clock, async (c) => discoveryDocument(c.get("config")));
 
 /** Every unretired key's public JWK, never a private parameter (TIO-KEYS-001). */
-export const jwksHandler: Handler<AppEnv> = cached(async (c) => {
-  const keys = await c.get("keyStore").get(c.get("db"), c.get("config").keys);
-  return keys.jwks;
-});
+export const jwksHandler = (clock: Clock): Handler<AppEnv> =>
+  cached(clock, async (c) => {
+    const keys = await c.get("keyStore").get(c.get("db"), c.get("config").keys);
+    return keys.jwks;
+  });
 
 /** WebAuthn Related Origin Requests document (TIO-PK-001). */
-export const webauthnHandler: Handler<AppEnv> = cached(async (c) => {
-  const settings = await c.get("settingsLoader").get(c.get("db"), c.get("config"));
-  return { origins: settings.webauthn_origins };
-});
+export const webauthnHandler = (clock: Clock): Handler<AppEnv> =>
+  cached(clock, async (c) => {
+    const settings = await c.get("settingsLoader").get(c.get("db"), c.get("config"));
+    return { origins: settings.webauthn_origins };
+  });
