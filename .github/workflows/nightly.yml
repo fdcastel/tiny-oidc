@@ -83,10 +83,18 @@ jobs:
           docker compose -f conformance/docker-compose.yml up -d
           for i in $(seq 1 90); do
             code=$(curl -sk -o /dev/null -w '%{http_code}' 'https://localhost:8443/api/plan?length=1' || true)
-            if [ "$code" = "200" ]; then echo ready; exit 0; fi
+            if [ "$code" = "200" ]; then echo ready; break; fi
             sleep 5
           done
-          echo "::error::the suite did not come up"; docker compose -f conformance/docker-compose.yml logs server | tail -100; exit 1
+          if [ "$code" != "200" ]; then echo "::error::the suite did not come up"; docker compose -f conformance/docker-compose.yml logs server | tail -100; exit 1; fi
+          # Warm the tunnel: the first request through a fresh quick tunnel can hang, and the
+          # suite's browser made it on the first module's callback (a 30 s wait, then a timeout).
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE_URL/api/plan?length=1" || true)
+            if [ "$code" = "200" ]; then echo "tunnel answers"; exit 0; fi
+            sleep 2
+          done
+          echo "::error::the tunnel never answered"; exit 1
       - name: Run the plans (TIO-TEST-040, TIO-TEST-041)
         run: node conformance/run.ts --suite-scripts conformance/suite/scripts --public-url "${{ steps.tunnel.outputs.url }}"
       - name: Suite logs
