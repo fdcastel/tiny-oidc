@@ -40,7 +40,7 @@
             "css",
             "#app h1",
             10,
-            "Sign out\\?|Sign-in failed",
+            "Sign out\\?|Signed out|Sign-in failed",
             "update-image-placeholder-optional"
           ],
           ["click", "id", "logout-confirm", "optional"],
@@ -55,8 +55,7 @@
       {
         "task": "Back at the suite after logout",
         "match": "{SUITE}/test/a/{ALIAS}/post_logout_redirect*",
-        "optional": true,
-        "commands": [["wait", "id", "submission_complete", 10]]
+        "optional": true
       }
     ]
   }

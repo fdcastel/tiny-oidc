@@ -546,6 +546,14 @@
       ]);
       return;
     }
+    // The default logout landing (logout_landing_url = login_url?event=logged_out, TIO-LOGOUT-002).
+    if (params.get("event") === "logged_out") {
+      render([
+        el("h1", {}, "Signed out"),
+        el("p", {}, "You have been signed out of every application. You can close this page."),
+      ]);
+      return;
+    }
     if (!id) {
       render([
         el("h1", {}, "Tiny OIDC"),

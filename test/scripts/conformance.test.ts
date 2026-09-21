@@ -141,6 +141,13 @@ describe("conformance plans", () => {
           expect(signIn.test(heading), heading).toBe(true);
         const signOut = headingPattern(logout?.tasks[0]);
         expect(signOut.test("Sign out?")).toBe(true);
+        expect(signOut.test("Signed out")).toBe(true);
+        // The suite's post-logout page carries no element to wait for (its own configuration has none).
+        expect(logout?.tasks[1]).toEqual({
+          task: "Back at the suite after logout",
+          match: "https://suite.example.net/test/a/tiny-oidc/post_logout_redirect*",
+          optional: true,
+        });
         expect(signOut.test("Sign out")).toBe(false);
         expect(authorize?.tasks[0]?.commands).toContainEqual([
           "click",

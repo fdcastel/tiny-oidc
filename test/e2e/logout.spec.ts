@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { RP, rpJson, signUp } from "./support/flows.ts";
+import { OP, RP, rpJson, signUp } from "./support/flows.ts";
 import { type PasskeyProvider, passkeyProvider } from "./support/passkeys.ts";
 
 // RP-initiated logout through real browsers (spec §5.10.1, §7.6): with the ID
@@ -84,5 +84,10 @@ test("logout without a hint asks for confirmation: staying keeps the session, si
   // Without any session, logout lands straight away.
   await page.goto(`${RP}/logout?nohint=1`);
   expect((await loggedOut(page)).logged_out).toBe(true);
+  // With no return URI at all, the OP lands on the login app's default landing (TIO-LOGOUT-002),
+  // which says so.
+  await page.goto(`${OP}/logout`);
+  await expect(page).toHaveURL(/\/login\/\?event=logged_out$/);
+  await expect(page.getByRole("heading", { name: "Signed out" })).toBeVisible();
   await context.close();
 });

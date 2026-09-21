@@ -52,5 +52,13 @@
     "expected-result": "warning",
     "reason": "feature intentionally unsupported and advertised as such in discovery",
     "advertised_by": "claims_parameter_supported (false: the claims parameter is ignored, so a name requested through it without the profile scope is not returned)"
+  },
+  {
+    "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "expected-result": "skip",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "request_parameter_supported (false; the module skips itself once the OP answers request_not_supported, TIO-AUTHZ-025)"
   }
 ]
