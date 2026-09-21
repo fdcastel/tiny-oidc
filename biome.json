@@ -50,6 +50,14 @@
   },
   "overrides": [
     {
+      "includes": ["examples/login-app/*.js"],
+      "javascript": {
+        "formatter": {
+          "trailingCommas": "es5"
+        }
+      }
+    },
+    {
       "includes": ["**/*.jsonc", "**/tsconfig*.json", "**/biome.json", "**/.vscode/*.json"],
       "json": {
         "parser": {

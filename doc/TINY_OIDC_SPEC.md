@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | 1.0.0-draft.2 |
-| **Date** | 2026-09-20 |
+| **Date** | 2026-09-21 |
 | **Status** | Authoritative for the v1 build. Supersedes `tmp/INITIAL_TINY_OIDC_SPEC.md`. |
 | **Runtime** | TypeScript on Cloudflare Workers (workerd) |
 | **Storage** | Durable Objects (SQLite) for per-entity state, D1 for the directory, R2 for the audit archive |
@@ -1639,7 +1639,7 @@ Response (fields are `null` when not applicable):
 
 ### 7.9 Reference login app
 
-**[TIO-IX-080]** (V: ci) The repository SHALL contain `examples/login-app/`, a static HTML+JS application with no build step and no dependencies that implements every interaction state (sign-in, sign-up, account linking, consent, logout confirmation, errors). It is used by the end-to-end suite and is the reference for `doc/LOGIN_APP_GUIDE.md`. It is never part of the Worker script bundle.
+**[TIO-IX-080]** (V: ci) The repository SHALL contain `examples/login-app/`, a static HTML+JS application with no build step and no dependencies that implements every interaction state (sign-in, sign-up, account linking, consent, logout confirmation, errors). It is used by the end-to-end suite and is the reference for `doc/LOGIN_APP_GUIDE.md`. It is never part of the Worker script bundle. Because the conformance suite drives it with HtmlUnit (TIO-TEST-041), whose Rhino engine has no `async`/`await`, `fetch` or spread syntax, the app SHALL use Promise chains, `XMLHttpRequest` where `fetch` is absent and no spread or rest syntax; `test/scripts/login-app.test.ts` enforces this (ADR 0014).
 
 **[TIO-IX-081]** The same files SHALL be published through the `ASSETS` binding under `/login/` when the var `BUNDLED_LOGIN_APP` is `true`. When enabled and no `login_url` setting is stored, the effective `login_url` is `${ISSUER}/login/` and `login_origins` is `[origin of ISSUER]`, so a fresh deployment can complete a passkey login with no further configuration. When disabled, requests under `/login/` return 404 and the assets are never served. Tests cover both states, and a header test asserts the served files carry the same security headers as every other response except that `Content-Security-Policy` permits same-origin scripts and styles.
 

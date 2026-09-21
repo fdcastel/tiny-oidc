@@ -105,6 +105,8 @@ test("the same user signs in with the passkey from a fresh browser; the next vis
   await provider.attach(page);
   await page.goto(`${RP}/login`);
   await expect(page).toHaveURL(/\/login\/\?interaction=/);
+  // A screen without a hint renders no stray "null" text node.
+  await expect(page.getByText("null", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Sign in with a passkey" }).click();
   const first = await rpJson(page);
   expect(first.claims["email"]).toMatch(
@@ -122,6 +124,8 @@ test("the same user signs in with the passkey from a fresh browser; the next vis
   await page.getByRole("button", { name: "Sign in with a passkey" }).click();
   const third = await rpJson(page);
   expect(third.claims["sid"]).toBe(sid);
+  // Two assertions advanced the signature counter: carry it to the next context (TIO-PK-023).
+  await provider.remember(page);
   await context.close();
 });
 
@@ -156,5 +160,24 @@ test("a browser without WebAuthn is told so on the sign-in screen instead of bei
   await expect(page.getByRole("heading", { name: "Unsupported browser" })).toBeVisible();
   await expect(page.getByRole("alert")).toHaveText(/does not support passkeys/);
   await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toHaveCount(0);
+  await context.close();
+});
+
+test("a browser without fetch signs in through the app's XMLHttpRequest path (the conformance suite's browser has no fetch)", async ({
+  browser,
+  browserName,
+}) => {
+  const context = await browser.newContext();
+  await context.addInitScript("delete window.fetch;");
+  const page = await context.newPage();
+  await provider.attach(page);
+  await page.goto(`${RP}/login`);
+  await expect(page).toHaveURL(/\/login\/\?interaction=/);
+  expect(await page.evaluate("typeof fetch")).toBe("undefined");
+  await page.getByRole("button", { name: "Sign in with a passkey" }).click();
+  const result = await rpJson(page);
+  expect(result.claims["email"]).toMatch(
+    new RegExp(`-${browserName}@example.com$|^root@example.com$`),
+  );
   await context.close();
 });

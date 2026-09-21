@@ -25,3 +25,4 @@ the old one.
 | [0011](0011-threat-model-review-phase-7.md) | Threat-model review at the end of Phase 7 (TIO-SEC-001) | Proposed — awaiting the owner's sign-off |
 | [0012](0012-no-per-address-limit-on-successful-token-traffic.md) | No per-address limit on successful `/token` traffic; the address class counts failed client authentication | Accepted |
 | [0013](0013-per-client-pkce-requirement.md) | PKCE required by default, clearable per confidential client (the conformance suite sends none); `POST /authorize` | Accepted |
+| [0014](0014-login-app-runs-under-the-suites-browser.md) | The reference login app runs under the conformance suite's browser (HtmlUnit: no async/await, fetch or spread) | Accepted |
