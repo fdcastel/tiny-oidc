@@ -118,9 +118,17 @@ export const CONFIG_FILES = [
   "backchannel-logout.json",
 ] as const;
 
-/** The one reason a waiver may carry (TIO-TEST-040). */
+/** The reason a failure, warning or skip may be waived for (TIO-TEST-040). */
 export const WAIVER_REASON =
   "feature intentionally unsupported and advertised as such in discovery";
+
+/**
+ * The reason a warning alone may be waived for (TIO-TEST-040, ADR 0015): the
+ * spec chooses the behaviour deliberately where the standard permits it, and
+ * the waiver names the requirement that does. Never a failure or a skip.
+ */
+export const WARNING_WAIVER_REASON =
+  "behaviour the specification chooses deliberately where the standard permits it";
 
 /**
  * A waiver: a condition allowed to fail or warn, or a whole module allowed to
@@ -137,7 +145,10 @@ export interface Waiver {
   "current-block"?: string;
   "expected-result": "failure" | "warning" | "skip";
   reason: string;
-  /** What in discovery advertises the absence (a metadata field), for the reviewer. */
+  /**
+   * For the reviewer: what in discovery advertises the absence (a metadata field) under
+   * WAIVER_REASON, or the requirement id that chooses the behaviour under WARNING_WAIVER_REASON.
+   */
   advertised_by: string;
 }
 
@@ -171,7 +182,18 @@ export function expectedProblems(waivers: Waiver[]): {
   const skips: ExpectedSkip[] = [];
   for (const [i, w] of waivers.entries()) {
     const where = `waiver ${i} (${w["test-name"]})`;
-    if (w.reason !== WAIVER_REASON) throw new Error(`${where}: reason must be "${WAIVER_REASON}"`);
+    if (w.reason === WARNING_WAIVER_REASON) {
+      if (w["expected-result"] !== "warning")
+        throw new Error(`${where}: "${WARNING_WAIVER_REASON}" waives a warning only`);
+      if (!/\bTIO-[A-Z]+-\d{3}\b/.test(w.advertised_by))
+        throw new Error(
+          `${where}: advertised_by must name the requirement that chooses the behaviour`,
+        );
+    } else if (w.reason !== WAIVER_REASON) {
+      throw new Error(
+        `${where}: reason must be "${WAIVER_REASON}" or, for a warning, "${WARNING_WAIVER_REASON}"`,
+      );
+    }
     if (typeof w.advertised_by !== "string" || w.advertised_by.length === 0)
       throw new Error(`${where}: advertised_by must name the discovery field`);
     const head = {

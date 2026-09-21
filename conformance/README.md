@@ -98,10 +98,14 @@ module is `INTERRUPTED` (the automation timed out) rather than failed.
 ## Waivers
 
 A waiver names a test (shell wildcards), a variant (`"*"` or the variant
-object), the configuration file and the expected result, plus `reason` —
-which must be the sentence `feature intentionally unsupported and advertised
-as such in discovery` — and `advertised_by`, the discovery field that says
-so. With `"expected-result": "failure"` or `"warning"` it also names the
+object), the configuration file and the expected result, plus `reason` and
+`advertised_by`. Two reasons exist (TIO-TEST-040). `feature intentionally
+unsupported and advertised as such in discovery` covers a failure, a warning
+or a skip, and `advertised_by` names the discovery field that says so.
+`behaviour the specification chooses deliberately where the standard permits
+it` covers a warning only, and `advertised_by` names the requirement that
+chooses the behaviour (ADR 0015: `email` in the ID token, TIO-TOKEN-030; a
+replayed code revoking families but not the access token, TIO-TOKEN-012). With `"expected-result": "failure"` or `"warning"` it also names the
 failing condition class and the block, exactly as the suite's
 expected-failures format; with `"skip"` it names neither and becomes an
 entry of the suite's expected-skips file (the suite skips a module itself

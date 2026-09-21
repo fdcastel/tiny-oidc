@@ -66,13 +66,15 @@ jobs:
         run: |
           curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
           chmod +x /usr/local/bin/cloudflared
-          nohup cloudflared tunnel --url https://localhost:8443 --no-tls-verify > conformance/results-tunnel.log 2>&1 &
+          # HTTP/2 transport: QUIC from a hosted runner has answered 502 mid-plan (a callback lost, a module with it).
+          mkdir -p conformance/results
+          nohup cloudflared tunnel --url https://localhost:8443 --no-tls-verify --protocol http2 > conformance/results/tunnel.log 2>&1 &
           for i in $(seq 1 60); do
-            url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' conformance/results-tunnel.log | head -1 || true)
+            url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' conformance/results/tunnel.log | head -1 || true)
             if [ -n "$url" ]; then break; fi
             sleep 2
           done
-          if [ -z "$url" ]; then echo "::error::no tunnel URL"; cat conformance/results-tunnel.log; exit 1; fi
+          if [ -z "$url" ]; then echo "::error::no tunnel URL"; cat conformance/results/tunnel.log; exit 1; fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "suite reachable at $url"
       - name: Start the suite
@@ -114,6 +116,7 @@ jobs:
             conformance/results/expected-failures.json
             conformance/results/expected-skips.json
             conformance/results/server.log
+            conformance/results/tunnel.log
           retention-days: 90
 
   load:

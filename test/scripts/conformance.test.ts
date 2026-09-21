@@ -13,6 +13,7 @@ import {
   runnerArgs,
   suiteUris,
   WAIVER_REASON,
+  WARNING_WAIVER_REASON,
   type Waiver,
 } from "../../conformance/lib.ts";
 
@@ -229,7 +230,7 @@ describe("conformance plans", () => {
     });
   });
 
-  it("accept only waivers with the one permitted reason and a discovery field, and turn them into the suite's expected-failures and expected-skips entries", () => {
+  it("accept only waivers with a permitted reason — the discovery reason for anything, the deliberate-behaviour reason for a warning naming its requirement — and turn them into the suite's expected-failures and expected-skips entries", () => {
     const waiver: Waiver = {
       "test-name": "oidcc-request-object-*",
       variant: "*",
@@ -268,6 +269,20 @@ describe("conformance plans", () => {
       ],
     });
     expect(() => expectedProblems([{ ...waiver, reason: "flaky" }])).toThrow("reason must be");
+    // The second reason: warnings only, and the requirement that chooses the behaviour is named.
+    const deliberate: Waiver = {
+      ...waiver,
+      "expected-result": "warning",
+      reason: WARNING_WAIVER_REASON,
+      advertised_by: "TIO-TOKEN-030: email in the ID token",
+    };
+    expect(expectedProblems([deliberate]).failures[0]?.["expected-result"]).toBe("warning");
+    expect(() => expectedProblems([{ ...deliberate, "expected-result": "failure" }])).toThrow(
+      "waives a warning only",
+    );
+    expect(() => expectedProblems([{ ...deliberate, advertised_by: "because" }])).toThrow(
+      "name the requirement",
+    );
     expect(() => expectedProblems([{ ...waiver, advertised_by: "" }])).toThrow("advertised_by");
     expect(() => expectedProblems([{ ...waiver, "expected-result": "info" as "failure" }])).toThrow(
       "expected-result",

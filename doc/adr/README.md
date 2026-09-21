@@ -26,3 +26,4 @@ the old one.
 | [0012](0012-no-per-address-limit-on-successful-token-traffic.md) | No per-address limit on successful `/token` traffic; the address class counts failed client authentication | Accepted |
 | [0013](0013-per-client-pkce-requirement.md) | PKCE required by default, clearable per confidential client (the conformance suite sends none); `POST /authorize` | Accepted |
 | [0014](0014-login-app-runs-under-the-suites-browser.md) | The reference login app runs under the conformance suite's browser (HtmlUnit: no async/await, fetch or spread) | Accepted |
+| [0015](0015-warning-waivers-for-deliberate-behaviour.md) | A second waiver reason: suite warnings on behaviour the spec chooses deliberately (email in the ID token, no access-token revocation on code replay) | Accepted |

@@ -60,5 +60,35 @@
     "expected-result": "skip",
     "reason": "feature intentionally unsupported and advertised as such in discovery",
     "advertised_by": "request_parameter_supported (false; the module skips itself once the OP answers request_not_supported, TIO-AUTHZ-025)"
+  },
+  {
+    "test-name": "oidcc-scope-email",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+    "current-block": "*",
+    "expected-result": "warning",
+    "reason": "behaviour the specification chooses deliberately where the standard permits it",
+    "advertised_by": "TIO-TOKEN-030: the ID token carries email and email_verified with the email scope (OIDC Core §5.4 places scope claims in UserInfo for the code flow and permits them in the ID token; ADR 0015)"
+  },
+  {
+    "test-name": "oidcc-alternate-happy-flow",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+    "current-block": "*",
+    "expected-result": "warning",
+    "reason": "behaviour the specification chooses deliberately where the standard permits it",
+    "advertised_by": "TIO-TOKEN-030: the ID token carries email and email_verified with the email scope (OIDC Core §5.4 places scope claims in UserInfo for the code flow and permits them in the ID token; ADR 0015)"
+  },
+  {
+    "test-name": "oidcc-codereuse-30seconds",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "condition": "EnsureHttpStatusCodeIs4xx",
+    "current-block": "*",
+    "expected-result": "warning",
+    "reason": "behaviour the specification chooses deliberately where the standard permits it",
+    "advertised_by": "TIO-TOKEN-012: a replayed code revokes the refresh families it produced, not the stateless ten-minute access token (RFC 6749 §4.1.2 SHOULD; ADR 0015)"
   }
 ]
