@@ -333,10 +333,12 @@ export const RULES: Rule[] = [
       return violations;
     },
   },
+  // The fake upstream is its own Worker with its own object storage (its
+  // signing keys), not a fixture writing the OP's state.
   patternRule(
     "factories-through-public-apis",
     ["TIO-TEST-032", "TIO-TEST-060"],
-    (p) => p.startsWith("test/support/") && isTs(p),
+    (p) => p.startsWith("test/support/") && !p.startsWith("test/support/fake-upstream/") && isTs(p),
     /\brunInDurableObject\b|\bstorage\s*\.\s*(?:put|delete|deleteAll|transaction|sql)\b|\.(?:prepare|exec|batch)\s*\(|\bINSERT\s+INTO\b|\bUPDATE\s+\w+\s+SET\b/,
     "test/support builds state through public APIs and Durable Object methods, never by writing storage",
   ),

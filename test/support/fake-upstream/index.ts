@@ -1,4 +1,4 @@
-import { exportJWK, importJWK, type JWK, jwtVerify, SignJWT } from "jose";
+import { calculateJwkThumbprint, exportJWK, importJWK, type JWK, jwtVerify, SignJWT } from "jose";
 
 // A minimal OIDC provider for tests and staging (spec TIO-TEST-031): discovery,
 // an authorization endpoint that approves every request, a token endpoint with
@@ -120,13 +120,56 @@ function randomToken(): string {
   return base64url(crypto.getRandomValues(new Uint8Array(24)));
 }
 
-async function generateKey(kid: string): Promise<Key> {
+/** A fresh P-256 key whose kid is its RFC 7638 thumbprint, so new material is never mistaken for old. */
+async function generateKey(): Promise<Key> {
   const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
     "sign",
     "verify",
   ])) as CryptoKeyPair;
-  const publicJwk = { ...(await exportJWK(pair.publicKey)), kid, alg: "ES256", use: "sig" };
+  const exported = await exportJWK(pair.publicKey);
+  const kid = await calculateJwkThumbprint(exported, "sha256");
+  const publicJwk = { ...exported, kid, alg: "ES256", use: "sig" };
   return { kid, privateKey: pair.privateKey, publicJwk };
+}
+
+/** A signing key as kept between restarts of the provider: the private JWK with its kid. */
+export interface StoredKey {
+  kid: string;
+  kty: string;
+  crv: string;
+  x: string;
+  y: string;
+  d: string;
+}
+
+/**
+ * Where a long-lived provider keeps its keys. The staging Worker's Durable
+ * Object restarts whenever it is evicted; if every restart generated new
+ * material under the same kids, an OP isolate that had cached the previous
+ * JWKS would reject every signature and, seeing no unknown kid, never
+ * refetch. Persisted keys make the fake as stable as a real provider.
+ */
+export interface KeyStore {
+  load(): Promise<StoredKey[] | undefined>;
+  save(keys: StoredKey[]): Promise<void>;
+}
+
+async function exportKey(key: Key): Promise<StoredKey> {
+  const jwk = await exportJWK(key.privateKey);
+  return {
+    kid: key.kid,
+    kty: jwk.kty as string,
+    crv: jwk.crv as string,
+    x: jwk.x as string,
+    y: jwk.y as string,
+    d: jwk.d as string,
+  };
+}
+
+async function importKey(stored: StoredKey): Promise<Key> {
+  const { kid, kty, crv, x, y, d } = stored;
+  const privateKey = (await importJWK({ kty, crv, x, y, d }, "ES256")) as CryptoKey;
+  return { kid, privateKey, publicJwk: { kty, crv, x, y, kid, alg: "ES256", use: "sig" } };
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -150,8 +193,15 @@ export class FakeUpstream {
     this.keys = keys;
   }
 
-  static async create(options: FakeUpstreamOptions): Promise<FakeUpstream> {
-    return new FakeUpstream(options, [await generateKey("fake-1"), await generateKey("fake-2")]);
+  /** With a store, the keys of an earlier incarnation are reused; the first incarnation saves its own. */
+  static async create(options: FakeUpstreamOptions, store?: KeyStore): Promise<FakeUpstream> {
+    const stored = await store?.load();
+    if (stored && stored.length > 0) {
+      return new FakeUpstream(options, await Promise.all(stored.map(importKey)));
+    }
+    const keys = [await generateKey(), await generateKey()];
+    await store?.save(await Promise.all(keys.map(exportKey)));
+    return new FakeUpstream(options, keys);
   }
 
   private get now(): number {
