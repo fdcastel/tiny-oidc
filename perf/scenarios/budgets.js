@@ -12,7 +12,7 @@
 
 export const BUDGETS = {
   discovery: { endpoint: "GET /.well-known/*", p50: 5, p99: 20, d1w: 0, d1: false },
-  sso_authorize: { endpoint: "GET /authorize (session hit)", p50: 30, p99: 150, d1w: 0, d1: false },
+  sso_authorize: { endpoint: "GET /authorize (session hit)", p50: 30, p99: 200, d1w: 0, d1: false },
   login_federated: { endpoint: "GET /federation/callback", p50: 600, p99: 1200, d1w: 0, d1: true },
   token_code_exchange: {
     endpoint: "POST /token code exchange",
@@ -21,10 +21,10 @@ export const BUDGETS = {
     d1w: 0,
     d1: false,
   },
-  token_refresh: { endpoint: "POST /token refresh", p50: 30, p99: 150, d1w: 0, d1: false },
+  token_refresh: { endpoint: "POST /token refresh", p50: 30, p99: 200, d1w: 0, d1: false },
   userinfo: { endpoint: "GET /userinfo", p50: 20, p99: 100, d1w: 0, d1: false },
   admin_list: { endpoint: "Admin list endpoints", p50: 300, p99: 1000, d1w: 0, d1: true },
-  soak_refresh: { endpoint: "POST /token refresh", p50: 30, p99: 150, d1w: 0, d1: false },
+  soak_refresh: { endpoint: "POST /token refresh", p50: 30, p99: 200, d1w: 0, d1: false },
 };
 
 /** The bound on the p99 over every request, the D1-touching ones included, as a multiple of the row's p99 (§2.7). */

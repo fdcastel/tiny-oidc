@@ -408,11 +408,11 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 | Endpoint | p50 | p99 | DO hops | D1 | Signatures |
 |---|---|---|---|---|---|
 | `GET /.well-known/*`, `GET /.well-known/jwks.json` | 5 ms | 20 ms | 0 | 0 (cached) | 0 |
-| `GET /authorize` (session hit) | 30 ms | 150 ms | 1 | 0 | 0 |
+| `GET /authorize` (session hit) | 30 ms | 200 ms | 1 | 0 | 0 |
 | `GET /authorize` (new interaction) | 30 ms | 150 ms | 1 | 0 | 0 |
 | `POST /par` | 30 ms | 150 ms | 1 | 0 | 0 |
 | `POST /token` code exchange | 40 ms | 200 ms | 1 | 0 | 2 |
-| `POST /token` refresh | 30 ms | 150 ms | 1 | 0 | 2 |
+| `POST /token` refresh | 30 ms | 200 ms | 1 | 0 | 2 |
 | `POST /token` client credentials | 30 ms | 150 ms | 0–1 | 0 | 1 |
 | `GET /userinfo` | 20 ms | 100 ms | 1 | 0 | 0 |
 | `POST …/passkey/verify` | 40 ms | 250 ms | 2 | 0 | 0 |

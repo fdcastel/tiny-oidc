@@ -64,6 +64,12 @@ D1 read.
   and the scenario measured Durable Object cold starts (warm p99 383 ms
   against a p95 of 97) rather than the session hit. A cold object costs
   200–400 ms and is a platform property the callback row already carries.
+- The rows whose one object call writes — the session hit (session touch and
+  code mint) and the refresh (family rotation) — are budgeted at 200 ms, the
+  value the code exchange (code consumption, family creation) already
+  carried: on the sliced, correctly accounted runs their warm p99 was
+  135–156 and 140–147 ms, the durable-write tail of an object, two to ten
+  per cent under 150, and a gate with that margin flaps.
 - The refresh burst (500/s for 60 s, §13.10) is budgeted at one and a half
   times the row's p99 (TIO-TEST-051): a spike of more than three times the
   steady rate onto the same 600 objects measured a warm p99 of 165 ms against
