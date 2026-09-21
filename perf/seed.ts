@@ -31,6 +31,7 @@ import {
   chunks,
   codeOf,
   cookieNamed,
+  FailFast,
   interactionOf,
   percentiles,
   pkce,
@@ -149,6 +150,8 @@ class Admin {
 const admin = () => new Admin(need("issuer"), need("client-id"), need("client-secret"));
 const rpIds = (count: number) => Array.from({ length: count }, (_, i) => `perf-rp-${i + 1}`);
 const RP_REDIRECT = "https://perf-rp.invalid/callback";
+/** A harvest whose first logins all fail stops here instead of running to its count. */
+const HARVEST_FAIL_FAST = 100;
 
 // --- generate ---------------------------------------------------------------------------
 
@@ -501,6 +504,7 @@ async function harvest(): Promise<void> {
   const limiter = new RateLimiter(int("rate"));
   const durations: number[] = [];
   const failures: string[] = [];
+  const failFast = new FailFast(HARVEST_FAIL_FAST);
   let ok = 0;
   let failed = 0;
   const startedAt = Date.now();
@@ -511,14 +515,17 @@ async function harvest(): Promise<void> {
     Array.from({ length: count }, (_, i) => from + i),
     int("concurrency"),
     async (n) => {
+      if (failFast.tripped) return;
       await limiter.acquire();
       const t0 = Date.now();
       try {
         const line = await login(issuer, loginOrigin, alias, rps[n % rps.length] as string, n);
         appendFileSync(out, `${JSON.stringify(line)}\n`);
         ok++;
+        failFast.record(true);
       } catch (error) {
         failed++;
+        failFast.record(false);
         if (failures.length < 50) failures.push(`${n}: ${String(error)}`);
       }
       durations.push(Date.now() - t0);
@@ -529,6 +536,8 @@ async function harvest(): Promise<void> {
     },
   );
   const total = durations.length;
+  if (failFast.tripped)
+    log(`harvest: the first ${HARVEST_FAIL_FAST} logins all failed; stopping (${failures[0]})`);
   const report = {
     kind: "seed_harvest",
     issuer,
@@ -536,6 +545,7 @@ async function harvest(): Promise<void> {
     from,
     rate: int("rate"),
     duration_s: Math.round((Date.now() - startedAt) / 100) / 10,
+    aborted: failFast.tripped,
     ok,
     failed,
     login_ms: percentiles(durations),
@@ -548,7 +558,7 @@ async function harvest(): Promise<void> {
   log(
     `harvest: ${ok} ok, ${failed} failed in ${report.duration_s}s (p99 ${report.login_ms.p99} ms); report ${path}`,
   );
-  if (failed > total * 0.01) process.exitCode = 1;
+  if (failFast.tripped || failed > total * 0.01) process.exitCode = 1;
 }
 
 // --- entry ------------------------------------------------------------------------------

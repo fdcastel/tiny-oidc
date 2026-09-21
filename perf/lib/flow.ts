@@ -111,6 +111,30 @@ export class RateLimiter {
   }
 }
 
+/**
+ * Trips when the first `threshold` attempts all fail before any succeeds: a
+ * run whose every login fails is a broken environment, not a load result,
+ * and should stop instead of spending its whole duration on failures.
+ */
+export class FailFast {
+  private readonly threshold: number;
+  private ok = 0;
+  private failed = 0;
+
+  constructor(threshold: number) {
+    this.threshold = threshold;
+  }
+
+  record(success: boolean): void {
+    if (success) this.ok++;
+    else this.failed++;
+  }
+
+  get tripped(): boolean {
+    return this.ok === 0 && this.failed >= this.threshold;
+  }
+}
+
 export interface Percentiles {
   count: number;
   p50: number;

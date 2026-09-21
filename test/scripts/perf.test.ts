@@ -5,6 +5,7 @@ import {
   chunks,
   codeOf,
   cookieNamed,
+  FailFast,
   interactionOf,
   percentiles,
   pkce,
@@ -129,6 +130,21 @@ describe("perf flow helpers", () => {
     expect(await limiter.acquire(1_500)).toBe(0);
     expect(slept).toEqual([100, 200]);
     expect(await new RateLimiter(0).acquire()).toBe(0);
+  });
+
+  it("trips the fail-fast guard only when the first attempts all fail before any success (a broken environment, not a load result)", () => {
+    const broken = new FailFast(3);
+    broken.record(false);
+    broken.record(false);
+    expect(broken.tripped).toBe(false);
+    broken.record(false);
+    expect(broken.tripped).toBe(true);
+    // One early success means the failures are the run's own result: never trips.
+    const flaky = new FailFast(3);
+    flaky.record(true);
+    for (let i = 0; i < 10; i++) flaky.record(false);
+    expect(flaky.tripped).toBe(false);
+    expect(new FailFast(1).tripped).toBe(false);
   });
 
   it("computes nearest-rank percentiles", () => {
