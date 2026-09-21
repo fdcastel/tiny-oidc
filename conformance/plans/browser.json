@@ -7,7 +7,14 @@
         "match": "{LOGIN_ORIGIN}/*",
         "optional": true,
         "commands": [
-          ["wait", "css", "#app h1", 10],
+          [
+            "wait",
+            "css",
+            "#app h1",
+            10,
+            "Sign in|Sign-in failed|Unsupported browser|Link your account|wants to|Done",
+            "update-image-placeholder-optional"
+          ],
           ["click", "id", "upstream-{UPSTREAM_ALIAS}", "optional"],
           ["wait", "match", "(/test/a/{ALIAS}/callback|[?&]error=)", 30]
         ]
@@ -28,7 +35,14 @@
         "match": "{LOGIN_ORIGIN}/*",
         "optional": true,
         "commands": [
-          ["wait", "css", "#app h1", 10],
+          [
+            "wait",
+            "css",
+            "#app h1",
+            10,
+            "Sign out\\?|Sign-in failed",
+            "update-image-placeholder-optional"
+          ],
           ["click", "id", "logout-confirm", "optional"],
           [
             "wait",

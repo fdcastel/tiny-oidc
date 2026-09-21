@@ -144,6 +144,13 @@ describe("POST /par", () => {
       ],
       ["request_uri pushed", valid(pub, { request_uri: "urn:x" }), {}, 400, "invalid_request"],
       [
+        "request object (TIO-AUTHZ-025)",
+        valid(pub, { request: "e30.e30." }),
+        {},
+        400,
+        "request_not_supported",
+      ],
+      [
         "bad redirect",
         valid(pub, { redirect_uri: "https://evil.example.net/" }),
         {},

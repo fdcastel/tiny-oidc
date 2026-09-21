@@ -28,7 +28,8 @@ export type AuthorizeErrorCode =
   | "invalid_request"
   | "unsupported_response_type"
   | "invalid_scope"
-  | "unauthorized_client";
+  | "unauthorized_client"
+  | "request_not_supported";
 
 export type AuthorizeValidation =
   | { ok: true; request: AuthorizeRequest }
@@ -102,6 +103,13 @@ export function validateAuthorizeRequest(
     error,
     description,
   });
+
+  // Request objects by value are not supported (TIO-AUTHZ-025, OIDC Core §6.1): the
+  // parameters inside one are never read, so the request is refused as such rather than
+  // failing on whatever the query lacks.
+  if (params.has("request")) {
+    return reject("request_not_supported", "request objects are not supported");
+  }
 
   // 6. response_type (TIO-AUTHZ-006).
   if (params.get("response_type") !== CAPABILITIES.response_types_supported[0]) {

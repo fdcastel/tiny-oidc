@@ -15,20 +15,34 @@ export interface RunValues {
   /** The alias the suite uses in its callback paths (`/test/a/<alias>/…`). */
   alias: string;
   /**
-   * The suite's relying parties: `client` and `client2` (client_secret_basic) for every
-   * plan, and `client_secret_post` for the basic plan's client_secret_post module.
+   * The suite's relying parties: `client` and `client2` (client_secret_basic) for the
+   * basic and RP-initiated logout plans, `client_secret_post` for the basic plan's
+   * client_secret_post module, and the back-channel pair for the back-channel plan.
    */
   clients: Record<RelyingParty, { id: string; secret: string }>;
 }
 
-/** The relying parties the plans read from their configuration (`client`, `client2`, `client_secret_post`). */
-export type RelyingParty = "basic" | "basic2" | "post";
+/**
+ * The relying parties the plans read from their configuration (`client`,
+ * `client2`, `client_secret_post`). Only the back-channel plan's parties
+ * register a `backchannel_logout_uri`: the suite serves that path in that
+ * plan alone, and a logout token sent to any other plan's callback is an
+ * unexpected request that fails the module.
+ */
+export type RelyingParty = "basic" | "basic2" | "post" | "backchannel" | "backchannel2";
 
-/** The registered authentication method of each relying party. */
-export const RELYING_PARTIES: Record<RelyingParty, "client_secret_basic" | "client_secret_post"> = {
-  basic: "client_secret_basic",
-  basic2: "client_secret_basic",
-  post: "client_secret_post",
+export interface RelyingPartyProfile {
+  method: "client_secret_basic" | "client_secret_post";
+  backchannel: boolean;
+}
+
+/** The registration of each relying party. */
+export const RELYING_PARTIES: Record<RelyingParty, RelyingPartyProfile> = {
+  basic: { method: "client_secret_basic", backchannel: false },
+  basic2: { method: "client_secret_basic", backchannel: false },
+  post: { method: "client_secret_post", backchannel: false },
+  backchannel: { method: "client_secret_basic", backchannel: true },
+  backchannel2: { method: "client_secret_basic", backchannel: true },
 };
 
 /** Fills `{NAME}` placeholders; a placeholder without a value is an error. */
@@ -55,6 +69,10 @@ export function placeholders(values: RunValues): Record<string, string> {
     CLIENT2_SECRET: values.clients.basic2.secret,
     POST_CLIENT_ID: values.clients.post.id,
     POST_CLIENT_SECRET: values.clients.post.secret,
+    BACKCHANNEL_CLIENT_ID: values.clients.backchannel.id,
+    BACKCHANNEL_CLIENT_SECRET: values.clients.backchannel.secret,
+    BACKCHANNEL_CLIENT2_ID: values.clients.backchannel2.id,
+    BACKCHANNEL_CLIENT2_SECRET: values.clients.backchannel2.secret,
   };
 }
 

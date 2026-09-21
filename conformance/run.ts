@@ -106,13 +106,13 @@ async function admin<T>(
  */
 async function relyingParty(party: RelyingParty): Promise<{ id: string; secret: string }> {
   const id = `conformance-${party}`;
-  const method = RELYING_PARTIES[party];
+  const { method, backchannel } = RELYING_PARTIES[party];
   const uris = suiteUris(publicUrl, alias);
   const body = {
-    client_name: `Conformance suite (${method}${party === "basic2" ? ", second client" : ""})`,
+    client_name: `Conformance suite (${party}, ${method})`,
     redirect_uris: uris.redirect_uris,
     post_logout_redirect_uris: uris.post_logout_redirect_uris,
-    backchannel_logout_uri: uris.backchannel_logout_uri,
+    backchannel_logout_uri: backchannel ? uris.backchannel_logout_uri : null,
     grant_types: ["authorization_code", "refresh_token"],
     token_endpoint_auth_method: method,
     scopes_allowed: ["openid", "email", "profile", "offline_access"],
@@ -265,6 +265,8 @@ async function main(): Promise<number> {
       basic: await relyingParty("basic"),
       basic2: await relyingParty("basic2"),
       post: await relyingParty("post"),
+      backchannel: await relyingParty("backchannel"),
+      backchannel2: await relyingParty("backchannel2"),
     },
   };
   await conformancePerson();

@@ -42,5 +42,15 @@
     "expected-result": "warning",
     "reason": "feature intentionally unsupported and advertised as such in discovery",
     "advertised_by": "claims_supported (of the profile scope the OP holds name and updated_at; given_name, family_name, picture, locale and the rest are not user attributes)"
+  },
+  {
+    "test-name": "oidcc-claims-essential",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "condition": "EnsureUserInfoContainsName",
+    "current-block": "*",
+    "expected-result": "warning",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "claims_parameter_supported (false: the claims parameter is ignored, so a name requested through it without the profile scope is not returned)"
   }
 ]

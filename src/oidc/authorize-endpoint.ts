@@ -117,7 +117,18 @@ export function authorizeHandler(clock: Clock): Handler<AppEnv> {
         );
       }
       const id = parseRequestUri(requestUri);
-      if (id === null) return toLoginApp("invalid_request", "request_uri is malformed");
+      if (id === null) {
+        // Only PAR references are accepted (TIO-DISC-003, TIO-AUTHZ-003): a JAR request URI
+        // is refused as unsupported, not as malformed.
+        return toLoginApp(
+          requestUri.startsWith(REQUEST_URI_PREFIX)
+            ? "invalid_request"
+            : "request_uri_not_supported",
+          requestUri.startsWith(REQUEST_URI_PREFIX)
+            ? "request_uri is malformed"
+            : "request_uri values other than pushed authorization requests are not supported",
+        );
+      }
       const stub = interactionStub(c.env, id);
       const binding = await newBinding(config.keys, id, settings.interaction_ttl);
       metrics.doCalls += 1;

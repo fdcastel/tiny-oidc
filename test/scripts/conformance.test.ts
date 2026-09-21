@@ -31,6 +31,8 @@ const run: RunValues = {
     basic: { id: "conformance-basic", secret: "s1" },
     basic2: { id: "conformance-basic2", secret: "s2" },
     post: { id: "conformance-post", secret: "s3" },
+    backchannel: { id: "conformance-backchannel", secret: "s4" },
+    backchannel2: { id: "conformance-backchannel2", secret: "s5" },
   },
 };
 
@@ -47,11 +49,15 @@ describe("conformance plans", () => {
     expect(runs.map((r) => r.config)).toEqual(CONFIG_FILES.map((f) => `cfg/${f}`));
     for (const file of CONFIG_FILES)
       expect(existsSync(`conformance/plans/${file}`), file).toBe(true);
-    // The basic plan authenticates its client both ways; the second client mirrors the first.
+    // The basic plan authenticates its client both ways; the second client mirrors the first;
+    // only the back-channel plan's pair registers a backchannel_logout_uri (the suite serves
+    // that path in that plan alone, and a logout token elsewhere is an unexpected request).
     expect(RELYING_PARTIES).toEqual({
-      basic: "client_secret_basic",
-      basic2: "client_secret_basic",
-      post: "client_secret_post",
+      basic: { method: "client_secret_basic", backchannel: false },
+      basic2: { method: "client_secret_basic", backchannel: false },
+      post: { method: "client_secret_post", backchannel: false },
+      backchannel: { method: "client_secret_basic", backchannel: true },
+      backchannel2: { method: "client_secret_basic", backchannel: true },
     });
     const config = JSON.parse(readFileSync("scripts/trace.config.json", "utf8")) as {
       conformance_plans: Record<string, string[]>;
@@ -93,10 +99,14 @@ describe("conformance plans", () => {
       );
       expect(JSON.stringify(rendered)).not.toMatch(/\{[A-Z_]+\}/);
       if (file !== "config.json") {
+        const pair =
+          file === "backchannel-logout.json"
+            ? ["conformance-backchannel", "s4", "conformance-backchannel2", "s5"]
+            : ["conformance-basic", "s1", "conformance-basic2", "s2"];
         expect(rendered.client).toEqual(
-          expect.objectContaining({ client_id: "conformance-basic", client_secret: "s1" }),
+          expect.objectContaining({ client_id: pair[0], client_secret: pair[1] }),
         );
-        expect(rendered.client2).toEqual({ client_id: "conformance-basic2", client_secret: "s2" });
+        expect(rendered.client2).toEqual({ client_id: pair[2], client_secret: pair[3] });
         // The basic plan's client_secret_post module reads its own client (static_client fields).
         expect(rendered.client_secret_post, file).toEqual(
           file === "basic.json"
@@ -106,6 +116,32 @@ describe("conformance plans", () => {
         const [authorize, logout] = rendered.browser as NonNullable<typeof rendered.browser>;
         expect(authorize?.match).toBe("https://auth.example.com/authorize*");
         expect(authorize?.tasks[0]?.match).toBe("https://login.example.com/*");
+        // The first wait names the screens by their heading and fulfils a module's image
+        // placeholder with the page (the modules that ask a human to confirm a screen stay
+        // WAITING otherwise, and the runner times out on them).
+        for (const task of [authorize?.tasks[0], logout?.tasks[0]]) {
+          const first = task?.commands?.[0] as string[];
+          expect(first.slice(0, 4)).toEqual(["wait", "css", "#app h1", 10]);
+          expect(first[5]).toBe("update-image-placeholder-optional");
+          expect(() => new RegExp(first[4] as string)).not.toThrow();
+        }
+        // The headings the login app renders are all named: sign-in, its error page, consent, linking, logout.
+        const headingPattern = (task?: { commands?: unknown[][] }) => {
+          const first = (task?.commands ?? [])[0] as string[];
+          return new RegExp(first[4] as string);
+        };
+        const signIn = headingPattern(authorize?.tasks[0]);
+        for (const heading of [
+          "Sign in",
+          "Sign-in failed",
+          "wants to",
+          "Link your account",
+          "Done",
+        ])
+          expect(signIn.test(heading), heading).toBe(true);
+        const signOut = headingPattern(logout?.tasks[0]);
+        expect(signOut.test("Sign out?")).toBe(true);
+        expect(signOut.test("Sign out")).toBe(false);
         expect(authorize?.tasks[0]?.commands).toContainEqual([
           "click",
           "id",

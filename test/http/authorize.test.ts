@@ -274,6 +274,35 @@ describe("GET /authorize", () => {
     }
   });
 
+  it("[TIO-AUTHZ-025] a request object by value is request_not_supported — redirected with state and iss when the redirect_uri is registered, to the login app otherwise — and its contents never stand in for the query", async () => {
+    // An unsigned request object carrying every parameter the query lacks (what the suite sends).
+    const claims = Buffer.from(
+      JSON.stringify({ state: "inside", nonce: "n", scope: "openid", response_type: "code" }),
+    ).toString("base64url");
+    const requestObject = `${Buffer.from('{"alg":"none"}').toString("base64url")}.${claims}.`;
+    const redirected = await authorize(valid(web, { request: requestObject }));
+    expect(query(redirected)).toEqual({
+      error: "request_not_supported",
+      error_description: "request objects are not supported",
+      state: "st-123",
+      iss: ISSUER,
+    });
+    // Without state or scope in the query, the object does not supply them: still request_not_supported.
+    const bare = await authorize({
+      client_id: web.client_id,
+      redirect_uri: web.redirect_uris[0] as string,
+      request: requestObject,
+    });
+    expect(query(bare)).toEqual({
+      error: "request_not_supported",
+      error_description: "request objects are not supported",
+      iss: ISSUER,
+    });
+    const untrusted = await authorize({ client_id: web.client_id, request: requestObject });
+    expect(location(untrusted).origin).toBe("https://login.example.com");
+    expect(query(untrusted)["error"]).toBe("invalid_request");
+  });
+
   it("[TIO-AUTHZ-007] state is required, 1-2048 printable ASCII characters, and is echoed only when valid", async () => {
     for (const state of [undefined, "", "a".repeat(2_049), "tab\there", "café"]) {
       const r = await authorize(valid(web, { state }));
@@ -725,8 +754,17 @@ describe("GET /authorize", () => {
       return `${REQUEST_URI_PREFIX}${id}`;
     };
     const requestUri = await push(parClient);
-    const bad: [Record<string, string>, string][] = [
-      [{ client_id: parClient.client_id, request_uri: "urn:other" }, "request_uri is malformed"],
+    const bad: [Record<string, string>, string, string?][] = [
+      [
+        { client_id: parClient.client_id, request_uri: "urn:other" },
+        "request_uri values other than pushed authorization requests are not supported",
+        "request_uri_not_supported",
+      ],
+      [
+        { client_id: parClient.client_id, request_uri: "https://rp.example.com/request.jwt" },
+        "request_uri values other than pushed authorization requests are not supported",
+        "request_uri_not_supported",
+      ],
       [
         { client_id: parClient.client_id, request_uri: `${REQUEST_URI_PREFIX}short` },
         "request_uri is malformed",
@@ -747,10 +785,10 @@ describe("GET /authorize", () => {
         "request_uri allows no other parameter than client_id",
       ],
     ];
-    for (const [params, description] of bad) {
+    for (const [params, description, error = "invalid_request"] of bad) {
       const r = await authorize(params);
       expect(location(r).origin, description).toBe("https://login.example.com");
-      expect(query(r)).toEqual({ error: "invalid_request", error_description: description });
+      expect(query(r)).toEqual({ error, error_description: description });
     }
     // Consumption: the pushed document becomes the login interaction with a fresh binding and TTL.
     const r = await authorize({ client_id: parClient.client_id, request_uri: requestUri });

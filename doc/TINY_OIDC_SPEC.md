@@ -1048,7 +1048,7 @@ POST /authorize  (application/x-www-form-urlencoded, the same parameters in the 
 
 1. **[TIO-AUTHZ-001]** Method SHALL be GET or POST (OIDC Core §3.1.2.1). Query string SHALL be ≤ 8 KB. A POST SHALL carry `application/x-www-form-urlencoded` (anything else is non-redirectable `invalid_request`) and its parameters are read from the body, as `/logout` does. Duplicate parameters SHALL be rejected (`invalid_request`).
 2. **[TIO-AUTHZ-002]** `client_id` SHALL be present and refer to an enabled client with `authorization_code` in `grant_types`. Otherwise the error is non-redirectable.
-3. **[TIO-AUTHZ-003]** If `request_uri` is present, it SHALL be a PAR reference issued to this `client_id`, unexpired and unconsumed; all other query parameters except `client_id` SHALL be absent. The stored parameters replace the query. A consumed or unknown `request_uri` is non-redirectable `invalid_request`.
+3. **[TIO-AUTHZ-003]** If `request_uri` is present, it SHALL be a PAR reference issued to this `client_id`, unexpired and unconsumed; all other query parameters except `client_id` SHALL be absent. The stored parameters replace the query. A consumed or unknown `request_uri` is non-redirectable `invalid_request`; a `request_uri` that is not a PAR reference (a JAR request URI) is non-redirectable `request_uri_not_supported` (OIDC Core §6.2, `request_uri_parameter_supported` is `false`).
 4. **[TIO-AUTHZ-004]** If the client has `require_par = 1` and no `request_uri` is present, the error SHALL be non-redirectable `invalid_request`.
 5. **[TIO-AUTHZ-005]** `redirect_uri` SHALL be present and SHALL match one registered URI by the rules in §5.11.3. Otherwise non-redirectable `invalid_request`. From here on errors are redirected to `redirect_uri`.
 6. **[TIO-AUTHZ-006]** `response_type` SHALL equal `code`; else `unsupported_response_type`.
@@ -1082,6 +1082,8 @@ POST /authorize  (application/x-www-form-urlencoded, the same parameters in the 
 **[TIO-AUTHZ-023]** Issuing a code SHALL record `(sid, client_id)` in `session_clients` and touch `last_seen_at` and `idle_expires_at` of the session.
 
 **[TIO-AUTHZ-024]** A code SHALL bind exactly the `scope`, `nonce`, `redirect_uri`, `code_challenge` and `state` of the request that produced it. A session hit SHALL never reuse any parameter from an earlier request or from the interaction that created the session, and `prompt` and `max_age` SHALL never be persisted anywhere except inside the interaction that carried them. Two tests name this bug class: two `/authorize` requests on one session with different `nonce` and `code_challenge` produce a second code that redeems only with the second verifier and an ID token carrying the second `nonce`; an interaction started with `prompt=login` followed by a bare `/authorize` on the resulting session is a session hit, never a login loop.
+
+**Request objects.** **[TIO-AUTHZ-025]** A `request` parameter (a JAR request object by value) SHALL be refused with `request_not_supported` (OIDC Core §6.1; `request_parameter_supported` is `false`), redirected with `state` and `iss` when the `redirect_uri` is registered and non-redirectable otherwise. The object is never parsed: its parameters do not replace or supplement the query, so a request that would be valid with them is still refused. `/par` answers the same. Conformance module `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported` expects exactly this.
 
 ### 5.5 Pushed Authorization Requests (RFC 9126)
 

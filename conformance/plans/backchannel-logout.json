@@ -1,9 +1,16 @@
 {
   "alias": "{ALIAS}",
-  "description": "Tiny OIDC staging: back-channel logout, {CLIENT_ID}",
+  "description": "Tiny OIDC staging: back-channel logout, {BACKCHANNEL_CLIENT_ID}",
   "server": { "discoveryUrl": "{ISSUER}/.well-known/openid-configuration" },
-  "client": { "client_id": "{CLIENT_ID}", "client_secret": "{CLIENT_SECRET}", "scope": "openid" },
-  "client2": { "client_id": "{CLIENT2_ID}", "client_secret": "{CLIENT2_SECRET}" },
+  "client": {
+    "client_id": "{BACKCHANNEL_CLIENT_ID}",
+    "client_secret": "{BACKCHANNEL_CLIENT_SECRET}",
+    "scope": "openid"
+  },
+  "client2": {
+    "client_id": "{BACKCHANNEL_CLIENT2_ID}",
+    "client_secret": "{BACKCHANNEL_CLIENT2_SECRET}"
+  },
   "browser": "{BROWSER}",
   "browser_verbose": true
 }
