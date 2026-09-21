@@ -20,6 +20,10 @@ on:
         description: Also run the two-hour soak
         type: boolean
         default: false
+      duration:
+        description: Length of each k6 scenario while iterating on the load gate (the nightly keeps the spec's 5m)
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -143,7 +147,7 @@ jobs:
       TIO_PERF_SEED: ${{ vars.TIO_PERF_SEED || '1' }}
       TIO_PERF_USERS: ${{ vars.TIO_PERF_USERS || '1000000' }}
       TIO_PERF_HARVEST: ${{ vars.TIO_PERF_HARVEST || '100000' }}
-      TIO_PERF_DURATION: ${{ vars.TIO_PERF_DURATION || '5m' }}
+      TIO_PERF_DURATION: ${{ inputs.duration || vars.TIO_PERF_DURATION || '5m' }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
