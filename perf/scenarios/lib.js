@@ -10,7 +10,13 @@ import encoding from "k6/encoding";
 import exec from "k6/execution";
 import http from "k6/http";
 import { Counter, Rate, Trend } from "k6/metrics";
-import { BUDGETS, MAX_D1_WRITE_RATE, MAX_FAILED_RATE, TAIL_FACTOR } from "./budgets.js";
+import {
+  BUDGETS,
+  BURST_FACTOR,
+  MAX_D1_WRITE_RATE,
+  MAX_FAILED_RATE,
+  TAIL_FACTOR,
+} from "./budgets.js";
 
 export const ISSUER = __ENV.TIO_PERF_ISSUER;
 /** The origin of a URL without the URL class (k6 has none): scheme, host and port. */
@@ -76,11 +82,13 @@ export function record(res, scenario = exec.scenario.name) {
  */
 export function thresholds(scenario, tagged = scenario) {
   const budget = BUDGETS[scenario];
+  // A burst tag carries the row's budget with the allowance of TIO-TEST-051.
+  const p99 = budget.p99 * (tagged.endsWith("_burst") ? BURST_FACTOR : 1);
   const timing = budget.d1
-    ? { [`server_ms{scenario:${tagged}}`]: [`p(99)<=${budget.p99}`] }
+    ? { [`server_ms{scenario:${tagged}}`]: [`p(99)<=${p99}`] }
     : {
-        [`server_ms_warm{scenario:${tagged}}`]: [`p(99)<=${budget.p99}`],
-        [`server_ms{scenario:${tagged}}`]: [`p(99)<=${budget.p99 * TAIL_FACTOR}`],
+        [`server_ms_warm{scenario:${tagged}}`]: [`p(99)<=${p99}`],
+        [`server_ms{scenario:${tagged}}`]: [`p(99)<=${p99 * TAIL_FACTOR}`],
       };
   return {
     ...timing,

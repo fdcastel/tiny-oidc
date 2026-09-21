@@ -9,5 +9,6 @@ export interface Budget {
 }
 export const BUDGETS: Record<string, Budget>;
 export const TAIL_FACTOR: number;
+export const BURST_FACTOR: number;
 export const MAX_FAILED_RATE: number;
 export const MAX_D1_WRITE_RATE: number;

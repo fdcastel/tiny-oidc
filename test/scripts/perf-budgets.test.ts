@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BUDGETS,
+  BURST_FACTOR,
   MAX_D1_WRITE_RATE,
   MAX_FAILED_RATE,
   TAIL_FACTOR,
@@ -51,6 +52,9 @@ describe("k6 budgets", () => {
     // The budget is on the requests that read no D1; the p99 over every request is bounded
     // at four times it; the two rows that read D1 by design are budgeted over every request.
     expect(TAIL_FACTOR).toBe(4);
+    // The refresh burst's allowance is the one TIO-TEST-051 names.
+    expect(BURST_FACTOR).toBe(1.5);
+    expect(spec).toContain("is budgeted at one and a half times the row's p99");
     const spec = readFileSync("doc/TINY_OIDC_SPEC.md", "utf8");
     expect(spec).toContain("the p99 over every request at four times the row's p99");
     expect(

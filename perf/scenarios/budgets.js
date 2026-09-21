@@ -30,6 +30,9 @@ export const BUDGETS = {
 /** The bound on the p99 over every request, the D1-touching ones included, as a multiple of the row's p99 (§2.7). */
 export const TAIL_FACTOR = 4;
 
+/** The refresh burst's allowance (TIO-TEST-051): a spike of over three times the steady rate onto the same objects. */
+export const BURST_FACTOR = 1.5;
+
 /** `http_req_failed` for every scenario (§13.10: below 0.1%). */
 export const MAX_FAILED_RATE = 0.001;
 

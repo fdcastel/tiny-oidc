@@ -64,6 +64,13 @@ D1 read.
   and the scenario measured Durable Object cold starts (warm p99 383 ms
   against a p95 of 97) rather than the session hit. A cold object costs
   200–400 ms and is a platform property the callback row already carries.
+- The refresh burst (500/s for 60 s, §13.10) is budgeted at one and a half
+  times the row's p99 (TIO-TEST-051): a spike of more than three times the
+  steady rate onto the same 600 objects measured a warm p99 of 165 ms against
+  147 sustained, and a bound that flaps on ten per cent of noise is no bound.
+- The public documents (discovery, JWKS, WebAuthn origins) are held in
+  isolate memory for 60 s in front of the Worker cache: the cache match alone
+  had a tail past the discovery row's whole 20 ms budget.
 - The `d1_reads` counter and the split trends (`server_ms_warm`,
   `server_ms_d1`) stay in every summary, so the share of cold requests is
   visible night to night.
