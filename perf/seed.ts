@@ -150,6 +150,8 @@ class Admin {
 const admin = () => new Admin(need("issuer"), need("client-id"), need("client-secret"));
 const rpIds = (count: number) => Array.from({ length: count }, (_, i) => `perf-rp-${i + 1}`);
 const RP_REDIRECT = "https://perf-rp.invalid/callback";
+/** How often a delete retries a 503 (an object restarting under a deploy). */
+const DELETE_RETRIES = 3;
 /** A harvest whose first logins all fail stops here instead of running to its count. */
 const HARVEST_FAIL_FAST = 100;
 
@@ -395,7 +397,14 @@ async function deleteUsers(): Promise<void> {
         counts.absent += 1;
         return;
       }
-      const res = await a.call("DELETE", `users/${id}`);
+      // A 503 here is the user's object restarting (a deploy or a migration of the object):
+      // retry a few times before counting a failure.
+      let res = await a.call("DELETE", `users/${id}`);
+      for (let attempt = 1; res.status === 503 && attempt <= DELETE_RETRIES; attempt++) {
+        await res.text();
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        res = await a.call("DELETE", `users/${id}`);
+      }
       if (res.status === 204 || res.status === 404) counts.deleted += 1;
       else {
         counts.failed += 1;
