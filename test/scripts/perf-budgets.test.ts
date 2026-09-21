@@ -54,8 +54,8 @@ describe("k6 budgets", () => {
     expect(TAIL_FACTOR).toBe(4);
     // The refresh burst's allowance is the one TIO-TEST-051 names.
     expect(BURST_FACTOR).toBe(1.5);
-    expect(spec).toContain("is budgeted at one and a half times the row's p99");
     const spec = readFileSync("doc/TINY_OIDC_SPEC.md", "utf8");
+    expect(spec).toContain("is budgeted at one and a half times the row's p99");
     expect(spec).toContain("the p99 over every request at four times the row's p99");
     expect(
       Object.entries(BUDGETS)
