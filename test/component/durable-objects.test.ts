@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { InteractionDO, InteractionDocument } from "../../src/do/InteractionDO.ts";
 import { USER_SCHEMA_VERSION } from "../../src/do/schema.ts";
 import { PURGE_GRACE_SECONDS, PURGE_INTERVAL_SECONDS, type UserDO } from "../../src/do/UserDO.ts";
-import { FakeClock } from "../support/clock.ts";
+import { FAKE_EPOCH, FakeClock } from "../support/clock.ts";
 import { userProfile } from "../support/factories.ts";
 import { env } from "../support/op.ts";
 
@@ -30,11 +30,11 @@ describe("UserDO", () => {
   it("[TIO-DATA-021] refuses every method except init() before initialization and except destroy() after destruction", async () => {
     const stub = userStub("guards");
     expect(await stub.getProfile()).toEqual({ ok: false, error: "user_not_initialized" });
-    expect(await stub.touch(1_790_000_000, 86_400)).toEqual({
+    expect(await stub.touch(FAKE_EPOCH, 86_400)).toEqual({
       ok: false,
       error: "user_not_initialized",
     });
-    const created = await stub.init(profile("u1"), 1_790_000_000);
+    const created = await stub.init(profile("u1"), FAKE_EPOCH);
     expect(created).toEqual({
       ok: true,
       profile: {
@@ -45,24 +45,27 @@ describe("UserDO", () => {
         display_name: "Alice",
         groups: ["admins", "staff"],
         disabled_at: null,
-        created_at: 1_790_000_000,
-        updated_at: 1_790_000_000,
+        created_at: FAKE_EPOCH,
+        updated_at: FAKE_EPOCH,
       },
     });
     // init is idempotent for the same id (cron repair) and refused for another id.
-    expect(await stub.init(profile("u1"), 1_790_000_500)).toEqual(created);
-    expect(await stub.init(profile("u2"), 1_790_000_500)).toEqual({
+    expect(await stub.init(profile("u1"), FAKE_EPOCH + 500)).toEqual(created);
+    expect(await stub.init(profile("u2"), FAKE_EPOCH + 500)).toEqual({
       ok: false,
       error: "user_id_mismatch",
     });
     expect((await stub.getProfile()).ok).toBe(true);
     expect(await stub.destroy()).toEqual({ ok: true });
     expect(await stub.getProfile()).toEqual({ ok: false, error: "user_destroyed" });
-    expect(await stub.init(profile("u1"), 1_790_000_600)).toEqual({
+    expect(await stub.init(profile("u1"), FAKE_EPOCH + 600)).toEqual({
       ok: false,
       error: "user_destroyed",
     });
-    expect(await stub.touch(1_790_000_600, 86_400)).toEqual({ ok: false, error: "user_destroyed" });
+    expect(await stub.touch(FAKE_EPOCH + 600, 86_400)).toEqual({
+      ok: false,
+      error: "user_destroyed",
+    });
     expect(await stub.destroy()).toEqual({ ok: true });
     // Storage is empty after destroy.
     await runInDurableObject(stub, async (_instance: UserDO, state) => {
@@ -72,7 +75,7 @@ describe("UserDO", () => {
 
   it("migrates the §4.2 schema lazily and idempotently and records the version; the version 3 rebuild of auth_codes keeps a live code (rows inserted directly to construct the earlier schema)", async () => {
     const stub = userStub("schema");
-    await stub.init({ ...profile("u3"), email_verified: false }, 1_790_000_000);
+    await stub.init({ ...profile("u3"), email_verified: false }, FAKE_EPOCH);
     const first = await stub.getProfile();
     expect(first.ok && first.profile.email_verified).toBe(false);
     await runInDurableObject(stub, (_instance: UserDO, state) => {
@@ -116,9 +119,9 @@ describe("UserDO", () => {
       state.storage.sql.exec("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
     });
     await evictDurableObject(stub);
-    expect(await stub.putChallenge("k", "v", 1_790_000_100)).toEqual({ ok: true });
-    expect(await stub.takeChallenge("k", 1_790_000_000)).toEqual({ ok: true, value: "v" });
-    expect(await stub.takeChallenge("k", 1_790_000_000)).toEqual({ ok: true, value: null });
+    expect(await stub.putChallenge("k", "v", FAKE_EPOCH + 100)).toEqual({ ok: true });
+    expect(await stub.takeChallenge("k", FAKE_EPOCH)).toEqual({ ok: true, value: "v" });
+    expect(await stub.takeChallenge("k", FAKE_EPOCH)).toEqual({ ok: true, value: null });
     await runInDurableObject(stub, (_instance: UserDO, state) => {
       const version = state.storage.sql
         .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'")
@@ -135,13 +138,14 @@ describe("UserDO", () => {
       );
       sql.exec("CREATE INDEX auth_codes_expires ON auth_codes(expires_at)");
       sql.exec(
-        "INSERT INTO auth_codes VALUES (?, 'c1', 'https://rp.example.com/cb', 'openid', NULL, 'challenge-1', 'sid-1', 1, '[\"pk\"]', 'urn:x', 1, 1_790_000_060, NULL)",
+        "INSERT INTO auth_codes VALUES (?, 'c1', 'https://rp.example.com/cb', 'openid', NULL, 'challenge-1', 'sid-1', 1, '[\"pk\"]', 'urn:x', 1, ?, NULL)",
         new Uint8Array([1, 2, 3]),
+        FAKE_EPOCH + 60,
       );
       sql.exec("UPDATE meta SET value = '2' WHERE key = 'schema_version'");
     });
     await evictDurableObject(stub);
-    expect(await stub.putChallenge("k2", "v", 1_790_000_100)).toEqual({ ok: true });
+    expect(await stub.putChallenge("k2", "v", FAKE_EPOCH + 100)).toEqual({ ok: true });
     await runInDurableObject(stub, (_instance: UserDO, state) => {
       const sql = state.storage.sql;
       const rows = sql
@@ -159,8 +163,9 @@ describe("UserDO", () => {
           .map((r) => r.name),
       ).toEqual(["auth_codes_expires"]);
       sql.exec(
-        "INSERT INTO auth_codes VALUES (?, 'c2', 'https://rp.example.com/cb', 'openid', NULL, NULL, 'sid-1', 1, '[]', 'urn:x', 1, 1_790_000_060, NULL)",
+        "INSERT INTO auth_codes VALUES (?, 'c2', 'https://rp.example.com/cb', 'openid', NULL, NULL, 'sid-1', 1, '[]', 'urn:x', 1, ?, NULL)",
         new Uint8Array([4, 5, 6]),
+        FAKE_EPOCH + 60,
       );
       expect(
         sql.exec("SELECT count(*) AS n FROM auth_codes WHERE code_challenge IS NULL").one()["n"],
@@ -282,7 +287,7 @@ describe("InteractionDO", () => {
 
   it("[TIO-DATA-022] expires 600 s after creation: the alarm deletes all storage and the document is not found afterwards", async () => {
     const stub = interactionStub("expiry");
-    const now = 1_790_000_000;
+    const now = FAKE_EPOCH;
     const created = await create(stub, now);
     expect(docOf(created)).toMatchObject({
       id: "ix1",
@@ -310,7 +315,7 @@ describe("InteractionDO", () => {
 
   it("[TIO-DATA-022] completed and failed interactions are deleted 60 s after reaching that state", async () => {
     const stub = interactionStub("terminal");
-    const now = 1_790_000_000;
+    const now = FAKE_EPOCH;
     await create(stub, now);
     const failed = await stub.apply(
       "abort",
@@ -333,7 +338,7 @@ describe("InteractionDO", () => {
 
   it("[TIO-IX-010] [TIO-DATA-023] validates every transition against §7.2 and leaves the document unchanged on an invalid one (interaction_invalid_state)", async () => {
     const stub = interactionStub("transitions");
-    const now = 1_790_000_000;
+    const now = FAKE_EPOCH;
     await create(stub, now);
     const invalid = await stub.apply("consent", "ready", { consent: { scopes: ["openid"] } }, now);
     expect(invalid).toEqual({ ok: false, error: "interaction_invalid_state" });
