@@ -1,1 +1,46 @@
-[]
+[
+  {
+    "test-name": "oidcc-discovery-endpoint-verification",
+    "variant": "*",
+    "configuration-filename": "*/config.json",
+    "condition": "OIDCCCheckDiscEndpointIdTokenSigningAlgValuesSupported",
+    "current-block": "*",
+    "expected-result": "failure",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "id_token_signing_alg_values_supported (the OP signs with ES256 only, spec §1.5; RS256 is verified for upstreams and clients, never used for signing)"
+  },
+  {
+    "test-name": "oidcc-scope-address",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "expected-result": "skip",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "scopes_supported (no address scope: the user model holds no address)"
+  },
+  {
+    "test-name": "oidcc-scope-phone",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "expected-result": "skip",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "scopes_supported (no phone scope: the user model holds no phone number)"
+  },
+  {
+    "test-name": "oidcc-scope-all",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "expected-result": "skip",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "scopes_supported (the module needs the address and phone scopes)"
+  },
+  {
+    "test-name": "oidcc-scope-profile",
+    "variant": "*",
+    "configuration-filename": "*/basic.json",
+    "condition": "VerifyScopesReturnedInUserInfoClaims",
+    "current-block": "*",
+    "expected-result": "warning",
+    "reason": "feature intentionally unsupported and advertised as such in discovery",
+    "advertised_by": "claims_supported (of the profile scope the OP holds name and updated_at; given_name, family_name, picture, locale and the rest are not user attributes)"
+  }
+]
