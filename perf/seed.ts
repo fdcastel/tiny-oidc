@@ -535,6 +535,7 @@ async function harvest(): Promise<void> {
   const failFast = new FailFast(HARVEST_FAIL_FAST);
   let ok = 0;
   let failed = 0;
+  let retried = 0;
   const startedAt = Date.now();
   log(
     `harvest: ${count} logins from ${from} at ${int("rate")}/s through ${rps.length} relying parties into ${out}`,
@@ -547,7 +548,17 @@ async function harvest(): Promise<void> {
       await limiter.acquire();
       const t0 = Date.now();
       try {
-        const line = await login(issuer, loginOrigin, alias, rps[n % rps.length] as string, n);
+        let line: Harvested;
+        try {
+          line = await login(issuer, loginOrigin, alias, rps[n % rps.length] as string, n);
+        } catch (error) {
+          // A server error is the OP mid-deploy (every push to main deploys staging, and a
+          // deploy restarts the objects under whatever is in flight): one more login, a
+          // fresh interaction, counted so the report shows it.
+          if (!/: 5\d\d /.test(String(error))) throw error;
+          retried++;
+          line = await login(issuer, loginOrigin, alias, rps[n % rps.length] as string, n);
+        }
         appendFileSync(out, `${JSON.stringify(line)}\n`);
         ok++;
         failFast.record(true);
@@ -576,6 +587,7 @@ async function harvest(): Promise<void> {
     aborted: failFast.tripped,
     ok,
     failed,
+    retried,
     login_ms: percentiles(durations),
     failures,
   };
@@ -584,7 +596,7 @@ async function harvest(): Promise<void> {
     `perf/data/harvest-${new Date(startedAt).toISOString().replaceAll(":", "-")}.json`;
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   log(
-    `harvest: ${ok} ok, ${failed} failed in ${report.duration_s}s (p99 ${report.login_ms.p99} ms); report ${path}`,
+    `harvest: ${ok} ok, ${failed} failed, ${retried} retried in ${report.duration_s}s (p99 ${report.login_ms.p99} ms); report ${path}`,
   );
   if (failFast.tripped || failed > total * 0.01) process.exitCode = 1;
 }
