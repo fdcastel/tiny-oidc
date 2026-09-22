@@ -41,6 +41,7 @@ Production deployments run with the bundled login app disabled and a custom doma
 - [Specification](doc/TINY_OIDC_SPEC.md): architecture, protocol surface, APIs, storage, cryptography, testing strategy, implementation plan, threat model.
 - [Implementation plan](doc/TINY_OIDC_PLAN.md): the living task list, phase by phase.
 - [Runbook](doc/RUNBOOK.md): bootstrap, key and master-key rotation, emergency retirement, secret rotation, user recovery, D1 restore, reindex, release and rollback.
+- [Federation setup](doc/FEDERATION_SETUP.md): connecting upstream providers — the generic procedure, Google and Microsoft Entra ID step by step, the account-resolution settings, and how to verify a real login.
 - [Login app guide](doc/LOGIN_APP_GUIDE.md): how to build a login app against the Interaction API, with the reference app as the executable example.
 - [Decision records](doc/adr/): decisions taken during the build and the threat-model review.
 - [Configuration](doc/CONFIG.md): every variable, secret and setting (generated from the code).
