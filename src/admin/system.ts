@@ -169,7 +169,7 @@ export const getSettingsHandler: Handler<AppEnv> = async (c) => {
 
 const SettingsPatch = z.record(z.string(), z.unknown());
 /** System-managed keys never change through the API. */
-const READ_ONLY_SETTINGS = new Set(["bootstrapped_at"]);
+const READ_ONLY_SETTINGS = new Set(["bootstrapped_at", "do_jurisdiction"]);
 const KNOWN_SETTINGS = new Set(
   Object.keys(SettingsSchema.shape).filter((key) => !READ_ONLY_SETTINGS.has(key)),
 );

@@ -950,7 +950,7 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 | Consumed refresh tokens | `refresh_reuse_window` (24 h) | `UserDO` purge |
 | Expired/revoked families and sessions | 24 h after expiry | `UserDO` purge |
 | `audit_hot` | `audit.hot_retention_days` (30) | Cron, 1,000 rows per run per iteration, bounded to 10 iterations |
-| R2 archive | Indefinite (bucket lifecycle rule is the operator's choice) | — |
+| R2 archive | The operator's choice; recommended 365 days for `audit/` and 90 days for `backups/` (runbook §12) | Bucket lifecycle rules |
 | Invitations | Deleted 30 days after expiry or use | Cron |
 | Retired signing keys | Row kept 90 days with `private_jwk_enc = NULL`, then deleted | Cron |
 | `users` rows in `creating` | 1 h | Cron |
@@ -1935,7 +1935,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-002]** When the `METRICS` binding exists, the OP SHALL write one Analytics Engine data point per request (`blobs: [route, status, error]`, `doubles: [duration_ms]`) and one per audit event type and outcome the request emitted (`blobs: [type, outcome]`, `doubles: [count]`), so that a request emitting thousands of events (a bulk import) stays within the binding's per-invocation write limit. A refused write SHALL be logged and SHALL never fail the request.
 
-**[TIO-OBS-003]** `GET /api/v1/health` SHALL return `{ "status": "ok" | "degraded", "version": "<git sha>", "active_kid": "…", "d1": "ok" | "error", "time": <now> }` with status 200 for `ok` and 503 for `degraded`; it SHALL touch no Durable Object.
+**[TIO-OBS-003]** `GET /api/v1/health` SHALL return `{ "status": "ok" | "degraded", "version": "<git sha>", "active_kid": "…", "d1": "ok" | "error", "settings": "ok" | "error", "time": <now> }` with status 200 for `ok` and 503 for `degraded`; `settings` is `error`, and the status `degraded`, when the stored settings do not load or do not validate against the deployment's configuration (TIO-CFG-003, TIO-CFG-006), and the reason is logged. It SHALL touch no Durable Object.
 
 **[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line — `d1r` counting the reads the request issued and the cache loads of §2.8 it waited for another request to finish, since its latency carries them —, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
 
@@ -2044,6 +2044,8 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 **[TIO-CFG-004]** The OP SHALL refuse to serve `/authorize` (503 `not_configured` rendered as JSON, since no `login_url` exists to redirect to) until `login_url` and `login_origins` are effective, either stored as settings or defaulted by `BUNDLED_LOGIN_APP=true`.
 
 **[TIO-CFG-005]** (V: ci) Environment variables, secrets and settings SHALL be declared exactly once, as a zod schema in `src/env.ts` with a description, a default and bounds per entry. `scripts/gen-config-docs.ts` SHALL generate `doc/CONFIG.md` and `.dev.vars.example` from that schema, and CI SHALL fail when either committed file differs from the generated output, exactly as `doc/TRACEABILITY.md` is drift-checked. The tables in this section are snapshots of `doc/CONFIG.md`.
+
+**[TIO-CFG-006]** When `DO_JURISDICTION` is set (`eu` or `fedramp`), every `UserDO` and `InteractionDO` SHALL be addressed in that jurisdiction's namespace (`namespace.jurisdiction(…)`). An object id made under a jurisdiction differs from one made without it for the same name, so the jurisdiction is fixed per deployment: bootstrap SHALL record the one in force as the system-managed setting `do_jurisdiction` before it marks itself complete, and while the configured jurisdiction differs from the recorded one — or, on a deployment bootstrapped before the record existed, from none — the stored settings SHALL fail validation, so every path that reads them fails closed and `GET /api/v1/health` reports `settings: "error"` (which the deploy's smoke test refuses before the version takes traffic). D1 and R2 take their jurisdiction when they are created, outside the Worker; local `workerd` implements no jurisdictions, so development and the test suites run with none.
 
 ### 12.3 Environments, deployment and releases
 
@@ -2394,7 +2396,7 @@ Each entry: what the draft said → what this spec does → why.
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 
-**Operator decisions still open (do not block Phase 0):** Durable Object jurisdiction (`eu` or none); `registration.mode` for the first deployment; whether `METRICS` is enabled; R2 lifecycle for the audit archive.
+**Operator decisions (made 2026-09-22, plan row OP-05):** no Durable Object jurisdiction (the operator's users are in Brazil, for which no jurisdiction exists and whose law does not require one; TIO-CFG-006 makes the choice real for operators who need `eu`); `registration.mode` `invite` on staging and production, with `federation.auto_create` off; `METRICS` enabled; R2 lifecycle rules on the audit bucket expiring `backups/` after 90 days and `audit/` after 365.
 
 ## Appendix C. Requirement index
 

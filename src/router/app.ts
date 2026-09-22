@@ -153,6 +153,7 @@ export function createApp(deps: AppDeps) {
       env.RP_NAME,
       env.BUNDLED_LOGIN_APP,
       env.LOG_LEVEL,
+      env.DO_JURISDICTION,
       env.MASTER_KEYS,
       env.MASTER_KEY_ACTIVE,
       env.ADMIN_BOOTSTRAP_TOKEN,

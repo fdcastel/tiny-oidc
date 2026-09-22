@@ -2,7 +2,7 @@ import { sha256 } from "../crypto/hash.ts";
 import type { DerivedKeys } from "../crypto/master-keys.ts";
 import { newSecret } from "../crypto/random.ts";
 import type { CreateInteraction, InteractionDO } from "../do/InteractionDO.ts";
-import type { Env } from "../env.ts";
+import { type Env, jurisdictional } from "../env.ts";
 import { bindingCookieName, setCookie } from "../router/cookies.ts";
 import { encodeBase64Url } from "../util/base64url.ts";
 import { sealBindingHandle } from "./handles.ts";
@@ -14,7 +14,8 @@ export const INTERACTION_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /** The Durable Object behind an interaction id. */
 export function interactionStub(env: Env, id: string): DurableObjectStub<InteractionDO> {
-  return env.INTERACTION_DO.get(env.INTERACTION_DO.idFromName(id));
+  const namespace = jurisdictional(env.INTERACTION_DO, env.DO_JURISDICTION);
+  return namespace.get(namespace.idFromName(id));
 }
 
 export interface Binding {

@@ -7,7 +7,7 @@ import {
   setUserStatusStatement,
 } from "../db/users.ts";
 import type { NewIdentity, UserDO, UserProfile } from "../do/UserDO.ts";
-import type { Env } from "../env.ts";
+import { type Env, jurisdictional } from "../env.ts";
 import { isValidEmail, normalizeEmail } from "./email.ts";
 
 // User creation in the order of §4.6: claim the D1 row (`creating`), the
@@ -52,7 +52,8 @@ export type CreateUserResult =
 export const CREATE_CONCURRENCY = 50;
 
 export function userStub(env: Env, id: string): DurableObjectStub<UserDO> {
-  return env.USER_DO.get(env.USER_DO.idFromName(id));
+  const namespace = jurisdictional(env.USER_DO, env.DO_JURISDICTION);
+  return namespace.get(namespace.idFromName(id));
 }
 
 interface Prepared {

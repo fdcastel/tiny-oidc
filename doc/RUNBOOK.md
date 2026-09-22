@@ -88,6 +88,21 @@ wrangler d1 execute tiny-oidc-production --remote --command "INSERT INTO setting
 staging (a bot administrator with a virtual passkey, the nightly automation
 client, an invitation for the owner's own account).
 
+**Choose the Durable Object jurisdiction before bootstrapping** (TIO-CFG-006).
+`DO_JURISDICTION` in `wrangler.jsonc` (`""`, `"eu"` or `"fedramp"`) decides
+where every account's object lives, and bootstrap records it: an object made
+under one jurisdiction cannot be found from another, so after bootstrap the
+OP refuses to run under a different value (health reports `settings:
+"error"`, the deploy's smoke test refuses the version, and every login fails
+closed until the value is put back). A residency guarantee also needs the D1
+database and the R2 bucket created in the same jurisdiction
+(`wrangler d1 create <name> --jurisdiction eu`,
+`wrangler r2 bucket create <name> --jurisdiction eu`), which can only be
+chosen at creation. Local `workerd` implements no jurisdictions: `wrangler
+dev` and the test suites run with `""`. Moving an existing deployment to
+another jurisdiction is an export of every user and an import into a fresh
+deployment, not a setting.
+
 ```sh
 curl -s -X POST $ISSUER/api/v1/admin/bootstrap \
   -H "Authorization: Bearer $ADMIN_BOOTSTRAP_TOKEN" -H "content-type: application/json" \
@@ -413,6 +428,21 @@ writes every batch to the R2 bucket under
 `GET /api/v1/admin/audit/archive?from=<date>&to=<date>` lists
 the object keys; download with `wrangler r2 object get <bucket>/<key> --remote`.
 Events never carry emails, tokens or addresses in clear (TIO-AUDIT-002).
+
+Without a lifecycle rule the bucket keeps everything forever, including the
+weekly D1 exports under `backups/` (§9), which hold emails and profiles —
+so a deleted user's email would outlive the deletion in every old export.
+The recommended rules, set once per bucket:
+
+```sh
+wrangler r2 bucket lifecycle add <bucket> backups-90d "backups/" --expire-days 90
+wrangler r2 bucket lifecycle add <bucket> audit-365d "audit/" --expire-days 365
+```
+
+Ninety days of exports is well past the 30 days D1 Time Travel already
+covers; 365 days of audit history is the usual baseline for security logs.
+Raising a period later is safe (objects not yet expired are kept); lowering
+it deletes what is older at the next lifecycle run.
 
 ## 13. Deployment, release and rollback
 

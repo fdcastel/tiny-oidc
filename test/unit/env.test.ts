@@ -4,6 +4,7 @@ import {
   type Config,
   type Env,
   EnvVarsSchema,
+  jurisdictional,
   resolveSettings,
   SecretsSchema,
   SettingsSchema,
@@ -123,6 +124,61 @@ describe("buildConfig", () => {
   });
 });
 
+describe("Durable Object jurisdiction", () => {
+  const withJurisdiction = (value: string) =>
+    configOf({ ...baseEnv(), DO_JURISDICTION: value } as Env);
+
+  it("[TIO-CFG-006] the configuration carries the jurisdiction; only the values Tiny OIDC supports are accepted", () => {
+    expect(configOf(baseEnv()).doJurisdiction).toBe("");
+    expect(withJurisdiction("eu").doJurisdiction).toBe("eu");
+    expect(withJurisdiction("fedramp").doJurisdiction).toBe("fedramp");
+    for (const bad of ["EU", "us", "fedramp-high", "moon"]) {
+      expect(buildConfig({ ...baseEnv(), DO_JURISDICTION: bad } as Env).ok).toBe(false);
+    }
+  });
+
+  it("[TIO-CFG-006] objects are addressed in the jurisdiction's namespace, or in the namespace itself when there is none", () => {
+    const calls: string[] = [];
+    const restricted = { restricted: true } as unknown as DurableObjectNamespace;
+    const namespace = {
+      jurisdiction(value: string) {
+        calls.push(value);
+        return restricted;
+      },
+    } as unknown as DurableObjectNamespace;
+    expect(jurisdictional(namespace, "")).toBe(namespace);
+    expect(calls).toEqual([]);
+    expect(jurisdictional(namespace, "eu")).toBe(restricted);
+    expect(jurisdictional(namespace, "fedramp")).toBe(restricted);
+    expect(calls).toEqual(["eu", "fedramp"]);
+    // Unreachable past configuration validation; refused rather than guessed.
+    expect(() => jurisdictional(namespace, "us")).toThrow('unsupported DO_JURISDICTION "us"');
+  });
+
+  it("[TIO-CFG-006] the settings fail validation while the configured jurisdiction differs from the one the accounts were created under", () => {
+    const check = (stored: Record<string, unknown>, jurisdiction: string) => {
+      const result = resolveSettings(stored, withJurisdiction(jurisdiction));
+      return result.ok ? "ok" : result.violations.join("; ");
+    };
+    // Before bootstrap nothing is recorded and no object exists: any jurisdiction may start.
+    expect(check({}, "")).toBe("ok");
+    expect(check({}, "eu")).toBe("ok");
+    // Recorded at bootstrap: only that one.
+    expect(check({ bootstrapped_at: 1, do_jurisdiction: "eu" }, "eu")).toBe("ok");
+    expect(check({ bootstrapped_at: 1, do_jurisdiction: "" }, "")).toBe("ok");
+    expect(check({ bootstrapped_at: 1, do_jurisdiction: "eu" }, "")).toBe(
+      'do_jurisdiction: the accounts were created under jurisdiction "eu" but DO_JURISDICTION asks for no jurisdiction; every existing account would be unreachable, so the setting must match',
+    );
+    expect(check({ bootstrapped_at: 1, do_jurisdiction: "" }, "fedramp")).toContain(
+      'created under no jurisdiction but DO_JURISDICTION asks for jurisdiction "fedramp"',
+    );
+    // Bootstrapped before the record existed: its objects have no jurisdiction,
+    // because the variable was not applied until the record was.
+    expect(check({ bootstrapped_at: 1 }, "")).toBe("ok");
+    expect(check({ bootstrapped_at: 1 }, "eu")).toContain("created under no jurisdiction");
+  });
+});
+
 describe("resolveSettings", () => {
   const config = configOf(baseEnv());
   const bundled = configOf({ ...baseEnv(), BUNDLED_LOGIN_APP: "true" });
@@ -156,6 +212,7 @@ describe("resolveSettings", () => {
     expect(s["me.allow_email_change"]).toBe(false);
     expect(s["me.passkey_add_max_auth_age"]).toBe(900);
     expect(s.bootstrapped_at).toBeNull();
+    expect(s.do_jurisdiction).toBeNull();
     expect(new Set(Object.values(s.sources))).toEqual(new Set(["default"]));
   });
 

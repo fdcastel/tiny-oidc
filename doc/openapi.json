@@ -47,6 +47,14 @@
               "error"
             ]
           },
+          "settings": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "description": "Whether the stored settings load and pass validation against this deployment's configuration (TIO-CFG-003, TIO-CFG-006)"
+          },
           "time": {
             "type": "integer"
           },
@@ -59,6 +67,7 @@
           "version",
           "active_kid",
           "d1",
+          "settings",
           "time"
         ]
       },

@@ -23,6 +23,10 @@ export const HealthSchema = z
     version: z.string(),
     active_kid: z.string().nullable(),
     d1: z.enum(["ok", "error"]),
+    settings: z.enum(["ok", "error"]).openapi({
+      description:
+        "Whether the stored settings load and pass validation against this deployment's configuration (TIO-CFG-003, TIO-CFG-006)",
+    }),
     time: z.int(),
     issuer_mismatch: z.string().optional(),
   })

@@ -1,5 +1,7 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { Db } from "../../src/db/db.ts";
+import { writeSettings } from "../../src/db/settings.ts";
 import type { Env } from "../../src/env.ts";
 import type { LogLine } from "../../src/obs/log.ts";
 import { createApp } from "../../src/router/app.ts";
@@ -190,6 +192,7 @@ describe("health and observability", () => {
       // The first request on an empty key store creates the signing key (TIO-KEYS-010).
       active_kid: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       d1: "ok",
+      settings: "ok",
       time: clock.now(),
     });
     const line = lines.find((l) => l.msg === "request") as LogLine;
@@ -215,6 +218,26 @@ describe("health and observability", () => {
     const res = await fetch(url("/api/v1/health"));
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ status: "degraded", d1: "error" });
+  });
+
+  it("[TIO-OBS-003] [TIO-CFG-006] health is degraded with 503 when the stored settings are unusable for this deployment, and logs why — the deploy's smoke test reads it before traffic moves", async () => {
+    const db = Db.from(env.DB);
+    await writeSettings(db, { bootstrapped_at: 1, do_jurisdiction: "eu" }, "test", 1);
+    try {
+      const { fetch, lines } = harness();
+      const res = await fetch(url("/api/v1/health"));
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ status: "degraded", d1: "ok", settings: "error" });
+      expect(lines.find((l) => l.msg === "settings unusable")).toMatchObject({
+        level: "error",
+        reason: expect.stringContaining('created under jurisdiction "eu"'),
+      });
+      // The same records under the jurisdiction they were made for are healthy.
+      const matching = harness({ DO_JURISDICTION: "eu" });
+      expect((await matching.fetch(url("/api/v1/health"))).status).toBe(200);
+    } finally {
+      await writeSettings(db, { bootstrapped_at: null, do_jurisdiction: null }, "test", 1);
+    }
   });
 
   it("[TIO-OBS-001] every request produces exactly one structured log line with the route template and counters, and no query string or body", async () => {

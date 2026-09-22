@@ -109,7 +109,7 @@ function isOrigin(value: string): boolean {
  */
 export function resolveSettings(
   stored: Record<string, unknown>,
-  config: Pick<Config, "issuer" | "issuerUrl" | "bundledLoginApp">,
+  config: Pick<Config, "issuer" | "issuerUrl" | "bundledLoginApp" | "doJurisdiction">,
 ): SettingsValidation {
   const parsed = SettingsSchema.safeParse(stored);
   if (!parsed.success) {
@@ -179,6 +179,17 @@ export function resolveSettings(
   if (s["session.idle_ttl"] > s["session.absolute_ttl"]) {
     violations.push("session.idle_ttl: must not exceed session.absolute_ttl");
   }
+  // The jurisdiction the deployment's objects were created under (TIO-CFG-006).
+  // Nothing is recorded before bootstrap, and no object exists then either; a
+  // deployment bootstrapped before the record existed created its objects with
+  // no jurisdiction, because the variable was not applied until then.
+  const recorded = s.do_jurisdiction ?? (s.bootstrapped_at === null ? null : "");
+  if (recorded !== null && recorded !== config.doJurisdiction) {
+    const name = (j: string) => (j === "" ? "no jurisdiction" : `jurisdiction "${j}"`);
+    violations.push(
+      `do_jurisdiction: the accounts were created under ${name(recorded)} but DO_JURISDICTION asks for ${name(config.doJurisdiction)}; every existing account would be unreachable, so the setting must match`,
+    );
+  }
   if (violations.length > 0) return { ok: false, violations };
   return {
     ok: true,
@@ -193,6 +204,24 @@ export function resolveSettings(
   };
 }
 
+/**
+ * The namespace objects are addressed in (TIO-CFG-006): restricted to the
+ * configured jurisdiction, or the namespace itself when there is none. An id
+ * made under a jurisdiction differs from one made without it for the same
+ * name, which is why the jurisdiction is fixed at bootstrap. Called by the two
+ * stubs only; `DO_JURISDICTION` has been validated before any request gets here.
+ */
+export function jurisdictional<T extends Rpc.DurableObjectBranded | undefined>(
+  namespace: DurableObjectNamespace<T>,
+  jurisdiction: string,
+): DurableObjectNamespace<T> {
+  if (jurisdiction === "") return namespace;
+  if (jurisdiction !== "eu" && jurisdiction !== "fedramp") {
+    throw new Error(`unsupported DO_JURISDICTION "${jurisdiction}"`);
+  }
+  return namespace.jurisdiction(jurisdiction);
+}
+
 // ---------------------------------------------------------------------------
 // Startup configuration: validated once per isolate at first request
 // ---------------------------------------------------------------------------
@@ -205,6 +234,8 @@ export interface Config {
   rpName: string;
   bundledLoginApp: boolean;
   logLevel: z.infer<typeof EnvVarsSchema>["LOG_LEVEL"];
+  /** Where every Durable Object lives; empty for no restriction (TIO-CFG-006). */
+  doJurisdiction: z.infer<typeof EnvVarsSchema>["DO_JURISDICTION"];
   version: string;
   keys: DerivedKeys;
   adminBootstrapToken: string | undefined;
@@ -251,6 +282,7 @@ export function buildConfig(env: Env): ConfigResult {
       rpName: vars.data.RP_NAME,
       bundledLoginApp: vars.data.BUNDLED_LOGIN_APP === "true",
       logLevel: vars.data.LOG_LEVEL,
+      doJurisdiction: vars.data.DO_JURISDICTION,
       version: vars.data.VERSION ?? "dev",
       keys: new DerivedKeys(keys.keys),
       adminBootstrapToken: secrets.data.ADMIN_BOOTSTRAP_TOKEN,

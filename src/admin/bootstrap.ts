@@ -107,6 +107,7 @@ export function bootstrapHandler(clock: Clock): Handler<AppEnv> {
     if (!invitation.ok) return errorResponse(c, 400, "email_invalid", "email is not valid");
     // The claim decides between concurrent attempts (TIO-TEST-010): the loser withdraws its
     // invitation so exactly one exists, and answers as if it had arrived late.
+    await claimSetting(db, "do_jurisdiction", config.doJurisdiction, "bootstrap", now);
     if (!(await claimSetting(db, "bootstrapped_at", now, "bootstrap", now))) {
       await deleteInvitation(db, invitation.invitation.id);
       return completed();

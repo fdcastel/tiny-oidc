@@ -29,7 +29,9 @@ export const EnvVarsSchema = z.object({
   DO_JURISDICTION: z
     .enum(["", "eu", "fedramp"])
     .default("")
-    .describe("Durable Object jurisdiction for user objects; empty for none."),
+    .describe(
+      "Durable Object jurisdiction for every user and interaction object; empty for none. Fixed at bootstrap: a later change is refused, because objects made under one jurisdiction cannot be found from another (TIO-CFG-006).",
+    ),
   VERSION: z
     .string()
     .optional()
@@ -200,4 +202,11 @@ export const SettingsSchema = z.object({
     .nullable()
     .default(null)
     .describe("System-managed: when bootstrap completed."),
+  do_jurisdiction: z
+    .enum(["", "eu", "fedramp"])
+    .nullable()
+    .default(null)
+    .describe(
+      "System-managed: the Durable Object jurisdiction in force at bootstrap, which every object was created under (TIO-CFG-006).",
+    ),
 });

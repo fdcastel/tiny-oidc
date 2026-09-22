@@ -13,7 +13,7 @@ Set in `wrangler.jsonc` (`vars`), by the Deploy-to-Cloudflare form, or by the de
 | `RP_NAME` | string | required | Human-readable name shown by authenticators. |
 | `BUNDLED_LOGIN_APP` | `"true"` \| `"false"` | `"false"` | `true` serves the reference login app under `/login/` and defaults `login_url` and `login_origins` to it (§7.9). |
 | `LOG_LEVEL` | `"debug"` \| `"info"` \| `"warn"` \| `"error"` | `"info"` | Minimum level of structured log lines. |
-| `DO_JURISDICTION` | `""` \| `"eu"` \| `"fedramp"` | `""` | Durable Object jurisdiction for user objects; empty for none. |
+| `DO_JURISDICTION` | `""` \| `"eu"` \| `"fedramp"` | `""` | Durable Object jurisdiction for every user and interaction object; empty for none. Fixed at bootstrap: a later change is refused, because objects made under one jurisdiction cannot be found from another (TIO-CFG-006). |
 | `VERSION` | string | unset | Build identifier reported by `/api/v1/health`; set by the deploy script from the commit sha. |
 
 ## Secrets
@@ -56,3 +56,4 @@ Runtime settings stored in the D1 `settings` table and edited through `PATCH /ap
 | `me.allow_email_change` | boolean | `false` |  | Whether users may change their email through the Self-service API. |
 | `me.passkey_add_max_auth_age` | integer | `900` | 0–86400 | Maximum age of the session authentication, in seconds, for adding a passkey through the Self-service API. |
 | `bootstrapped_at` | integer \| null | `null` |  | System-managed: when bootstrap completed. |
+| `do_jurisdiction` | `""` \| `"eu"` \| `"fedramp"` \| null | `null` |  | System-managed: the Durable Object jurisdiction in force at bootstrap, which every object was created under (TIO-CFG-006). |

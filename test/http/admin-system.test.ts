@@ -211,6 +211,7 @@ describe("settings", () => {
       error_description: "unknown settings: colour",
     });
     expect((await call("PATCH", "settings", { bootstrapped_at: 1 })).status).toBe(400);
+    expect((await call("PATCH", "settings", { do_jurisdiction: "eu" })).status).toBe(400);
     expect((await call("PATCH", "settings", {})).status).toBe(400);
     expect((await call("PATCH", "settings", "[1]")).status).toBe(400);
     // null returns a key to its default.
@@ -314,20 +315,31 @@ describe("stats and maintenance", () => {
     ]);
     const halfDeleted = await userWithPasskey(clock);
     await setUserStatus(db, halfDeleted.profile.id, "deleting", clock.now());
+    // audit_hot also fills through the queue, asynchronously: events of this
+    // file's earlier requests (older than the retention after the 31-day jump)
+    // can land at any point below, so the audit assertions follow the three
+    // rows inserted here rather than counts that include those arrivals.
+    const auditIds = async () =>
+      (
+        await env.DB.prepare(
+          "SELECT id FROM audit_hot WHERE id IN ('a-old-1', 'a-old-2', 'a-new') ORDER BY id",
+        ).all<{ id: string }>()
+      ).results.map((r) => r.id);
     const statsBefore = (await (await call("GET", "stats")).json()) as Record<string, unknown>;
     expect(statsBefore).toMatchObject({
       users: { creating: 2, deleting: 1 },
-      audit_hot_rows: 3,
       keys: { signing: 1, next: 0, verifying: 0, retired: 2 },
       last_cron_run: null,
     });
+    expect(statsBefore["audit_hot_rows"]).toBeGreaterThanOrEqual(3);
     expect(statsBefore["clients"]).toBeGreaterThan(0);
 
     const purged = await call("POST", "maintenance/purge");
     expect(purged.status).toBe(200);
     const report = (await purged.json()) as Record<string, unknown>;
+    expect(report["audit_rows_purged"]).toBeGreaterThanOrEqual(2);
+    expect(await auditIds()).toEqual(["a-new"]);
     expect(report).toMatchObject({
-      audit_rows_purged: 2,
       invitations_deleted: 1,
       users_repaired: 1,
       users_dropped: 1,
@@ -364,16 +376,17 @@ describe("stats and maintenance", () => {
     const statsAfter = (await (await call("GET", "stats")).json()) as Record<string, unknown>;
     expect(statsAfter).toMatchObject({
       users: { creating: 0, deleting: 0 },
-      audit_hot_rows: 1,
       last_cron_run: clock.now(),
     });
-    // A second run has nothing left to do.
+    expect(statsAfter["audit_hot_rows"]).toBeGreaterThanOrEqual(1);
+    // A second run has nothing left to do (beyond old events the queue
+    // delivered since, which it purges like the rest).
     expect(await (await call("POST", "maintenance/purge")).json()).toMatchObject({
-      audit_rows_purged: 0,
       invitations_deleted: 0,
       users_repaired: 0,
       users_deleted: 0,
     });
+    expect(await auditIds()).toEqual(["a-new"]);
     expect(
       (
         await call("POST", "maintenance/purge", undefined, {

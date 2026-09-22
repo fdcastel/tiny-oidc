@@ -93,7 +93,7 @@ describe("POST /api/v1/admin/bootstrap", () => {
     expect(unconfigured.status).toBe(401);
   });
 
-  it("[TIO-ADMIN-010] [TIO-DATA-012] bootstraps once: admins system group, admin-cli client, a register invitation into admins, bootstrapped_at set; later calls are 410", async () => {
+  it("[TIO-ADMIN-010] [TIO-DATA-012] [TIO-CFG-006] bootstraps once: admins system group, admin-cli client, a register invitation into admins, bootstrapped_at set; later calls are 410", async () => {
     await writeSettings(
       db,
       { login_url: `${LOGIN_ORIGIN}/`, login_origins: [LOGIN_ORIGIN] },
@@ -155,11 +155,23 @@ describe("POST /api/v1/admin/bootstrap", () => {
       created_by: "bootstrap",
     });
     expect((await readAllSettings(db))["bootstrapped_at"]).toBe(clock.now());
+    // The jurisdiction every object will be created under is fixed now (TIO-CFG-006).
+    expect((await readAllSettings(db))["do_jurisdiction"]).toBe("");
     expect((await getClient(db, ADMIN_CLI_CLIENT_ID))?.client_name).toBe("Tiny OIDC admin CLI");
     // Closed for good, even with a valid token.
     const again = await bootstrap({ email: "other@example.com" });
     expect(again.status).toBe(410);
     expect(await again.json()).toMatchObject({ error: "bootstrap_completed" });
+    // [TIO-CFG-006] The same deployment asked to run under another jurisdiction
+    // fails closed: its accounts could not be found there.
+    h.invalidate();
+    const moved = await bootstrap(
+      { email: "other@example.com" },
+      { env: { ...env, DO_JURISDICTION: "eu" } as Env },
+    );
+    expect(moved.status).toBe(503);
+    expect(await moved.json()).toMatchObject({ error_description: "settings unavailable" });
+    h.invalidate();
     expect(await listInvitations(db)).toHaveLength(1);
   });
 
