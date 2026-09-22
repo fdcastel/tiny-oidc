@@ -134,6 +134,12 @@ jobs:
     # tokens never leave the runner; only reports and summaries are archived.
     name: k6 load thresholds (TIO-PERF-001, TIO-TEST-050, TIO-TEST-051)
     if: ${{ vars.NIGHTLY_ENABLED == 'true' && github.event.schedule != '17 5 * * 0' && (!inputs.only || inputs.only == 'all' || inputs.only == 'load') }}
+    # The load job and the soak share staging's one population and its objects: one at a time,
+    # or the soak's refreshes land in the load job's percentiles and the load job's nightly
+    # re-import deletes the users the soak is refreshing (both happened on 2026-09-22).
+    concurrency:
+      group: staging-load
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
@@ -206,6 +212,9 @@ jobs:
     # tokens harvested by the job itself (a fresh runner, so no slice is needed).
     name: soak (TIO-TEST-052)
     if: ${{ vars.NIGHTLY_ENABLED == 'true' && (github.event.schedule == '17 5 * * 0' || inputs.soak == true) }}
+    concurrency:
+      group: staging-load
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
