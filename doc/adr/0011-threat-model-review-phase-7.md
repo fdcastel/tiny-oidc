@@ -1,6 +1,6 @@
 # 0011 — Threat-model review at the end of Phase 7 (TIO-SEC-001)
 
-Date: 2026-09-19 (addendum 2026-09-22) · Status: Proposed — awaiting the owner's sign-off · Task: P7-05
+Date: 2026-09-19 (addendum 2026-09-22) · Status: Accepted (signed 2026-09-22) · Task: P7-05
 
 ## Scope
 
@@ -218,4 +218,4 @@ addendum is what makes that trigger visible rather than remembered.
 | Role | Name | Date |
 |---|---|---|
 | Implementing agent (review author) | Claude (Opus 5) | 2026-09-19 |
-| Repository owner | _pending_ | |
+| Repository owner | F. D. Castel | 2026-09-22 |
