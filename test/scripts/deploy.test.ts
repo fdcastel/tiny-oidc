@@ -435,6 +435,10 @@ describe("smoke test", () => {
 
   it("[TIO-DEPLOY-007] sends the version-override header on every request and fails unless health reports the expected build", async () => {
     const seen: (string | null)[] = [];
+    const slept: number[] = [];
+    const sleep = async (ms: number) => {
+      slept.push(ms);
+    };
     const versioned = (version: string) =>
       respond({
         "/.well-known/openid-configuration": (init) => {
@@ -456,18 +460,73 @@ describe("smoke test", () => {
         fetch: versioned("0123456"),
         headers,
         version: "0123456",
+        sleep,
       }),
     ).toEqual([]);
-    expect(seen).toEqual(Array(3).fill(`tiny-oidc="${CANDIDATE}"`));
-    // The override did not reach the new version: the live build answered.
+    // One health request finds the build at once, then the three checks.
+    expect(seen).toEqual(Array(4).fill(`tiny-oidc="${CANDIDATE}"`));
+    expect(slept).toEqual([]);
+    // The override never reached the new version: the live build answered
+    // throughout the settle window, and the failure says how long it waited.
     expect(
       await smoke("https://op.example", {
         fetch: versioned("fedcba9"),
         headers,
         version: "0123456",
+        settleMs: 6_000,
+        sleep,
       }),
     ).toEqual([
-      { path: "/api/v1/health", reason: 'health reports version "fedcba9", expected "0123456"' },
+      {
+        path: "/api/v1/health",
+        reason: 'health reports version "fedcba9", expected "0123456" after waiting 6 s',
+      },
     ]);
+    expect(slept).toEqual([2_000, 2_000, 2_000]);
+  });
+
+  it("[TIO-DEPLOY-007] waits for a new deployment to reach the location that answers before checking it", async () => {
+    // The first answers come from the live build (the deployment has not
+    // arrived yet, so the override is ignored), then one that fails outright,
+    // then the new build.
+    const answers = [
+      () => Response.json({ status: "ok", version: "fedcba9" }),
+      () => Response.json({ status: "ok", version: "fedcba9" }),
+      () => new Response("unavailable", { status: 503 }),
+      () => Response.json({ status: "ok", version: "0123456" }),
+    ];
+    let polls = 0;
+    const slept: number[] = [];
+    const fetchImpl = respond({
+      ...documents,
+      "/api/v1/health": () => {
+        const answer = answers[Math.min(polls, answers.length - 1)] as () => Response;
+        polls += 1;
+        return answer();
+      },
+    });
+    expect(
+      await smoke("https://op.example", {
+        fetch: fetchImpl,
+        version: "0123456",
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+      }),
+    ).toEqual([]);
+    expect(slept).toEqual([2_000, 2_000, 2_000]);
+    expect(polls).toBe(5);
+    // A health endpoint that cannot be reached at all is waited out too, then reported.
+    const unreachable = (async () => {
+      throw new Error("connection refused");
+    }) as typeof fetch;
+    expect(
+      await smoke("https://op.example", {
+        fetch: unreachable,
+        version: "0123456",
+        settleMs: 2_000,
+        sleep: async () => {},
+      }),
+    ).toEqual(SMOKE_PATHS.map((path) => ({ path, reason: "connection refused" })));
   });
 });
