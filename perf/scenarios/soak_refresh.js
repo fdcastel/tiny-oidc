@@ -7,6 +7,7 @@
 import { check } from "k6";
 import http from "k6/http";
 import { Trend } from "k6/metrics";
+import { BUDGETS } from "./budgets.js";
 import {
   adminToken,
   arrival,
@@ -40,8 +41,10 @@ export const options = {
   scenarios: { soak_refresh: arrival("soakRefresh", RATE, DURATION) },
   thresholds: {
     ...thresholds("soak_refresh"),
-    "server_ms_windowed{window:first}": ["p(99)<=150"],
-    "server_ms_windowed{window:last}": ["p(99)<=150"],
+    // No growth in p99 (TIO-TEST-052): the first and the last ten minutes each meet the row's
+    // warm budget, measured as the gate measures it (requests that read no D1, ADR 0016).
+    "server_ms_windowed{window:first}": [`p(99)<=${BUDGETS.soak_refresh.p99}`],
+    "server_ms_windowed{window:last}": [`p(99)<=${BUDGETS.soak_refresh.p99}`],
     "checks{phase:teardown}": ["rate==1"],
   },
 };
@@ -101,7 +104,7 @@ export function soakRefresh(data) {
   if (ok) entry.refresh_token = res.json("refresh_token");
   const timing = record(res);
   const elapsed = Date.now() - startedAt;
-  if (timing.app !== null) {
+  if (timing.app !== null && timing.d1r === 0) {
     if (elapsed < window) windowed.add(timing.app, { scenario: "soak_refresh", window: "first" });
     else if (elapsed > total - window)
       windowed.add(timing.app, { scenario: "soak_refresh", window: "last" });
