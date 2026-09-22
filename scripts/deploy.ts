@@ -27,8 +27,8 @@ const result = await deploy(
       writeFileSync(GENERATED_CONFIG, content);
       return GENERATED_CONFIG;
     },
-    smoke: async (baseUrl) => {
-      const failures = await smoke(baseUrl);
+    smoke: async (baseUrl, options) => {
+      const failures = await smoke(baseUrl, options);
       if (failures.length > 0) {
         throw new Error(
           `smoke test failed: ${failures.map((f) => `${f.path}: ${f.reason}`).join("; ")}`,

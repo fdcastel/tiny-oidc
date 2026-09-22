@@ -421,16 +421,38 @@ Staging and production are deployed by Cloudflare Workers Builds
 `production` branch builds `tiny-oidc`. Build variables `TIO_ENV`,
 `TIO_ISSUER`, `TIO_RP_ID` and `TIO_RP_NAME` are set per Worker in the
 dashboard; the build runs `pnpm run build` and `pnpm run deploy`
-(`scripts/deploy.ts`: migrations, database resolution, and for production a
-versions upload, the smoke test against the preview URL, then the deploy,
-TIO-DEPLOY-007).
+(`scripts/deploy.ts`, TIO-DEPLOY-007). Both environments deploy by **staged
+rollout** ([ADR 0018](adr/0018-staged-rollout-through-version-overrides.md)):
+the script reads the live version, applies D1 migrations, uploads the new
+version, puts it in the deployment at 0%, smoke-tests it on the issuer's
+hostname through the `Cloudflare-Workers-Version-Overrides` header (health
+must report the new build), and only then gives it 100%. A failed smoke test
+puts the live version back at 100% and fails the build; the previous version
+keeps serving. Every push to `main` exercises this path on staging.
+
+- **First deployment of a Worker** (production's first release, a rebuilt
+  staging): there is no live version to stage against. Set the build variable
+  `TIO_DIRECT_DEPLOY=true` for that one build, which deploys with a plain
+  `wrangler deploy`; attach the hostname (TIO-DEPLOY-009), run
+  `pnpm smoke <issuer>`, and delete the variable before the next build.
+- **A release that adds, renames or deletes a Durable Object class** carries a
+  class migration, which Cloudflare cannot upload as a version: the staged
+  rollout fails at the upload. Deploy that one release with
+  `TIO_DIRECT_DEPLOY=true` as above. SQLite schema changes inside `UserDO`
+  are not class migrations and roll out staged as usual.
+- **A deployment split between versions** (someone started a gradual rollout
+  by hand) is refused by the script until one version is back at 100%:
+  `wrangler versions deploy <version>@100% --yes --env <env>`.
 
 - **Release:** fast-forward `production` to a `main` commit whose nightly gates
   passed: `git push origin <sha>:production` (TIO-DEPLOY-010). Tag releases
   `vX.Y.Z` on that commit.
-- **Rollback:** `git revert` on `production` (never a force-push), or
-  `wrangler rollback --env production` for an immediate return to the previous
-  Worker version while the revert builds. D1 migrations are forward-only:
+- **Rollback:** `git revert` on `production` (never a force-push), or, for an
+  immediate return while the revert builds, `wrangler deployments list --env
+  production` to find the previous version and `wrangler versions deploy
+  <previous>@100% --yes --env production` (or `wrangler rollback --env
+  production`). The next build deploys the revert by staged rollout like any
+  other release. D1 migrations are forward-only:
   a rollback of code must be compatible with the schema, which is why
   migrations only add.
 - **Custom hostnames** are attached outside this repository (TIO-DEPLOY-009).

@@ -29,3 +29,4 @@ the old one.
 | [0015](0015-warning-waivers-for-deliberate-behaviour.md) | A second waiver reason: suite warnings on behaviour the spec chooses deliberately (email in the ID token, no access-token revocation on code replay) | Accepted |
 | [0016](0016-load-budgets-on-warm-requests.md) | Load budgets apply to requests that read no D1; the D1-touching tail is bounded at four times the budget; the callback and admin-list rows measured | Accepted |
 | [0017](0017-upstream-verification.md) | Verification of real upstream providers on staging: Google verified 2026-09-22, Microsoft pending | Accepted for Google |
+| [0018](0018-staged-rollout-through-version-overrides.md) | Staging and production deploy by staged rollout: the new version at 0%, smoke-tested on the issuer through the version-override header, then 100%; `TIO_DIRECT_DEPLOY` for a first deployment or a Durable Object class migration | Accepted |
