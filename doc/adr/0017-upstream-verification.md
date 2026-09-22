@@ -1,6 +1,6 @@
 # 0017 — Verification of real upstream providers on staging (P4-08)
 
-Date: 2026-09-22 · Status: Accepted for Google; Microsoft pending · Task: P4-08
+Date: 2026-09-22 · Status: Accepted for Google (three passes, all of §6.4.5 a real provider can reach); Microsoft pending · Task: P4-08
 
 ## Context
 
@@ -88,13 +88,43 @@ subject, which no relying party ever sees ([TIO-DATA-001], §12.4). The two
 accounts share an issuer and are told apart by subject alone, which is what
 `identity_index` is keyed on ([TIO-FED-041]).
 
-Still not exercised: [TIO-FED-040] step 1, a repeat login through Google by
-the *same* account, which resolves through the index to the existing account
-and writes the identity's `last_login_at`. Both identities on staging read
-`last_login_at: null`, which is the specified state — the column is written
-`NULL` when the identity is linked and set only by a later login through it,
-so the null is the evidence that step 1 has not run yet, not a defect. One
-more click with the first Google account closes it.
+## Google — third pass, 2026-09-22 15:42 UTC: the repeat login
+
+The second pass left [TIO-FED-040] step 1 unexercised, and showed why: with
+a usable session the relying party's plain `/authorize` never reaches the
+upstream at all. The relying party was therefore sent with `prompt=login`,
+which is the request that forces authentication through an interaction even
+when the session is usable ([TIO-AUTHZ-011], [TIO-AUTHZ-016]); the trail
+opens with `interaction.created` at 15:42:33, where the second pass had no
+interaction at all.
+
+Google authenticated the *same* consumer account as the first pass, and
+staging resolved it by step 1: the `(issuer, subject)` index matched, so no
+`user.created` and no `identity.linked` — only `identity.login_succeeded` at
+15:42:38 — and the identity's `last_login_at` was written (15:42:38), where
+the second pass read `null`. The account still holds one identity.
+
+The session was **rotated, not created**: `session.rotated` at 15:42:39,
+`sid` unchanged from the session opened at 05:52, `auth_time` moved to
+15:42:36, `created_at` and `absolute_expires_at` unchanged, the idle window
+extended. That is [TIO-SESS-002]'s re-authentication clause — same user,
+same `sid`, new secret and new `auth_time` — together with [TIO-SESS-003];
+a re-authentication as a different user would instead have revoked the
+session, which the second pass's Workspace login did not have to do because
+it arrived in a browser profile of its own.
+
+The ID token carried the same `sub` as the first pass, ten hours earlier:
+the account id is the subject and is stable across logins and upstream
+sessions ([TIO-DATA-001]). `sid` was the same too, `amr ["fed"]` and `acr`
+federated again, `auth_time` fresh, and `updated_at` still the account's
+creation instant, because nothing in the profile changed. The account now
+holds three refresh families, one per authorization.
+
+With this pass every branch of [TIO-FED-040] that a real provider can reach
+is covered on staging: step 1 here, step 3 twice (the first pass and the
+Workspace account). Step 2 (linking by verified email) and step 4
+(`registration_closed`) stay with the HTTP suite and the fake upstream,
+where the policy settings can be moved per test.
 
 ## Microsoft (single tenant) — pending
 
@@ -115,11 +145,13 @@ Waits for the Entra app registration (OP-04) with the staging callback URL
   the load population, which the harness creates and deletes by itself.
 - Single sign-on across authorizations, which the HTTP suite proves against
   its own clock, is now also observed on staging across nearly eight hours
-  of real time.
+  of real time, and so is its counterpart: `prompt=login` re-authenticating
+  through the upstream and rotating the same session in place.
 
 ## Requirements and tests
 
 §6.4, TIO-FED-030, TIO-FED-033, TIO-FED-040, TIO-FED-041, TIO-FED-042,
-TIO-DATA-001, TIO-AUTHZ-014, TIO-AUTHZ-023 — the HTTP suite's fake-upstream
+TIO-DATA-001, TIO-AUTHZ-011, TIO-AUTHZ-014, TIO-AUTHZ-016, TIO-AUTHZ-023,
+TIO-SESS-002, TIO-SESS-003 — the HTTP suite's fake-upstream
 cases stand for every rule; this record is the manual verification the plan
 asked for.
