@@ -28,3 +28,4 @@ the old one.
 | [0014](0014-login-app-runs-under-the-suites-browser.md) | The reference login app runs under the conformance suite's browser (HtmlUnit: no async/await, fetch or spread) | Accepted |
 | [0015](0015-warning-waivers-for-deliberate-behaviour.md) | A second waiver reason: suite warnings on behaviour the spec chooses deliberately (email in the ID token, no access-token revocation on code replay) | Accepted |
 | [0016](0016-load-budgets-on-warm-requests.md) | Load budgets apply to requests that read no D1; the D1-touching tail is bounded at four times the budget; the callback and admin-list rows measured | Accepted |
+| [0017](0017-upstream-verification.md) | Verification of real upstream providers on staging: Google verified 2026-09-22, Microsoft pending | Accepted for Google |
