@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/src/generated", "!**/doc", "!**/tmp", "!**/pnpm-lock.yaml"]
+    "includes": [
+      "**",
+      "!**/src/generated",
+      "!**/doc",
+      "!**/tmp",
+      "!**/pnpm-lock.yaml",
+      "!**/test/scripts/threat-surface.json"
+    ]
   },
   "formatter": {
     "enabled": true,

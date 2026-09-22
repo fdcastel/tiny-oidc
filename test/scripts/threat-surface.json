@@ -1,0 +1,249 @@
+{
+  "routes": [
+    "DELETE /api/v1/admin/clients/:id",
+    "DELETE /api/v1/admin/groups/:id",
+    "DELETE /api/v1/admin/groups/:id/members/:user_id",
+    "DELETE /api/v1/admin/invitations/:id",
+    "DELETE /api/v1/admin/keys/:kid",
+    "DELETE /api/v1/admin/upstreams/:alias",
+    "DELETE /api/v1/admin/users/:id",
+    "DELETE /api/v1/admin/users/:id/grants/:client_id",
+    "DELETE /api/v1/admin/users/:id/identities/:iid",
+    "DELETE /api/v1/admin/users/:id/passkeys/:pid",
+    "DELETE /api/v1/admin/users/:id/refresh-families",
+    "DELETE /api/v1/admin/users/:id/refresh-families/:fid",
+    "DELETE /api/v1/admin/users/:id/sessions",
+    "DELETE /api/v1/admin/users/:id/sessions/:sid",
+    "DELETE /api/v1/me/grants/:client_id",
+    "DELETE /api/v1/me/identities/:id",
+    "DELETE /api/v1/me/passkeys/:id",
+    "DELETE /api/v1/me/sessions",
+    "DELETE /api/v1/me/sessions/:sid",
+    "GET /.well-known/jwks.json",
+    "GET /.well-known/oauth-authorization-server",
+    "GET /.well-known/openid-configuration",
+    "GET /.well-known/webauthn",
+    "GET /api/v1/admin/audit",
+    "GET /api/v1/admin/audit/archive",
+    "GET /api/v1/admin/clients",
+    "GET /api/v1/admin/clients/:id",
+    "GET /api/v1/admin/groups",
+    "GET /api/v1/admin/groups/:id",
+    "GET /api/v1/admin/groups/:id/members",
+    "GET /api/v1/admin/invitations",
+    "GET /api/v1/admin/invitations/:id",
+    "GET /api/v1/admin/keys",
+    "GET /api/v1/admin/settings",
+    "GET /api/v1/admin/stats",
+    "GET /api/v1/admin/upstreams",
+    "GET /api/v1/admin/upstreams/:alias",
+    "GET /api/v1/admin/users",
+    "GET /api/v1/admin/users/:id",
+    "GET /api/v1/admin/users/:id/events",
+    "GET /api/v1/admin/users/:id/export",
+    "GET /api/v1/admin/users/:id/grants",
+    "GET /api/v1/admin/users/:id/identities",
+    "GET /api/v1/admin/users/:id/passkeys",
+    "GET /api/v1/admin/users/:id/refresh-families",
+    "GET /api/v1/admin/users/:id/sessions",
+    "GET /api/v1/health",
+    "GET /api/v1/interactions/:id",
+    "GET /api/v1/me",
+    "GET /api/v1/me/events",
+    "GET /api/v1/me/grants",
+    "GET /api/v1/me/identities",
+    "GET /api/v1/me/passkeys",
+    "GET /api/v1/me/sessions",
+    "GET /api/v1/openapi.json",
+    "GET /authorize",
+    "GET /federation/callback",
+    "GET /interactions/:id/complete",
+    "GET /login/*",
+    "GET /logout",
+    "GET /userinfo",
+    "PATCH /api/v1/admin/clients/:id",
+    "PATCH /api/v1/admin/groups/:id",
+    "PATCH /api/v1/admin/settings",
+    "PATCH /api/v1/admin/upstreams/:alias",
+    "PATCH /api/v1/admin/users/:id",
+    "PATCH /api/v1/me",
+    "PATCH /api/v1/me/passkeys/:id",
+    "POST /api/v1/admin/bootstrap",
+    "POST /api/v1/admin/clients",
+    "POST /api/v1/admin/clients/:id/disable",
+    "POST /api/v1/admin/clients/:id/enable",
+    "POST /api/v1/admin/clients/:id/rotate-secret",
+    "POST /api/v1/admin/groups",
+    "POST /api/v1/admin/import/users",
+    "POST /api/v1/admin/invitations",
+    "POST /api/v1/admin/keys/rotate",
+    "POST /api/v1/admin/maintenance/purge",
+    "POST /api/v1/admin/maintenance/reindex",
+    "POST /api/v1/admin/maintenance/rekey",
+    "POST /api/v1/admin/upstreams",
+    "POST /api/v1/admin/upstreams/:alias/test",
+    "POST /api/v1/admin/users",
+    "POST /api/v1/admin/users/:id/disable",
+    "POST /api/v1/admin/users/:id/enable",
+    "POST /api/v1/admin/users/:id/invitations",
+    "POST /api/v1/admin/users/:id/reindex",
+    "POST /api/v1/admin/users/:id/restore",
+    "POST /api/v1/interactions/:id/abort",
+    "POST /api/v1/interactions/:id/consent",
+    "POST /api/v1/interactions/:id/logout",
+    "POST /api/v1/interactions/:id/passkey/options",
+    "POST /api/v1/interactions/:id/passkey/verify",
+    "POST /api/v1/interactions/:id/register/options",
+    "POST /api/v1/interactions/:id/register/verify",
+    "POST /api/v1/interactions/:id/upstream/:alias",
+    "POST /api/v1/me/passkeys",
+    "POST /api/v1/me/passkeys/options",
+    "POST /authorize",
+    "POST /federation/callback",
+    "POST /logout",
+    "POST /par",
+    "POST /revoke",
+    "POST /token",
+    "POST /userinfo",
+    "PUT /api/v1/admin/groups/:id/members/:user_id"
+  ],
+  "handles": [
+    "code tio_ac 0x02",
+    "federation tio_fs 0x05",
+    "interaction tio_ix 0x04",
+    "invitation tio_iv 0x06",
+    "refresh tio_rt 0x03",
+    "session tio_ss 0x01"
+  ],
+  "threats": {
+    "T1": [
+      "TIO-AUTHZ-008",
+      "TIO-AUTHZ-021",
+      "TIO-CLIENT-002",
+      "TIO-TOKEN-011",
+      "TIO-TOKEN-012"
+    ],
+    "T2": [
+      "TIO-AUTHZ-018",
+      "TIO-CLIENT-010",
+      "TIO-CLIENT-011",
+      "TIO-LOGOUT-002"
+    ],
+    "T3": [
+      "TIO-ARCH-007",
+      "TIO-REV-002",
+      "TIO-RT-002",
+      "TIO-RT-003",
+      "TIO-RT-006"
+    ],
+    "T4": [
+      "TIO-IX-001",
+      "TIO-IX-060",
+      "TIO-SESS-002"
+    ],
+    "T5": [
+      "TIO-LOGOUT-004"
+    ],
+    "T6": [
+      "TIO-PK-002",
+      "TIO-PK-012",
+      "TIO-PK-022"
+    ],
+    "T7": [
+      "TIO-PK-030"
+    ],
+    "T8": [
+      "TIO-FED-030",
+      "TIO-FED-031",
+      "TIO-FED-032",
+      "TIO-FED-033",
+      "TIO-FED-034",
+      "TIO-FED-035",
+      "TIO-FED-036",
+      "TIO-FED-037",
+      "TIO-FED-038",
+      "TIO-FED-039",
+      "TIO-FED-040",
+      "TIO-FED-041",
+      "TIO-FED-042",
+      "TIO-FED-043"
+    ],
+    "T9": [
+      "TIO-DATA-006",
+      "TIO-DATA-007",
+      "TIO-FED-040"
+    ],
+    "T10": [
+      "TIO-ARCH-007",
+      "TIO-CRYPTO-004",
+      "TIO-KEYS-011"
+    ],
+    "T11": [
+      "TIO-ARCH-009",
+      "TIO-CRYPTO-011",
+      "TIO-DEPLOY-004"
+    ],
+    "T12": [
+      "TIO-KEYS-012",
+      "TIO-KEYS-013"
+    ],
+    "T13": [
+      "TIO-TOKEN-002",
+      "TIO-TOKEN-003",
+      "TIO-TOKEN-004"
+    ],
+    "T14": [
+      "TIO-ARCH-002",
+      "TIO-HTTP-004",
+      "TIO-RL-001",
+      "TIO-RL-002",
+      "TIO-RL-003"
+    ],
+    "T15": [
+      "TIO-ERR-002",
+      "TIO-IX-001",
+      "TIO-IX-070"
+    ],
+    "T16": [
+      "TIO-AUDIT-002",
+      "TIO-OBS-001",
+      "TIO-SESS-005"
+    ],
+    "T17": [
+      "TIO-ADMIN-001",
+      "TIO-ADMIN-010",
+      "TIO-CLIENT-002"
+    ],
+    "T18": [
+      "TIO-ARCH-010",
+      "TIO-IX-001"
+    ],
+    "T19": [
+      "TIO-HTTP-006"
+    ],
+    "T20": [
+      "TIO-GEN-001",
+      "TIO-HTTP-002"
+    ],
+    "T21": [
+      "TIO-DATA-026",
+      "TIO-DATA-027"
+    ],
+    "T22": [
+      "TIO-FED-030",
+      "TIO-TOKEN-003",
+      "TIO-TOKEN-034"
+    ],
+    "T23": [
+      "TIO-ARCH-016",
+      "TIO-CLIENT-002",
+      "TIO-FED-001"
+    ],
+    "T24": [
+      "TIO-AUTHZ-024"
+    ],
+    "T25": [
+      "TIO-CLIENT-005"
+    ]
+  }
+}

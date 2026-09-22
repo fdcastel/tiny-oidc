@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HANDLE_TYPES, handleType, openHandle, sealHandle } from "../../src/crypto/envelope.ts";
+import { handleType, openHandle, sealHandle } from "../../src/crypto/envelope.ts";
+import { HANDLE_TYPES } from "../../src/crypto/handle-types.ts";
 import { parseMasterKeys } from "../../src/crypto/master-keys.ts";
 import { newInteractionId, newSecret, randomBytes } from "../../src/crypto/random.ts";
 import { bytesToUuid, isUuid, UuidV7, uuidToBytes } from "../../src/crypto/uuid.ts";

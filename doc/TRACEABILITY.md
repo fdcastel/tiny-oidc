@@ -290,7 +290,7 @@ Current phase: 7. Requirements: 285 (ci: 19, conformance: 2, covered: 242, load:
 | TIO-GEN-003 | §14.1 | ci | — | ci |  |
 | TIO-GEN-004 | §14.2 | ci | — | ci | test/http/bootstrap.test.ts<br>test/scripts/lint-rules.test.ts |
 | TIO-GEN-005 | §14.4 | review | — | review |  |
-| TIO-SEC-001 | §15 | review | — | review | test/scripts/trace.test.ts |
+| TIO-SEC-001 | §15 | review | — | review | test/scripts/threat-surface.test.ts<br>test/scripts/trace.test.ts |
 
 ## Threat evidence
 

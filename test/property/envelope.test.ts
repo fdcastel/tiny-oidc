@@ -1,11 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import {
-  HANDLE_TYPES,
-  type HandleType,
-  openHandle,
-  sealHandle,
-} from "../../src/crypto/envelope.ts";
+import { openHandle, sealHandle } from "../../src/crypto/envelope.ts";
+import { HANDLE_TYPES, type HandleType } from "../../src/crypto/handle-types.ts";
 import { decodeBase64Url, encodeBase64Url } from "../../src/util/base64url.ts";
 import { testKeys } from "../support/keys.ts";
 

@@ -22,6 +22,7 @@
     "test:workers": "vitest run --project workers",
     "test:e2e": "playwright test",
     "trace": "node scripts/trace.ts",
+    "surface": "node scripts/threat-surface.ts",
     "mutate": "stryker run",
     "lint": "biome check . && node scripts/lint-rules.ts && node scripts/check-ignores.ts",
     "format": "biome format --write .",
