@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   collectReferences,
   duplicateIds,
   parseSpec,
   parseTestTitles,
+  parseThreats,
   phaseOf,
   renderTraceability,
   type TraceConfig,
@@ -186,5 +188,50 @@ describe("trace", () => {
     expect(md).toContain("| TIO-X-004 | §5.4 | test | 2 | deferred |  |");
     expect(md).toContain("| TIO-X-005 | §5.4 | withdrawn | — | withdrawn |  |");
     expect(md).toContain("| TIO-U-001 | §9 | test | ? | uncovered |  |");
+  });
+
+  it("[TIO-SEC-001] derives the evidence behind every threat row from §15's requirement ids, ranges expanded, and reports the ids the specification does not assign", () => {
+    const threats = parseThreats(
+      [
+        "## 14. Before",
+        "| T9 | not a threat row | x | X-001 |",
+        "## 15. Threat model",
+        "",
+        "| # | Threat | Mitigation | Requirements |",
+        "|---|---|---|---|",
+        "| T1 | Code interception | PKCE | X-001, X-002 |",
+        "| T2 | Upstream compromise | validation | X-002–X-004, Q-001 |",
+        "",
+        "**[TIO-SEC-001]** review",
+      ].join("\n"),
+    );
+    expect(threats).toEqual([
+      { id: "T1", threat: "Code interception", requirements: ["TIO-X-001", "TIO-X-002"] },
+      {
+        id: "T2",
+        threat: "Upstream compromise",
+        requirements: ["TIO-X-002", "TIO-X-003", "TIO-X-004", "TIO-Q-001"],
+      },
+    ]);
+    expect(parseThreats("no threat model here")).toEqual([]);
+    const references = collectReferences({
+      "test/a.test.ts": 'it("[TIO-X-001] [TIO-X-002]", () => {});',
+      "test/b.test.ts": 'it("[TIO-X-002]", () => {});',
+    });
+    const md = renderTraceability(trace(requirements, references, config).rows, config, threats);
+    expect(md).toContain("## Threat evidence");
+    expect(md).toContain("| T1 Code interception | 2 | test/a.test.ts<br>test/b.test.ts |  |");
+    // Q-001 is not a requirement of the specification: named, not silently dropped.
+    expect(md).toContain(
+      "| T2 Upstream compromise | 4 | test/a.test.ts<br>test/b.test.ts | TIO-Q-001 |",
+    );
+    // The real specification's rows all parse, and the one range with a gap is reported.
+    const real = parseThreats(readFileSync("doc/TINY_OIDC_SPEC.md", "utf8"));
+    expect(real).toHaveLength(25);
+    expect(real.find((t) => t.id === "T8")?.requirements).toHaveLength(14);
+    const generated = readFileSync("doc/TRACEABILITY.md", "utf8");
+    expect(generated).toContain(
+      "| TIO-FED-034, TIO-FED-035, TIO-FED-036, TIO-FED-037, TIO-FED-038, TIO-FED-039 |",
+    );
   });
 });

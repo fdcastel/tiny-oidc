@@ -325,8 +325,69 @@ export function trace(
   return { errors, warnings, rows };
 }
 
-/** Renders doc/TRACEABILITY.md. */
-export function renderTraceability(rows: TraceRow[], config: TraceConfig): string {
+/** One row of the threat model (§15): the threat and the requirement ids it names, ranges expanded. */
+export interface ThreatRow {
+  id: string;
+  threat: string;
+  requirements: string[];
+}
+
+/**
+ * The threat model's rows, with a range such as `FED-030–FED-043` expanded to
+ * every id in it. An id the specification never assigns (a gap in a range)
+ * stays in the list: the evidence section shows it as unknown, which is
+ * where a reviewer learns that a row rests on fewer requirements than its
+ * range suggests (ADR 0011).
+ */
+export function parseThreats(markdown: string): ThreatRow[] {
+  const start = markdown.indexOf("## 15. Threat model");
+  if (start === -1) return [];
+  const rows: ThreatRow[] = [];
+  for (const line of markdown.slice(start).split("\n")) {
+    const m = /^\| (T\d+) \| ([^|]*) \| [^|]* \| ([^|]*) \|/.exec(line);
+    if (!m) continue;
+    const requirements: string[] = [];
+    for (const token of (m[3] as string).split(/,\s*/)) {
+      const r = /^([A-Z]+)-(\d+)(?:[–-]([A-Z]+)-(\d+))?$/.exec(token.trim());
+      if (!r) continue;
+      if (r[3] !== undefined) {
+        for (let n = Number(r[2]); n <= Number(r[4]); n++)
+          requirements.push(`TIO-${r[1]}-${String(n).padStart(3, "0")}`);
+      } else requirements.push(`TIO-${r[1]}-${r[2]}`);
+    }
+    rows.push({ id: m[1] as string, threat: (m[2] as string).trim(), requirements });
+  }
+  return rows;
+}
+
+/** The evidence behind one threat: the test files of its requirements, and the ids the specification does not assign. */
+export interface ThreatEvidence {
+  id: string;
+  threat: string;
+  files: string[];
+  unassigned: string[];
+}
+
+export function threatEvidence(threats: ThreatRow[], rows: TraceRow[]): ThreatEvidence[] {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return threats.map((t) => {
+    const files = new Set<string>();
+    const unassigned: string[] = [];
+    for (const id of t.requirements) {
+      const row = byId.get(id);
+      if (row === undefined) unassigned.push(id);
+      else for (const f of row.files) files.add(f);
+    }
+    return { id: t.id, threat: t.threat, files: [...files].sort(), unassigned };
+  });
+}
+
+/** Renders doc/TRACEABILITY.md: the requirement rows, then the threat evidence (TIO-SEC-001). */
+export function renderTraceability(
+  rows: TraceRow[],
+  config: TraceConfig,
+  threats: ThreatRow[] = [],
+): string {
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
   const summary = [...counts.entries()]
@@ -348,6 +409,23 @@ export function renderTraceability(rows: TraceRow[], config: TraceConfig): strin
     lines.push(
       `| ${row.id} | §${row.section} | ${row.verification} | ${phase} | ${row.status} | ${row.files.join("<br>")} |`,
     );
+  }
+  if (threats.length > 0) {
+    lines.push(
+      "",
+      "## Threat evidence",
+      "",
+      "The test files behind every row of the threat model (§15), through the requirement ids the row names. The threat-model review (TIO-SEC-001, ADR 0011) cites this section instead of copying it.",
+      "",
+      "| Threat | Requirements | Tests | Ids the specification does not assign |",
+      "|---|---|---|---|",
+    );
+    for (const t of threatEvidence(threats, rows)) {
+      const requirements = threats.find((x) => x.id === t.id)?.requirements ?? [];
+      lines.push(
+        `| ${t.id} ${t.threat} | ${requirements.length} | ${t.files.join("<br>")} | ${t.unassigned.join(", ")} |`,
+      );
+    }
   }
   lines.push("");
   return lines.join("\n");

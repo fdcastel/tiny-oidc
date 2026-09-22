@@ -26,6 +26,8 @@ token traffic is bounded per client id alone. The §6.7 row reads
 - Staging keeps a raised `RL_IP` (100,000 per 60 s) because the load harness
   also drives the navigation and interaction endpoints, which stay per-address
   at the spec's values in production.
+- Threat model: row T14 of §15 states the rule; the review of ADR 0011 carries
+  it in its addendum of 2026-09-22.
 
 ## Requirements and evidence
 

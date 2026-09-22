@@ -6,18 +6,20 @@ import { readAll, readText } from "./lib/files.ts";
 import {
   collectReferences,
   parseSpec,
+  parseThreats,
   renderTraceability,
   type TraceConfig,
   trace,
 } from "./lib/trace.ts";
 
 const config = JSON.parse(readText("scripts/trace.config.json")) as TraceConfig;
-const requirements = parseSpec(readText("doc/TINY_OIDC_SPEC.md"));
+const spec = readText("doc/TINY_OIDC_SPEC.md");
+const requirements = parseSpec(spec);
 const tests = readAll("test", (p) => p.endsWith(".ts") && !p.endsWith(".d.ts"));
 const references = collectReferences(tests);
 const result = trace(requirements, references, config);
 
-writeFileSync("doc/TRACEABILITY.md", renderTraceability(result.rows, config));
+writeFileSync("doc/TRACEABILITY.md", renderTraceability(result.rows, config, parseThreats(spec)));
 
 for (const warning of result.warnings) console.warn(`warning: ${warning}`);
 for (const error of result.errors) console.error(`error: ${error}`);

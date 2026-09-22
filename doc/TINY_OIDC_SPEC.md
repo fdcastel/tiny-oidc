@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | 1.0.0-draft.2 |
-| **Date** | 2026-09-21 |
+| **Date** | 2026-09-22 |
 | **Status** | Authoritative for the v1 build. Supersedes `tmp/INITIAL_TINY_OIDC_SPEC.md`. |
 | **Runtime** | TypeScript on Cloudflare Workers (workerd) |
 | **Storage** | Durable Objects (SQLite) for per-entity state, D1 for the directory, R2 for the audit archive |
@@ -976,6 +976,7 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 | GET | `/interactions/{id}/complete` | Finalize an interaction (top-level navigation) | browser | — |
 | GET | `/api/v1/openapi.json` | OpenAPI 3.1 for the JSON APIs | none | `*` |
 | GET | `/api/v1/health` | Health | none | `*` |
+| GET | `/login/*` | The bundled reference login app: static assets, present only when `BUNDLED_LOGIN_APP` is `true`, 404 otherwise (§7.9, TIO-IX-081) | none | — |
 | * | `/api/v1/interactions/...` | Interaction API (§7) | login-app origin + binding cookie | login origins |
 | * | `/api/v1/me/...` | Self-service API (§8) | bearer, scope `account` | `*` |
 | * | `/api/v1/admin/...` | Admin API (§9) | bearer, scope `admin` | `*` |
@@ -2282,7 +2283,7 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 
 | # | Threat | Mitigation | Requirements |
 |---|---|---|---|
-| T1 | Authorization-code interception or injection | PKCE S256 mandatory; code bound to client, redirect URI, verifier; 60 s lifetime; single use with family revocation on replay; `iss` parameter defeats mix-up | AUTHZ-008, TOKEN-011, TOKEN-012, AUTHZ-021 |
+| T1 | Authorization-code interception or injection | PKCE S256 required by default and for every public client (`require_pkce`, ADR 0013); a confidential client registered with `require_pkce = 0` is bound by client authentication, `redirect_uri` and `nonce`, and a `code_challenge` it does send is always verified; code bound to client, redirect URI, verifier; 60 s lifetime; single use with family revocation on replay; `iss` parameter defeats mix-up | AUTHZ-008, TOKEN-011, TOKEN-012, AUTHZ-021, CLIENT-002 |
 | T2 | Open redirect through the OP | Exact redirect URI matching; non-redirectable errors go to `login_url` only; `post_logout_redirect_uri` registered | CLIENT-010, CLIENT-011, AUTHZ-018, LOGOUT-002 |
 | T3 | Refresh-token theft | Rotation with family reuse detection; session-bound families die with the session; opaque encrypted handles; hashes only at rest; revocation endpoint | RT-002, RT-003, RT-006, ARCH-007, REV-002 |
 | T4 | Session fixation / login CSRF (attacker completes their auth in the victim's interaction) | Interaction bound to the browser by a cookie verified on every Interaction API call and at `/complete`; `Origin` allow-list; new session secret at authentication; different-user re-auth revokes old session | IX-001, IX-060, SESS-002 |
@@ -2295,7 +2296,7 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 | T11 | Master-key compromise | Handles become forgeable only in structure; every handle still requires a server-side record; documented re-key runbook | ARCH-009, CRYPTO-011, DEPLOY-004 |
 | T12 | Signing-key compromise | Emergency retire endpoint; short token lifetimes; JWKS pre-publication makes rotation routine | KEYS-012, KEYS-013 |
 | T13 | Client impersonation | Strict per-client auth method; secret hashed; `private_key_jwt` with a 60-second assertion lifetime and `aud` check; failed-auth rate limits | TOKEN-002, TOKEN-003, TOKEN-004 |
-| T14 | Denial of service / brute force | Per-IP, per-client, per-interaction and per-user limits; body and query limits; no unbounded loops; per-user isolation stops one user from affecting others | RL-001–RL-003, HTTP-004, ARCH-002 |
+| T14 | Denial of service / brute force | Per-IP, per-client, per-interaction and per-user limits — the per-address class on the client-authenticated endpoints counts failed client authentication only (ADR 0012), so a credential-guessing source is cut off per address while a relying party's successful traffic is bounded per client; body and query limits; no unbounded loops; per-user isolation stops one user from affecting others | RL-001–RL-003, HTTP-004, ARCH-002 |
 | T15 | Enumeration of users, credentials, invitations | Uniform responses; masked emails; no existence disclosure in the Interaction API | ERR-002, IX-001, IX-070 |
 | T16 | Log or audit leakage | Redaction canaries; allow-listed data keys; pseudonymized IP | AUDIT-002, OBS-001, SESS-005 |
 | T17 | Privilege escalation to admin | `admin` scope requires live `admins` membership; only admins can grant `admin` to clients; bootstrap single-use | ADMIN-001, CLIENT-002, ADMIN-010 |

@@ -1,6 +1,6 @@
 # 0011 — Threat-model review at the end of Phase 7 (TIO-SEC-001)
 
-Date: 2026-09-19 · Status: Proposed — awaiting the owner's sign-off · Task: P7-05
+Date: 2026-09-19 (addendum 2026-09-22) · Status: Proposed — awaiting the owner's sign-off · Task: P7-05
 
 ## Scope
 
@@ -27,14 +27,24 @@ requirement whose verification is not a test is named after a dash.
   that touches one object, audited as `user.updated` with reason `restored`)
   and `GET /admin/users/{id}/export` (T16: the export omits secret hashes and,
   alone among admin reads, emits `user.exported` — see the open items).
-- **Outbound.** The allow-list of TIO-ARCH-016 is asserted for every suite by
-  `test/support/fetch-allowlist.ts` (T23).
+  `GET /login/*` is the one route that serves HTML: the bundled reference
+  login app, static assets outside `src/` served by the assets binding only
+  when `BUNDLED_LOGIN_APP` is `true` (§7.9, TIO-IX-081), so TIO-GEN-001 holds
+  for every response the Worker's own code produces (T18, T20). Its CSP admits
+  same-origin scripts and styles only, and `test/security/headers.test.ts`
+  sends it the header matrix like every other route.
+- **Outbound.** The allow-list of TIO-ARCH-016 is enforced per test file by
+  `test/support/fetch-allowlist.ts` (every file that lets the Worker reach an
+  upstream mounts it), and the guarantee T23 rests on is the test that every
+  flow runs under the interceptor with only the upstreams' discovery, token,
+  JWKS and userinfo endpoints and clients' `jwks_uri` allowed
+  (`test/http/outbound.test.ts`).
 
 ## Threats and evidence
 
 | # | Threat | Tests (under `test/`) |
 |---|---|---|
-| T1 | Authorization-code interception or injection | `component/user-do.test.ts`, `concurrency/http.test.ts`, `concurrency/user-do.test.ts`, `http/authorize.test.ts`, `http/token.test.ts`, `security/redirects.test.ts`, `security/tokens.test.ts` |
+| T1 | Authorization-code interception or injection | `component/clients.test.ts`, `component/user-do.test.ts`, `concurrency/http.test.ts`, `concurrency/user-do.test.ts`, `http/admin-clients.test.ts`, `http/authorize.test.ts`, `http/token.test.ts`, `security/redirects.test.ts`, `security/tokens.test.ts`, `unit/clients.test.ts` |
 | T2 | Open redirect through the OP | `http/authorize.test.ts`, `http/logout.test.ts`, `security/redirects.test.ts`, `unit/clients.test.ts` |
 | T3 | Refresh-token theft | `component/user-do.test.ts`, `concurrency/http.test.ts`, `concurrency/user-do.test.ts`, `http/token.test.ts`, `http/userinfo-revoke.test.ts`, `unit/handles.test.ts` |
 | T4 | Session fixation / login CSRF (attacker completes their auth in the victim's interaction) | `component/user-do.test.ts`, `http/complete.test.ts`, `http/federation.test.ts`, `http/interactions.test.ts`, `http/passkey-interaction.test.ts` |
@@ -54,14 +64,19 @@ requirement whose verification is not a test is named after a dash.
 | T18 | Malicious or buggy login app | `http/interactions.test.ts` |
 | T19 | Host-header attacks | `http/router.test.ts`, `security/headers.test.ts` |
 | T20 | Clickjacking / framing of navigation endpoints | `http/login-app.test.ts`, `http/router.test.ts`, `scripts/lint-rules.test.ts`, `security/headers.test.ts`, `unit/routes.test.ts` — TIO-GEN-001 (review) |
-| T21 | Partial-write inconsistencies between D1 and DO | `component/users.test.ts`, `http/admin-system.test.ts`, `http/admin-users.test.ts`, `http/federation.test.ts`, `http/passkey-interaction.test.ts` |
+| T21 | Partial-write inconsistencies between D1 and DO | `component/users.test.ts`, `http/admin-import.test.ts`, `http/admin-system.test.ts`, `http/admin-users.test.ts`, `http/federation.test.ts`, `http/passkey-interaction.test.ts` |
 | T22 | Time manipulation / clock skew | `component/client-auth.test.ts`, `component/federation-units.test.ts`, `component/keystore.test.ts`, `http/admin-auth.test.ts`, `http/federation.test.ts`, `http/userinfo-revoke.test.ts`, `security/tokens.test.ts` |
 | T23 | Data exfiltration through outbound requests (telemetry, SSRF via configured URLs) | `component/clients.test.ts`, `http/admin-clients.test.ts`, `http/admin-upstreams.test.ts`, `http/federation.test.ts`, `http/outbound.test.ts`, `unit/clients.test.ts`, `unit/discovery.test.ts` |
 | T24 | Stale or confused authorization parameters (`nonce`/`code_challenge` from a previous request, `prompt` loops) | `component/user-do.test.ts`, `http/authorize.test.ts`, `http/complete.test.ts` |
 | T25 | Consent or tokens surviving client deletion and id reuse | `component/user-do.test.ts`, `http/admin-clients.test.ts` |
 
 TIO-DEPLOY-004 (T11) is `doc/RUNBOOK.md` §5–§6; TIO-GEN-001 (T20) is the
-`no-html-responses` lint rule with its test in `test/scripts/lint-rules.test.ts`.
+`no-html-response` lint rule with its test in `test/scripts/lint-rules.test.ts`.
+
+Since 2026-09-22 `pnpm trace` derives this table itself: the "Threat
+evidence" section at the end of `doc/TRACEABILITY.md` lists, for every row of
+§15, the test files behind its requirement ids and the ids the specification
+does not assign. The next review is a diff of that section against this one.
 
 ## What the build taught the model
 
@@ -89,8 +104,9 @@ and the row they belong to:
    the two bindings of §12.1 ([ADR 0001](0001-rate-limit-classes-share-two-bindings.md)):
    failed client authentication is bounded at 2,000 per 10 s per client rather
    than 20 per 60 s. The per-entity limits that stop credential guessing (10
-   attempts per interaction, 10 passkey attempts per user per 10 minutes) are
-   unaffected. Accepted for v1; splitting the bindings is a configuration
+   passkey and registration attempts per interaction in `InteractionDO`; 10
+   self-service passkey registration attempts per user per 10 minutes in
+   `UserDO`) are unaffected. Accepted for v1; splitting the bindings is a configuration
    change.
 5. **T8 — the staging fake upstream.** The auto-approving upstream is a
    separate Worker whose deploy script refuses every profile but `staging`
@@ -113,7 +129,8 @@ and the row they belong to:
   T8 and T14 are not fully exercised against real providers and real load
   until they run.
 - Admin reads are not audited in v1, with one exception decided by this
-  review and accepted by the owner: `GET /admin/users/{id}/export` is a read
+  review and accepted by the owner on 2026-09-19, separately from the
+  sign-off of the record itself (plan row P7-05): `GET /admin/users/{id}/export` is a read
   of one person's whole record, so it emits `user.exported` (§11.2 row,
   catalog entry with the record's counts, no content; asserted in
   `test/http/admin-users.test.ts`). Other admin reads stay unaudited: they
@@ -122,6 +139,41 @@ and the row they belong to:
 - The D1 restore procedure is drilled in a test at the API level
   (`test/http/admin-import.test.ts`); the `wrangler d1 time-travel` step
   itself is Cloudflare's and is only documented.
+
+## Addendum (2026-09-22)
+
+The surface this record reviewed changed twice after 2026-09-19, and its open
+items have since closed. Nothing below reverses the decision; the record is
+not superseded.
+
+- **T1 — PKCE is per client ([ADR 0013](0013-per-client-pkce-requirement.md),
+  2026-09-20).** `require_pkce` defaults to 1 and every public client keeps
+  it; a confidential client registered with `require_pkce = 0` may omit the
+  challenge, and its code is then bound by client authentication,
+  `redirect_uri` and `nonce` (TIO-AUTHZ-008, TIO-TOKEN-011, TIO-CLIENT-002).
+  A `code_challenge` such a client does send is verified in full, and a code
+  that binds no challenge refuses any verifier. `POST /authorize` is a new
+  method on an existing navigation route with the same validation path
+  (TIO-AUTHZ-001). Row T1 of §15 now states the rule and names CLIENT-002;
+  the evidence gained `unit/clients.test.ts` (the registration rule) and
+  `http/authorize.test.ts`, `http/token.test.ts` carry the exemption's cases.
+- **T14 — the per-address class counts failures only
+  ([ADR 0012](0012-no-per-address-limit-on-successful-token-traffic.md),
+  2026-09-19).** On `/token`, `/par` and `/revoke` the per-address limit
+  counts failed client authentication; successful traffic is bounded per
+  client. TIO-TOKEN-004's purpose — cutting off a credential-guessing source —
+  holds per address as before; what changed is that a server-side relying
+  party behind one address is no longer throttled by it. Row T14 says so.
+- **Open items.** The conformance (P7-03) and load (P7-04) gates ran green
+  against staging on 2026-09-21 (plan rows; ADR 0015, ADR 0016), so T8 and
+  T14 have been exercised against the fake upstream through the four
+  certification plans and against real load. Still not exercised: T8 against
+  Google and Microsoft (P4-08, OP-04).
+- **Ranges.** Row T8 names FED-030–FED-043; the specification assigns no
+  FED-034 to FED-039, so the row rests on eight requirements. The derived
+  section says so; no change to the row.
+- **Surface.** `GET /login/*` is named in the surface check above and, since
+  2026-09-22, in the endpoint map of §5.1, which TIO-HTTP-001 reads.
 
 ## Decision
 

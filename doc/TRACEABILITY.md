@@ -290,4 +290,36 @@ Current phase: 7. Requirements: 285 (ci: 19, conformance: 2, covered: 242, load:
 | TIO-GEN-003 | §14.1 | ci | — | ci |  |
 | TIO-GEN-004 | §14.2 | ci | — | ci | test/http/bootstrap.test.ts<br>test/scripts/lint-rules.test.ts |
 | TIO-GEN-005 | §14.4 | review | — | review |  |
-| TIO-SEC-001 | §15 | review | — | review |  |
+| TIO-SEC-001 | §15 | review | — | review | test/scripts/trace.test.ts |
+
+## Threat evidence
+
+The test files behind every row of the threat model (§15), through the requirement ids the row names. The threat-model review (TIO-SEC-001, ADR 0011) cites this section instead of copying it.
+
+| Threat | Requirements | Tests | Ids the specification does not assign |
+|---|---|---|---|
+| T1 Authorization-code interception or injection | 5 | test/component/clients.test.ts<br>test/component/user-do.test.ts<br>test/concurrency/http.test.ts<br>test/concurrency/user-do.test.ts<br>test/http/admin-clients.test.ts<br>test/http/authorize.test.ts<br>test/http/token.test.ts<br>test/security/redirects.test.ts<br>test/security/tokens.test.ts<br>test/unit/clients.test.ts |  |
+| T2 Open redirect through the OP | 4 | test/http/authorize.test.ts<br>test/http/logout.test.ts<br>test/security/redirects.test.ts<br>test/unit/clients.test.ts |  |
+| T3 Refresh-token theft | 5 | test/component/user-do.test.ts<br>test/concurrency/http.test.ts<br>test/concurrency/user-do.test.ts<br>test/http/token.test.ts<br>test/http/userinfo-revoke.test.ts<br>test/unit/handles.test.ts |  |
+| T4 Session fixation / login CSRF (attacker completes their auth in the victim's interaction) | 3 | test/component/user-do.test.ts<br>test/http/complete.test.ts<br>test/http/federation.test.ts<br>test/http/interactions.test.ts<br>test/http/passkey-interaction.test.ts |  |
+| T5 CSRF on logout | 1 | test/http/logout.test.ts |  |
+| T6 Phishing | 3 | test/component/passkey-do.test.ts<br>test/component/user-do.test.ts<br>test/component/users.test.ts<br>test/http/passkey-interaction.test.ts<br>test/http/register.test.ts<br>test/unit/passkey.test.ts |  |
+| T7 Authenticator cloning | 1 | test/component/passkey-do.test.ts<br>test/http/passkey-interaction.test.ts<br>test/unit/passkey.test.ts |  |
+| T8 Upstream compromise or misconfiguration | 14 | test/component/federation-units.test.ts<br>test/concurrency/creation.test.ts<br>test/concurrency/federation.test.ts<br>test/http/federation.test.ts | TIO-FED-034, TIO-FED-035, TIO-FED-036, TIO-FED-037, TIO-FED-038, TIO-FED-039 |
+| T9 Account takeover via email collision | 3 | test/component/users.test.ts<br>test/http/admin-users-list.test.ts<br>test/http/federation.test.ts |  |
+| T10 Storage leak (D1 or DO dump) | 3 | test/component/keystore.test.ts<br>test/unit/clients.test.ts<br>test/unit/crypto.test.ts<br>test/unit/handles.test.ts |  |
+| T11 Master-key compromise | 3 | test/component/keystore.test.ts<br>test/http/admin-system.test.ts<br>test/http/forged-handles.test.ts<br>test/security/tokens.test.ts |  |
+| T12 Signing-key compromise | 2 | test/component/keystore.test.ts<br>test/http/admin-system.test.ts<br>test/unit/keystore-roles.test.ts |  |
+| T13 Client impersonation | 3 | test/component/client-auth.test.ts<br>test/http/par.test.ts<br>test/http/token.test.ts |  |
+| T14 Denial of service / brute force | 5 | test/http/admin-auth.test.ts<br>test/http/interactions.test.ts<br>test/http/me.test.ts<br>test/http/par.test.ts<br>test/http/passkey-interaction.test.ts<br>test/http/router.test.ts<br>test/http/token.test.ts<br>test/scripts/lint-rules.test.ts<br>test/security/limits.test.ts<br>test/unit/routes.test.ts |  |
+| T15 Enumeration of users, credentials, invitations | 3 | test/component/client-auth.test.ts<br>test/http/interactions.test.ts<br>test/http/passkey-interaction.test.ts |  |
+| T16 Log or audit leakage | 3 | test/http/complete.test.ts<br>test/http/router.test.ts<br>test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts |  |
+| T17 Privilege escalation to admin | 3 | test/component/clients.test.ts<br>test/concurrency/creation.test.ts<br>test/http/admin-auth.test.ts<br>test/http/admin-clients.test.ts<br>test/http/bootstrap.test.ts<br>test/security/tokens.test.ts<br>test/unit/clients.test.ts |  |
+| T18 Malicious or buggy login app | 2 | test/http/interactions.test.ts |  |
+| T19 Host-header attacks | 1 | test/http/router.test.ts<br>test/security/headers.test.ts |  |
+| T20 Clickjacking / framing of navigation endpoints | 2 | test/http/login-app.test.ts<br>test/http/router.test.ts<br>test/scripts/lint-rules.test.ts<br>test/security/headers.test.ts<br>test/unit/routes.test.ts |  |
+| T21 Partial-write inconsistencies between D1 and DO | 2 | test/component/users.test.ts<br>test/http/admin-import.test.ts<br>test/http/admin-system.test.ts<br>test/http/admin-users.test.ts<br>test/http/federation.test.ts<br>test/http/passkey-interaction.test.ts |  |
+| T22 Time manipulation / clock skew | 3 | test/component/client-auth.test.ts<br>test/component/federation-units.test.ts<br>test/component/keystore.test.ts<br>test/http/admin-auth.test.ts<br>test/http/federation.test.ts<br>test/http/userinfo-revoke.test.ts<br>test/security/tokens.test.ts |  |
+| T23 Data exfiltration through outbound requests (telemetry, SSRF via configured URLs) | 3 | test/component/clients.test.ts<br>test/http/admin-clients.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/federation.test.ts<br>test/http/outbound.test.ts<br>test/unit/clients.test.ts<br>test/unit/discovery.test.ts |  |
+| T24 Stale or confused authorization parameters (`nonce`/`code_challenge` from a previous request, `prompt` loops) | 1 | test/component/user-do.test.ts<br>test/http/authorize.test.ts<br>test/http/complete.test.ts |  |
+| T25 Consent or tokens surviving client deletion and id reuse | 1 | test/component/user-do.test.ts<br>test/http/admin-clients.test.ts |  |

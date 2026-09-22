@@ -50,6 +50,8 @@ an unexpected warning fails a plan as a failure does.
 - The `none` variant TIO-TEST-040 named "where the suite offers it" is not
   offered by any plan that sends PKCE; the public-client flow is verified by
   the `oauth4webapi` interop suite.
+- Threat model: row T1 of §15 states the rule and names CLIENT-002; the review
+  of ADR 0011 carries it in its addendum of 2026-09-22.
 
 ## Requirements and evidence
 
