@@ -55,9 +55,46 @@ upstream `google`; and the audit trail `user.created`, `identity.linked`,
 `identity.login_succeeded`, `session.created`, `authz.code_issued`,
 `interaction.completed`, `token.issued` (§11.2), in that order.
 
-Not exercised on this pass: a second login through Google by the same
-person, which TIO-FED-040 resolves through the `(issuer, subject)` index to
-the same account; it is a click away and is added to this record when done.
+## Google — second pass, 2026-09-22
+
+Two more things happened on the same staging deployment, 13:47 UTC, both
+read back through the Admin API.
+
+**The existing session served a second authorization.** The relying party
+was pointed at `/authorize` again with the first account's session cookie
+still valid (created 05:52 UTC). Staging issued a code at 13:47:09 and a
+token at 13:47:10, and the account's audit trail gained exactly those two
+events — no `session.created`, no `interaction.completed`, because no
+interaction was created: [TIO-AUTHZ-014], the session and the consent were
+enough. The session's `last_seen_at` moved from 05:52:40 to 13:47:08 and its
+idle window with it ([TIO-AUTHZ-023]); its `auth_time` did not move, and the
+account went from one refresh family to two. This is single sign-on across
+two authorizations of the same client, seven hours and fifty-five minutes
+apart, with the upstream untouched the second time.
+
+**A second Google account created a second staging account.** The owner then
+signed in with a different Google account of theirs — a Workspace domain,
+not the consumer address of the first pass — and staging resolved it by
+[TIO-FED-040] step 3: no `(issuer, subject)` match, `federation.auto_create`
+still `true`, so a new user, with the Workspace account's verified email and
+profile name, and its own identity under the same issuer
+`https://accounts.google.com` with a different subject. Audit trail, in
+order: `user.created`, `identity.linked`, `identity.login_succeeded`,
+`session.created`, `authz.code_issued`, `interaction.completed`,
+`token.issued`. The ID token carried `acr urn:tinyoidc:acr:federated`,
+`amr ["fed"]`, the Workspace email with `email_verified true`, the profile
+name, and `sub` equal to the new staging account id — not to Google's
+subject, which no relying party ever sees ([TIO-DATA-001], §12.4). The two
+accounts share an issuer and are told apart by subject alone, which is what
+`identity_index` is keyed on ([TIO-FED-041]).
+
+Still not exercised: [TIO-FED-040] step 1, a repeat login through Google by
+the *same* account, which resolves through the index to the existing account
+and writes the identity's `last_login_at`. Both identities on staging read
+`last_login_at: null`, which is the specified state — the column is written
+`NULL` when the identity is linked and set only by a later login through it,
+so the null is the evidence that step 1 has not run yet, not a defect. One
+more click with the first Google account closes it.
 
 ## Microsoft (single tenant) — pending
 
@@ -73,10 +110,16 @@ Waits for the Entra app registration (OP-04) with the staging callback URL
   addendum lists the Google and Microsoft logins as the last open item of
   the review.
 - `federation.auto_create` on staging is the owner's to keep or reset; the
-  default (`false`) is what production ships with.
+  default (`false`) is what production ships with. Two accounts of the
+  owner's now exist on staging, one per Google account; neither is part of
+  the load population, which the harness creates and deletes by itself.
+- Single sign-on across authorizations, which the HTTP suite proves against
+  its own clock, is now also observed on staging across nearly eight hours
+  of real time.
 
 ## Requirements and tests
 
-§6.4, TIO-FED-030, TIO-FED-033, TIO-FED-040 — the HTTP suite's fake-upstream
+§6.4, TIO-FED-030, TIO-FED-033, TIO-FED-040, TIO-FED-041, TIO-FED-042,
+TIO-DATA-001, TIO-AUTHZ-014, TIO-AUTHZ-023 — the HTTP suite's fake-upstream
 cases stand for every rule; this record is the manual verification the plan
 asked for.
