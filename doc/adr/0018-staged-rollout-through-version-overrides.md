@@ -35,7 +35,8 @@ Staging and production deploy the same way — a **staged rollout**:
    `Cloudflare-Workers-Version-Overrides: <worker>="<new>"`, which routes those
    requests, and only those, to the new version. Health must report the
    deploy's `VERSION`, which proves the override reached the new build rather
-   than the live one.
+   than the live one; the smoke test waits up to 60 s for that before its
+   checks, because the new deployment takes seconds to propagate.
 5. Pass: `<new>@100%`. Fail: `<live>@100%` again, and the build fails.
 
 A deployment already split without a version at 100% (a rollout someone else
@@ -65,9 +66,26 @@ throughout:
 - The same run unsabotaged: six wrangler commands, 38 s, the new version
   smoke-tested at 0% and then serving 100%.
 
-`test/scripts/deploy.test.ts` now uses the upload output wrangler actually
-printed, and covers the restore, a failing restore, and every refusal before
-anything changes.
+Then the same code in Workers Builds, on the push that introduced it:
+
+- **First build (`83811b4`): refused, safely.** The new version joined the
+  deployment at 0% and was out of it 4 s later: the smoke test, fired within
+  a second of the 0% deployment, was answered by the live build, and the
+  script restored the live version and failed the build. Staging kept
+  serving. A new deployment takes seconds to reach every Cloudflare location,
+  and until it reaches the one that answers, the override is ignored there;
+  from the workstation it had arrived in time, from the build machine it had
+  not.
+- **Fix:** the smoke test first waits — up to 60 s, polling every 2 s — for
+  health to report the new build through the override, then runs its checks;
+  a build that never appears is reported with how long it was waited for.
+- **Second build (`390979d`): rolled out.** 0% at 19:55:15.7 UTC, 100% at
+  19:55:21.2, health reporting `390979d`.
+
+`test/scripts/deploy.test.ts` uses the upload output wrangler actually
+printed, and covers the restore, a failing restore, every refusal before
+anything changes, and the settle wait (live build first, a failed poll, then
+the new build).
 
 ## Consequences
 
