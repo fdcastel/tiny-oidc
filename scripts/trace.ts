@@ -19,9 +19,15 @@ const tests = readAll("test", (p) => p.endsWith(".ts") && !p.endsWith(".d.ts"));
 const references = collectReferences(tests);
 const result = trace(requirements, references, config);
 
-writeFileSync("doc/TRACEABILITY.md", renderTraceability(result.rows, config, parseThreats(spec)));
+const threats = parseThreats(spec);
+writeFileSync("doc/TRACEABILITY.md", renderTraceability(result.rows, config, threats));
 
 for (const warning of result.warnings) console.warn(`warning: ${warning}`);
+for (const t of threats)
+  for (const token of t.unparsable)
+    console.warn(
+      `warning: threat ${t.id} names "${token}", which is not a requirement id or a range; no evidence is derived from it`,
+    );
 for (const error of result.errors) console.error(`error: ${error}`);
 const covered = result.rows.filter((r) => r.status === "covered").length;
 const deferred = result.rows.filter((r) => r.status === "deferred").length;

@@ -123,7 +123,8 @@ and the row they belong to:
 - Point-in-time recovery of one object (`/restore`) is exercised only for its
   validation and failure paths; the local Durable Object backend has no
   bookmarks. It must be tried on staging before it is relied on (runbook §8).
-- The conformance (P7-03) and load (P7-04) gates have not run; they need the
+- (Closed 2026-09-21 for the two gates; see the addendum.) The conformance
+  (P7-03) and load (P7-04) gates have not run; they need the
   staging environment (OP-01, OP-03). The Google and Microsoft manual
   verifications (P4-08) wait on OP-04. None of them changes a threat row, but
   T8 and T14 are not fully exercised against real providers and real load
@@ -155,8 +156,10 @@ not superseded.
   that binds no challenge refuses any verifier. `POST /authorize` is a new
   method on an existing navigation route with the same validation path
   (TIO-AUTHZ-001). Row T1 of §15 now states the rule and names CLIENT-002;
-  the evidence gained `unit/clients.test.ts` (the registration rule) and
-  `http/authorize.test.ts`, `http/token.test.ts` carry the exemption's cases.
+  the evidence gained CLIENT-002's three files (`component/clients.test.ts`,
+  `http/admin-clients.test.ts`, `unit/clients.test.ts`; the registration rule
+  is one of that requirement's validations), and `http/authorize.test.ts`,
+  `http/token.test.ts` carry the exemption's cases.
 - **T14 — the per-address class counts failures only
   ([ADR 0012](0012-no-per-address-limit-on-successful-token-traffic.md),
   2026-09-19).** On `/token`, `/par` and `/revoke` the per-address limit
@@ -177,9 +180,9 @@ not superseded.
 
 ## Decision
 
-The threat model of §15 stands as written for v1.0.0: no row is removed, no
-mitigation was found missing, and the six findings above are absorbed by the
-existing rows. The review is repeated at every new endpoint or handle type
+The threat model of §15 stands for v1.0.0, with rows T1 and T14 restated on
+2026-09-22 (addendum): no row is removed, no mitigation was found missing,
+and the six findings above are absorbed by the existing rows. The review is repeated at every new endpoint or handle type
 (TIO-SEC-001) and before the next major version.
 
 ## Sign-off

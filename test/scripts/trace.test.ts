@@ -201,16 +201,30 @@ describe("trace", () => {
         "|---|---|---|---|",
         "| T1 | Code interception | PKCE | X-001, X-002 |",
         "| T2 | Upstream compromise | validation | X-002–X-004, Q-001 |",
+        "| T3 | Mistyped range | typo | X-001—X-003, x-002 |",
         "",
         "**[TIO-SEC-001]** review",
       ].join("\n"),
     );
     expect(threats).toEqual([
-      { id: "T1", threat: "Code interception", requirements: ["TIO-X-001", "TIO-X-002"] },
+      {
+        id: "T1",
+        threat: "Code interception",
+        requirements: ["TIO-X-001", "TIO-X-002"],
+        unparsable: [],
+      },
       {
         id: "T2",
         threat: "Upstream compromise",
         requirements: ["TIO-X-002", "TIO-X-003", "TIO-X-004", "TIO-Q-001"],
+        unparsable: [],
+      },
+      // An em dash and a lowercase prefix derive nothing and are reported, not dropped in silence.
+      {
+        id: "T3",
+        threat: "Mistyped range",
+        requirements: [],
+        unparsable: ["X-001—X-003", "x-002"],
       },
     ]);
     expect(parseThreats("no threat model here")).toEqual([]);
@@ -228,6 +242,7 @@ describe("trace", () => {
     // The real specification's rows all parse, and the one range with a gap is reported.
     const real = parseThreats(readFileSync("doc/TINY_OIDC_SPEC.md", "utf8"));
     expect(real).toHaveLength(25);
+    expect(real.flatMap((t) => t.unparsable)).toEqual([]);
     expect(real.find((t) => t.id === "T8")?.requirements).toHaveLength(14);
     const generated = readFileSync("doc/TRACEABILITY.md", "utf8");
     expect(generated).toContain(

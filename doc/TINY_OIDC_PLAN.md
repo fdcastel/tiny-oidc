@@ -4,7 +4,7 @@
 |---|---|
 | **Source of truth for behavior** | [TINY_OIDC_SPEC.md](TINY_OIDC_SPEC.md) (283 requirement ids). This plan says *when* and *in what order*; the spec says *what*. |
 | **Last updated** | 2026-09-22 |
-| **Current focus** | `P7-05` (ADR 0011 brought up to date, awaiting the owner's signature); `P6-07` (the soak's confirmation run); `P4-08` (Google registered on staging, the owner's login pending); `P7-06` waits on OP-02 and the owner; `P7-05` waits on the owner's sign-off of the threat-model review; `P4-08` on OP-04; `P6-07` on the P7-04 soak; `P7-06` on OP-02 and production. |
+| **Current focus** | `P7-05` (ADR 0011 brought up to date, awaiting the owner's signature); `P6-07` (the soak's confirmation run); `P4-08` (Google registered on staging, the owner's login pending; Microsoft on OP-04); `P7-06` waits on OP-02 and the owner. |
 | **Branch model** | Direct commits to `main`; every push runs the full gate set. `production` branch is fast-forwarded for releases (spec §12.3). |
 
 ## How to keep this plan updated

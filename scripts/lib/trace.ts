@@ -330,6 +330,8 @@ export interface ThreatRow {
   id: string;
   threat: string;
   requirements: string[];
+  /** Tokens of the Requirements column the parser could not read (an em dash, a space, a lowercase prefix): no evidence is derived from them. */
+  unparsable: string[];
 }
 
 /**
@@ -347,15 +349,19 @@ export function parseThreats(markdown: string): ThreatRow[] {
     const m = /^\| (T\d+) \| ([^|]*) \| [^|]* \| ([^|]*) \|/.exec(line);
     if (!m) continue;
     const requirements: string[] = [];
+    const unparsable: string[] = [];
     for (const token of (m[3] as string).split(/,\s*/)) {
       const r = /^([A-Z]+)-(\d+)(?:[–-]([A-Z]+)-(\d+))?$/.exec(token.trim());
-      if (!r) continue;
+      if (!r) {
+        if (token.trim() !== "") unparsable.push(token.trim());
+        continue;
+      }
       if (r[3] !== undefined) {
         for (let n = Number(r[2]); n <= Number(r[4]); n++)
           requirements.push(`TIO-${r[1]}-${String(n).padStart(3, "0")}`);
       } else requirements.push(`TIO-${r[1]}-${r[2]}`);
     }
-    rows.push({ id: m[1] as string, threat: (m[2] as string).trim(), requirements });
+    rows.push({ id: m[1] as string, threat: (m[2] as string).trim(), requirements, unparsable });
   }
   return rows;
 }
