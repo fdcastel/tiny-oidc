@@ -214,6 +214,9 @@ jobs:
       TIO_PERF_CLIENT_ID: ${{ secrets.TIO_STAGING_CLIENT_ID }}
       TIO_PERF_CLIENT_SECRET: ${{ secrets.TIO_STAGING_CLIENT_SECRET }}
       TIO_PERF_SEED: ${{ vars.TIO_PERF_SEED || '1' }}
+      # The soak rotates the harvested families for two hours; with a small population every
+      # family is rotated hundreds of times, which is what the per-user storage check wants.
+      TIO_PERF_HARVEST: ${{ vars.TIO_PERF_HARVEST || '40000' }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -224,7 +227,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: grafana/setup-k6-action@v1
       - name: Harvest the soak's tokens
-        run: node perf/seed.ts harvest --count 40000 --rate 50 --report perf/data/soak-harvest.json
+        run: node perf/seed.ts harvest --count "$TIO_PERF_HARVEST" --rate 50 --report perf/data/soak-harvest.json
       - name: k6 soak_refresh (2 h at 100/s)
         run: TIO_PERF_SUMMARY=perf/data/soak_refresh.summary.json k6 run perf/scenarios/soak_refresh.js
       - name: Load summary
