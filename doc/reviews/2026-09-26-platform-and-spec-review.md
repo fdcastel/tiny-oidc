@@ -9,7 +9,7 @@ proposal becomes an ADR and a plan row when the owner decides it.
 | Status | |
 |---|---|
 | Done | Privacy fix (P7-10, ADR 0020, commit `c9299ec`) |
-| Proposed | ADR 0019 (audit capacity), to be rewritten as "audit storage and telemetry" after the Pipelines test (§7) |
+| Proposed | ADR 0019 (audit capacity), to be rewritten as "audit storage and telemetry" after the owner decides on §7's recommendation |
 | Pending | The owner's decisions in §8 |
 
 ## 1. Summary
@@ -30,9 +30,15 @@ proposal becomes an ADR and a plan row when the owner decides it.
     DuckLake.
   - A small D1 table keeps only the events the API reads back.
 
-  Estimated at **~$360–620 a month** (§5, §6). Pipelines is in open beta and
-  its failure behaviour is undocumented, so it is tested before anything is
-  decided (§7).
+  Estimated at **~$360–620 a month** with Pipelines, or **~$570–830** on the
+  generally available path recommended for v1 (§5, §6, §7). Both are at the
+  target scale; at today's traffic either costs close to nothing.
+- **Pipelines was tested (§7) and is not ready to be the only path for the
+  audit record.** Its `send()` resolves and the events are still lost in two
+  cases, one of them an ordinary pipeline change. For v1 the same design runs
+  on the generally available path: the queue, one R2 object per consumer
+  batch, and the bucket lock. Pipelines is reconsidered later under three
+  conditions.
 - **The specification promised properties nothing enforced.** Erasure,
   "immutable" archive objects, capacity figures and per-user storage bounds
   were among them. The privacy part is fixed (ADR 0020); the rest are listed
@@ -193,7 +199,7 @@ Verified on 2026-09-26 unless marked; sources in §9.
 
 | Our need | Candidate | Status | Verdict | Why |
 |---|---|---|---|---|
-| Audit record | **Pipelines → R2 sink (Parquet, zstd, `year=/month=/day=`)** | Open beta, billed since 2026-08-03 | **Adopt, after §7** | Ingest free. Sinks $0.06/GB of uncompressed Parquet after 50 GB, so ~$3–10 a month. Sinks are "exactly-once" and one stream can feed several sinks. Rejection behaviour of `send()` is undocumented; invalid events are "accepted but dropped". |
+| Audit record | **Pipelines → R2 sink (Parquet, zstd, `year=/month=/day=`)** | Open beta, billed since 2026-08-03 | **Not for v1 (§7)** | Tested: silent loss while no pipeline reads the stream (90 %, reproduced) and for schema-invalid events; no deduplication; 0.7–2.3 s per call. Ingest free. Sinks $0.06/GB of uncompressed Parquet after 50 GB, so ~$3–10 a month. Sinks are "exactly-once" and one stream can feed several sinks. Rejection behaviour of `send()` is undocumented; invalid events are "accepted but dropped". |
 | Write-once archive | **R2 bucket lock** (+ move to Infrequent Access after 90 days) | Available | **Adopt** | Prevents delete and overwrite for an age, a date or indefinitely, above lifecycle rules. The Worker's binding cannot lift it; an account admin can. |
 | Querying the archive | **DuckDB over `r2://` with a read-only token** | DuckDB 1.5.5 | **Adopt** | Hive-partition pruning on the paths. No catalog, no maintenance, compatible with the lock. Runs on an operator machine or a Container. |
 | | Iceberg + R2 Data Catalog + R2 SQL | Public / open beta | **No** | Maintenance deletes files (conflicts with the lock). R2 SQL has no Worker binding and needs an admin-scoped token. |
@@ -279,7 +285,10 @@ flowchart LR
   classDef changed fill:#fff4cc,stroke:#b58900,color:#3d3000
 ```
 
-Green is new and yellow is changed. What changes:
+Green is new and yellow is changed. The diagram shows the Pipelines variant.
+For v1, §7 recommends the generally available path instead: no stream; the
+queue carries every event, and the consumer writes one locked object per
+consumer batch. Everything else is the same. What changes:
 - **Every audit event goes to Pipelines**, so it reaches the locked R2 bucket
   as Parquet.
 - **Only the hot types also travel the queue into `audit_hot`**, as ADR 0019
@@ -316,32 +325,89 @@ Green is new and yellow is changed. What changes:
 | Pro plan, if the WAF rule is adopted | $20–25 |
 | **Total** | **~$360–620** |
 
-Against ~$2,400–5,200 today. The per-refresh write target (M1) is the least
+On the generally available path recommended for v1 (§7), the Pipelines line
+becomes ~$210 of queue operations and the total ~$570–830. Either way it is
+against ~$2,400–5,200 today. The per-refresh write target (M1) is the least
 certain line, until staging measures it.
 
-## 7. Before deciding on Pipelines: testing `send()`
+## 7. Testing `send()` (run 2026-09-26, 21:02–21:11 UTC)
 
 The documentation says only that `send()` "resolves when records are
-confirmed as ingested". It says nothing about rejection, retries, duplicates
-or buffer retention. Invalid events are "accepted but dropped". The test runs
-on the Cloudflare account with a throw-away stream, sink and bucket, from a
-throw-away Worker:
-1. A valid batch, and a count of what lands in R2.
-2. Events that break the stream's schema: resolved or rejected, and what
-   lands.
-3. Oversized requests (5 MB) and oversized events.
-4. A burst above 5 MB/s per stream.
-5. `send()` against a deleted stream.
-6. A batch repeated after a failure, to see whether duplicates land.
-7. The time from `send()` to a readable object at the minimum roll interval.
+confirmed as ingested". So it was tested on the Cloudflare account.
+- **Resources:** a throw-away stream with an audit-event schema (`id`, `ts`,
+  `type`, `outcome` required; `user_id`, `data` optional), a JSON R2 sink
+  with a 10-second roll, a pipeline `INSERT INTO sink SELECT * FROM stream`,
+  and a probe Worker. All were deleted afterwards. The emptied bucket goes
+  once a one-day lifecycle rule has cleared the sink's incomplete uploads.
+- **Method:** every event carried a run tag. What landed was counted by
+  reading every object in the bucket.
 
-The results will be recorded here, and the decision on Pipelines follows
-them.
+| Case | `send()` | Landed in R2 |
+|---|---|---|
+| 100 valid events (twice) | resolved in 1.6–2.0 s | 100 / 100, each time |
+| Empty array | **rejected**: `Input data is invalid. Must be an array of object(s)` | — |
+| Value that cannot be JSON (a BigInt) | **rejected**: `Input data is invalid. Must be valid UTF-8 JSON` | — |
+| One event of 6 MB | **rejected**: `Individual message must not exceed 1 MB` (a limit the docs do not state) | — |
+| 50 events missing a required field | **resolved** | **0: dropped silently** |
+| 50 events with a wrong type | **resolved** | **0: dropped silently** |
+| 20 valid + 20 invalid in one call | resolved | 20: invalid records dropped one by one |
+| 4.5 MB in one call | resolved | 45 / 45 |
+| 6 MB in one call (documented limit: 5 MB) | resolved | 60 / 60 |
+| 40 concurrent calls of ~1 MB (40 MB in 2.2 s; documented: 5 MB/s per stream) | 40 / 40 resolved | 400 / 400 |
+| The same batch twice | resolved twice | **every id twice**: no deduplication |
+| **Pipeline deleted, stream kept**, 10 events | **resolved** | **1 of 10** after the pipeline was recreated |
+| Same, repeated: 3 calls of 10 over a one-minute gap | **resolved ×3** | **3 of 30**: one per call |
+| Stream deleted | **rejected**: `Stream does not exist` (205 ms, then 16 ms) | — |
+
+Other observations:
+- **Every accepted call took 0.7–2.3 s.**
+- **Arrival in R2:** ~18 s after `send()` when the pipeline is warm; 36–68 s
+  for the first file of a new pipeline.
+- **No time partitions.** Files were written as `audit/<uuid-v7>.json`,
+  although the sink's creation summary reported
+  `Partitioning: year=%Y/month=%m/day=%d`. The Parquet format was not tested.
+- **Rejections are ordinary `Error`s** with a `remote` property.
+
+**What this means for an audit record**
+1. **When `send()` rejects, the message is clear**, and a fallback (the queue)
+   can catch it.
+2. **In two cases `send()` resolves and the events are still lost**, with no
+   signal to the caller:
+   - Events that do not match the stream's schema. This is preventable: the
+     Worker validates each event against the same schema before sending.
+   - **Events sent while no pipeline reads the stream: 90 % lost, reproduced
+     twice.** The stream did not buffer them for the next pipeline. A pipeline's
+     SQL cannot be changed, only deleted and recreated, so an ordinary change
+     opens exactly this window.
+   - Whether adding the new pipeline *before* deleting the old one (one stream
+     may feed several pipelines) avoids the loss was not tested.
+3. **Duplicates reach the archive** whenever a batch is retried, so readers
+   deduplicate by event `id`, as §6 already assumes.
+4. **The call is slow** (0.7–2.3 s), so it belongs in `waitUntil`, never on
+   the response path.
+
+**Recommendation.**
+- **Do not make Pipelines the only path for the audit record in v1.**
+- **Ship v1 on the generally available path:** the queue, one R2 object per
+  consumer *batch* (not per message), a bucket lock, and the D1 hot subset.
+- At today's traffic its cost is near zero. The ~$208 a month for queue
+  operations appears only near the §2.7 target, and ~$4.50 for R2 writes
+  replaces the ~$779 of today's per-message objects.
+- **Reconsider Pipelines** when it is generally available, or when traffic
+  makes the queue line matter. That requires three things first:
+  1. a test that make-before-break pipeline changes lose nothing;
+  2. in-Worker schema validation;
+  3. a daily reconciliation that compares the archive's counts per type with
+     the Analytics Engine counts (TIO-OBS-002) and alerts on a gap.
+- **Either way,** DuckDB remains the query tool: the consumer writes
+  zstd-compressed Parquet or gzip NDJSON under `year=/month=/day=` keys it
+  chooses itself.
 
 ## 8. Decisions for the owner
 
-1. **Pipelines for v1**, after §7. Otherwise the generally available fallback:
-   the queue with one R2 object per consumer batch, and a lock.
+1. **The audit transport for v1.** Recommended after §7: the generally
+   available path (queue, one R2 object per consumer batch, bucket lock, D1 hot
+   subset), with Pipelines reconsidered later under the three conditions of §7.
 2. **Edge controls:** the Pro plan (WAF rule), Access on the Admin API,
    Turnstile on invitation redemption and auto-create — each yes or no.
 3. **Order of the remaining work.** Proposed:
@@ -395,7 +461,6 @@ All pages read on 2026-09-26; "updated" is the page's own date.
   - File formats: duckdb.org/docs/current/guides/performance/file_formats.
   - DuckLake 1.0 and `ducklake_add_data_files`: ducklake.select, ducklake.select/docs/stable/duckdb/metadata/adding_files.
 - **Unverified at the time of writing:**
-  - What a rejected `send()` does (§7 tests it).
   - Whether a Pipelines `SELECT *` counts as a transform.
   - R2 SQL latency.
   - Whether Durable Object index writes count as rows written.
