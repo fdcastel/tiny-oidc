@@ -1,4 +1,5 @@
 import { runInDurableObject } from "cloudflare:test";
+import { env as workers } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
@@ -6,6 +7,7 @@ import { deleteClient } from "../../src/db/clients.ts";
 import { Db } from "../../src/db/db.ts";
 import { insertGroup } from "../../src/db/groups.ts";
 import { lookupIdentity } from "../../src/db/identities.ts";
+import { consumeInvitation } from "../../src/db/invitations.ts";
 import { writeSettings } from "../../src/db/settings.ts";
 import {
   getUser,
@@ -137,7 +139,7 @@ describe("POST /api/v1/admin/users and GET /users/{id}", () => {
         target: detail.id,
         identities: 1,
         diff: {
-          email: { from: null, to: "New@Example.com" },
+          email: { changed: true },
           groups: { from: null, to: ["staff"] },
         },
       },
@@ -226,7 +228,8 @@ describe("PATCH /api/v1/admin/users/{id}", () => {
     expect(lastEvent("user.updated")).toMatchObject({
       actor: { kind: "admin", id: rootId },
       user_id: id,
-      data: { diff: { display_name: { from: "Alice", to: "Renamed" } } },
+      // A person's name is recorded as changed, never by value (ADR 0020).
+      data: { diff: { display_name: { changed: true } } },
     });
     // A new email is unverified unless the administrator says otherwise (TIO-DATA-008 c).
     const moved = (await (
@@ -456,6 +459,99 @@ describe("disable, enable and delete", () => {
       ).status,
     ).toBe(503);
     expect((await getUser(db, stuck.profile.id))?.status).toBe("deleting");
+  });
+});
+
+describe("erasure (TIO-PRIV-002)", () => {
+  it("[TIO-PRIV-002] [TIO-DATA-010] [TIO-ADMIN-002] after deletion a person's email and name remain in no D1 table, no audit event and no log line; admin diffs record them as changed only", async () => {
+    const EMAIL = "Erase.Me.Canary@Example.com";
+    const NAME = "Erase Me Canary";
+    const RENAMED = "Erase Me Renamed";
+    const created = await call("POST", "users", {
+      email: EMAIL,
+      email_verified: true,
+      display_name: NAME,
+    });
+    expect(created.status).toBe(201);
+    const id = ((await created.json()) as Detail).id;
+    expect(lastEvent("user.created").data["diff"]).toMatchObject({
+      email: { changed: true },
+      display_name: { changed: true },
+      email_verified: { from: null, to: true },
+    });
+    expect((await call("PATCH", `users/${id}`, { display_name: RENAMED })).status).toBe(200);
+    expect(lastEvent("user.updated").data["diff"]).toEqual({ display_name: { changed: true } });
+    // An invitation made out to the person and redeemed by the account carries both values.
+    const invited = await call("POST", "invitations", {
+      kind: "register",
+      email: EMAIL,
+      display_name: NAME,
+    });
+    expect(invited.status).toBe(201);
+    const invitation = (await invited.json()) as { id: string };
+    expect(await consumeInvitation(db, invitation.id, id, clock.now())).toBe(true);
+
+    expect((await call("DELETE", `users/${id}`)).status).toBe(204);
+    const values = [EMAIL, EMAIL.toLowerCase(), NAME, RENAMED];
+    // Every D1 table, with whatever the queue has delivered to audit_hot so far.
+    const tables = (
+      await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name <> 'd1_migrations'",
+      ).all<{ name: string }>()
+    ).results;
+    expect(tables.map((t) => t.name)).toEqual(
+      expect.arrayContaining(["users", "invitations", "audit_hot"]),
+    );
+    for (const { name } of tables) {
+      const rows = JSON.stringify((await env.DB.prepare(`SELECT * FROM "${name}"`).all()).results);
+      for (const value of values) expect(rows, `${name} keeps ${value}`).not.toContain(value);
+    }
+    // Every audit event is also a log line: nothing the queue, the archive or the logs received.
+    const logged = JSON.stringify(h.lines);
+    for (const value of values) expect(logged, value).not.toContain(value);
+  });
+
+  it("[TIO-PRIV-002] migration 0009 turns the email and name values of earlier user diffs into changed-only entries and leaves other events alone", async () => {
+    const legacy = {
+      target: "u-legacy",
+      diff: {
+        display_name: { from: "Old Name", to: "New Name" },
+        email: { from: null, to: "legacy@example.com" },
+        email_norm: { from: null, to: "legacy@example.com" },
+        groups: { from: null, to: ["staff"] },
+      },
+    };
+    const upstream = { target: "idp", diff: { display_name: { from: "IdP", to: "IdP 2" } } };
+    const insert = (rowId: string, type: string, data: unknown) =>
+      env.DB.prepare(
+        "INSERT INTO audit_hot (id, ts, type, outcome, actor_kind, actor_id, user_id, client_id, upstream, ip_hash, data) VALUES (?, ?, ?, 'success', 'admin', 'a', NULL, NULL, NULL, NULL, ?)",
+      ).bind(rowId, clock.now(), type, JSON.stringify(data));
+    await env.DB.batch([
+      insert("m9-user", "user.updated", legacy),
+      insert("m9-upstream", "upstream.updated", upstream),
+    ]);
+    const migration = workers.TEST_MIGRATIONS.find((m) => m.name.startsWith("0009_"));
+    const scrubs = (migration?.queries ?? []).filter((q) => q.includes("UPDATE audit_hot"));
+    expect(scrubs).toHaveLength(3);
+    for (const query of scrubs) await env.DB.prepare(query).run();
+    const dataOf = async (rowId: string) =>
+      JSON.parse(
+        (
+          await env.DB.prepare("SELECT data FROM audit_hot WHERE id = ?")
+            .bind(rowId)
+            .first<{ data: string }>()
+        )?.data ?? "null",
+      );
+    expect(await dataOf("m9-user")).toEqual({
+      target: "u-legacy",
+      diff: {
+        display_name: { changed: true },
+        email: { changed: true },
+        email_norm: { changed: true },
+        groups: { from: null, to: ["staff"] },
+      },
+    });
+    expect(await dataOf("m9-upstream")).toEqual(upstream);
   });
 });
 

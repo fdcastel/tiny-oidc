@@ -1,6 +1,7 @@
 // The bounded diff an admin mutation records (TIO-ADMIN-002): which fields
-// changed and how, never a secret (TIO-ADMIN-003, TIO-AUDIT-002), never
-// more than a screenful.
+// changed and how, never a secret (TIO-ADMIN-003, TIO-AUDIT-002), never a
+// person's email or name (TIO-PRIV-002: audit records outlive the account and
+// reference its random id only), never more than a screenful.
 
 /** Fields whose values never reach an audit record; only the fact that they changed does. */
 export const SECRET_FIELDS: ReadonlySet<string> = new Set([
@@ -15,6 +16,18 @@ export const SECRET_FIELDS: ReadonlySet<string> = new Set([
   "public_key",
   "token",
   "token_hash",
+]);
+
+/**
+ * The fields of a user record that identify a person; a user event's diff
+ * records only the fact that they changed (ADR 0020). The archive keeps events
+ * for a year and cannot be edited, so a value recorded there would survive the
+ * account's erasure. Other records (an upstream's `display_name`) keep theirs.
+ */
+export const PERSONAL_FIELDS: ReadonlySet<string> = new Set([
+  "email",
+  "email_norm",
+  "display_name",
 ]);
 
 export const MAX_DIFF_FIELDS = 32;
@@ -34,11 +47,13 @@ function bounded(value: unknown): unknown {
 
 /**
  * The fields that differ between two records (`null` for "absent": a creation
- * or a deletion), in key order, capped at MAX_DIFF_FIELDS entries.
+ * or a deletion), in key order, capped at MAX_DIFF_FIELDS entries; secret
+ * fields, and the `masked` ones, as changed without their values.
  */
 export function boundedDiff(
   before: Record_ | null,
   after: Record_ | null,
+  masked: ReadonlySet<string> = new Set(),
 ): Record<string, FieldChange> {
   const keys = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])].sort();
   const diff: Record<string, FieldChange> = {};
@@ -51,9 +66,10 @@ export function boundedDiff(
       diff["…"] = { changed: true };
       break;
     }
-    diff[key] = SECRET_FIELDS.has(key)
-      ? { changed: true }
-      : { from: bounded(from), to: bounded(to) };
+    diff[key] =
+      SECRET_FIELDS.has(key) || masked.has(key)
+        ? { changed: true }
+        : { from: bounded(from), to: bounded(to) };
     count++;
   }
   return diff;

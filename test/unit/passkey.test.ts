@@ -12,6 +12,7 @@ import {
   registrationOptions,
   verifyAssertionSignature,
   verifyRegistration,
+  withoutQuotedValues,
 } from "../../src/auth/passkey.ts";
 import { encodeBase64Url } from "../../src/util/base64url.ts";
 import {
@@ -204,13 +205,14 @@ describe("registration verification", () => {
     expect(stored.ok && stored.passkey.transports).toEqual([]);
   });
 
-  it("[TIO-PK-012] [TIO-PK-002] rejects the wrong type, challenge, origin, RP ID, a clear UP or UV flag, malformed input and unsupported algorithms", async () => {
+  it("[TIO-PK-012] [TIO-PK-002] [TIO-AUDIT-002] rejects the wrong type, challenge, origin, RP ID, a clear UP or UV flag, malformed input and unsupported algorithms; the reason quotes no challenge or origin", async () => {
     const authenticator = new VirtualAuthenticator();
     const options = creation();
     const expected = { challenge: options.challenge, origins: ORIGINS, rpId: RP_ID };
+    const forged = newChallenge();
     const cases: Record<string, Parameters<VirtualAuthenticator["register"]>[2]> = {
       type: { type: "webauthn.get" },
-      challenge: { challenge: newChallenge() },
+      challenge: { challenge: forged },
       origin: { origin: "https://evil.example.net" },
       rpId: { rpId: "evil.example.net" },
       userPresent: { userPresent: false },
@@ -218,12 +220,21 @@ describe("registration verification", () => {
     };
     for (const [name, faults] of Object.entries(cases)) {
       const response = await authenticator.register(options, ORIGIN, faults);
-      expect(await verifyRegistration(response, expected), name).toMatchObject({
+      const verified = await verifyRegistration(response, expected);
+      expect(verified, name).toMatchObject({
         ok: false,
         error: "passkey_verification_failed",
         reason: expect.stringMatching(/^[A-Za-z]+: /),
       });
+      // The reason is logged; the library's message quoted both challenges and the origin.
+      const reason = verified.ok ? "" : verified.reason;
+      for (const leaked of [options.challenge, forged, "evil.example.net"]) {
+        expect(reason, name).not.toContain(leaked);
+      }
     }
+    expect(withoutQuotedValues('Unexpected challenge "abc", expected "def"')).toBe(
+      'Unexpected challenge "…", expected "…"',
+    );
     const malformed = {
       ok: false,
       error: "passkey_verification_failed",

@@ -221,10 +221,17 @@ export function updateUserMirrorStatement(db: Db, id: string, mirror: UserMirror
     );
 }
 
-/** Removes the row; index rows, memberships and bound invitations cascade (TIO-DATA-010). */
+/**
+ * Removes the row; index rows, memberships and bound invitations cascade, and
+ * the invitations the user redeemed go with it: they carry the email and name
+ * they were made for (TIO-DATA-010, TIO-PRIV-002).
+ */
 export async function deleteUserRow(db: Db, id: string): Promise<boolean> {
-  const result = await db.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
-  return result.meta.changes === 1;
+  const [result] = await db.batch([
+    db.prepare("DELETE FROM users WHERE id = ?").bind(id),
+    db.prepare("DELETE FROM invitations WHERE used_by_user_id = ?").bind(id),
+  ]);
+  return result?.meta.changes === 1;
 }
 
 /** Statements replacing a user's `passkey_index` rows with `credentialIds` (reindex). */

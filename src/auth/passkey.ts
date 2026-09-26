@@ -143,8 +143,9 @@ export async function verifyRegistration(
       supportedAlgorithmIDs: [...SUPPORTED_ALGORITHMS],
     });
   } catch (error) {
-    // The library throws Errors; String() keeps the message and adds the name.
-    return rejected(String(error));
+    // The library throws Errors whose messages quote the expected and received challenge and
+    // origin; the reason reaches the logs, so quoted values are elided (TIO-AUDIT-002).
+    return rejected(withoutQuotedValues(String(error)));
   }
   // With format `none` the library either throws or verifies, so the info is always present.
   const info = verification.registrationInfo as NonNullable<typeof verification.registrationInfo>;
@@ -172,6 +173,11 @@ export async function verifyRegistration(
       backed_up: info.credentialBackedUp,
     },
   };
+}
+
+/** A library message with every quoted value replaced by an ellipsis. */
+export function withoutQuotedValues(message: string): string {
+  return message.replace(/"[^"]*"/g, '"…"');
 }
 
 function rejected(reason: string): VerifiedRegistration {

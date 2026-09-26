@@ -167,11 +167,16 @@ export async function listInvitationsPage(
   return rows.results.map(decode);
 }
 
-/** Removes invitations that expired before `cutoff` (TIO-CFG-010); returns how many went. */
-export async function deleteExpiredInvitations(db: Db, cutoff: number): Promise<number> {
+/**
+ * Removes invitations that expired or were used before `cutoff` (§4.7,
+ * TIO-CFG-010): a used invitation still carries the email and name it was
+ * made for, so it goes 30 days after use, not after its expiry. Returns how
+ * many went.
+ */
+export async function deleteSpentInvitations(db: Db, cutoff: number): Promise<number> {
   const result = await db
-    .prepare("DELETE FROM invitations WHERE expires_at < ?")
-    .bind(cutoff)
+    .prepare("DELETE FROM invitations WHERE expires_at < ? OR used_at < ?")
+    .bind(cutoff, cutoff)
     .run();
   return result.meta.changes;
 }

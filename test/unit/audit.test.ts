@@ -4,6 +4,7 @@ import {
   boundedDiff,
   MAX_DIFF_FIELDS,
   MAX_DIFF_VALUE_CHARS,
+  PERSONAL_FIELDS,
   SECRET_FIELDS,
 } from "../../src/audit/diff.ts";
 import { Auditor, MAX_DATA_BYTES } from "../../src/audit/events.ts";
@@ -90,7 +91,7 @@ describe("Auditor", () => {
 });
 
 describe("boundedDiff", () => {
-  it("[TIO-ADMIN-002] [TIO-ADMIN-003] records only changed fields, marks secret fields as changed without their values, shortens long values and caps the number of fields", () => {
+  it("[TIO-ADMIN-002] [TIO-ADMIN-003] [TIO-PRIV-002] records only changed fields, marks secret fields and a user record's personal fields as changed without their values, shortens long values and caps the number of fields", () => {
     const before = {
       client_name: "Old",
       redirect_uris: ["https://a.example.com/cb"],
@@ -127,6 +128,28 @@ describe("boundedDiff", () => {
     for (const field of SECRET_FIELDS) {
       expect(JSON.stringify(boundedDiff({ [field]: "s1" }, { [field]: "s2" }))).not.toContain("s1");
     }
+    // A user record's personal fields are recorded as changed, never by value (ADR 0020);
+    // the same names on another record keep their values.
+    const person = boundedDiff(
+      { email: "old@example.com", email_norm: "old@example.com", display_name: "Old", groups: [] },
+      {
+        email: "new@example.com",
+        email_norm: "new@example.com",
+        display_name: "New",
+        groups: ["x"],
+      },
+      PERSONAL_FIELDS,
+    );
+    expect(person).toEqual({
+      display_name: { changed: true },
+      email: { changed: true },
+      email_norm: { changed: true },
+      groups: { from: [], to: ["x"] },
+    });
+    expect(JSON.stringify(person)).not.toMatch(/example.com|Old|New/);
+    expect(boundedDiff({ display_name: "Idp" }, { display_name: "IdP 2" })).toEqual({
+      display_name: { from: "Idp", to: "IdP 2" },
+    });
     // Creation and deletion diff against nothing.
     expect(boundedDiff(null, { name: "x" })).toEqual({ name: { from: null, to: "x" } });
     expect(boundedDiff({ name: "x" }, null)).toEqual({ name: { from: "x", to: null } });

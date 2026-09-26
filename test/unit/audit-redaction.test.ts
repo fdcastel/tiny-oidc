@@ -68,16 +68,11 @@ describe("audit redaction", () => {
     }
     a.flush(logger);
     const serialized = `${JSON.stringify(a.events)}\n${JSON.stringify(lines)}`;
+    // Every canary is gone entirely; an address is masked even inside a diff (ADR 0020).
     for (const [name, canary] of Object.entries(CANARIES)) {
-      // The subject's own email may travel in a diff; every other canary is gone entirely.
-      if (name === "email") continue;
       expect(serialized, name).not.toContain(canary);
     }
-    // Outside a diff the address is masked; inside one it is the subject's own (TIO-AUDIT-002).
-    for (const event of a.events) {
-      const { diff: _diff, ...rest } = event.data;
-      expect(JSON.stringify(rest), event.type).not.toContain("canaryperson");
-    }
+    expect(serialized).not.toContain("canaryperson");
     expect(serialized).toContain("c***@victim.example");
     // What was dropped is reported once per event, never shipped.
     expect(a.dropped.every((d) => d.keys.includes("smuggled"))).toBe(true);
@@ -86,7 +81,7 @@ describe("audit redaction", () => {
     );
   });
 
-  it("[TIO-AUDIT-002] keeps what is harmless: identifiers, words, numbers, URLs, prefixed key thumbprints, and the subject's email inside a diff", () => {
+  it("[TIO-AUDIT-002] keeps what is harmless: identifiers, words, numbers, URLs and prefixed key thumbprints; masks an address even inside a diff", () => {
     const kept = {
       target: "kid:5nXwHJ6l0nYqRk6Y2Jq6kU2fF8hE7XuT0qkZJ0m8fQw",
       kid: "kid:5nXwHJ6l0nYqRk6Y2Jq6kU2fF8hE7XuT0qkZJ0m8fQw",
@@ -97,9 +92,14 @@ describe("audit redaction", () => {
       ok: true,
       nothing: null,
       reason: "upstream:access_denied",
-      diff: { email: { from: "old@example.com", to: "new@example.com" } },
+      diff: { display_name: { from: "Example IdP", to: "Example (renamed)" } },
     };
     expect(redactData(kept)).toEqual(kept);
+    expect(
+      redactData({ diff: { email: { from: "old@example.com", to: "new@example.com" } } }),
+    ).toEqual({
+      diff: { email: { from: "o***@example.com", to: "n***@example.com" } },
+    });
     expect(redactData({ jti: "01922e4a-1f5e-7c3d-8a9b-0c1d2e3f4a5b" })).toEqual({
       jti: "01922e4a-1f5e-7c3d-8a9b-0c1d2e3f4a5b",
     });

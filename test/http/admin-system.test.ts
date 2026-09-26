@@ -4,6 +4,7 @@ import { sealedUnderVersion, sealSecret } from "../../src/crypto/secretbox.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { Db } from "../../src/db/db.ts";
 import { insertIdentityStatement } from "../../src/db/identities.ts";
+import { consumeInvitation, getInvitation } from "../../src/db/invitations.ts";
 import { listSigningKeys } from "../../src/db/keys.ts";
 import { writeSettings } from "../../src/db/settings.ts";
 import { getUpstream, updateUpstreamSecrets } from "../../src/db/upstreams.ts";
@@ -248,7 +249,7 @@ describe("settings", () => {
 });
 
 describe("stats and maintenance", () => {
-  it("[TIO-CFG-010] [TIO-CRYPTO-011] the purge runs the cron body once: old audit rows, expired invitations, creating and deleting users, key retirement and re-encryption; stats reflect the state", async () => {
+  it("[TIO-CFG-010] [TIO-CRYPTO-011] [TIO-PRIV-002] the purge runs the cron body once: old audit rows, invitations 30 days after expiry or use, creating and deleting users, key retirement and re-encryption; stats reflect the state", async () => {
     // An invitation that expires long before the run; 31 days on it is beyond its grace.
     const expired = await createInvitation(
       db,
@@ -266,7 +267,31 @@ describe("stats and maintenance", () => {
       clock,
     );
     if (!expired.ok) throw new Error(expired.error);
+    // Invitations still valid but used: one 31 days before the run (it carries the email it
+    // was made for, so it goes, §4.7), one at the run (it stays).
+    const invite = async (email: string) => {
+      const made = await createInvitation(
+        db,
+        testKeys(),
+        {
+          kind: "register",
+          user_id: null,
+          email,
+          email_verified: true,
+          display_name: null,
+          groups: [],
+          expires_in: 90 * 86_400,
+          created_by: "test",
+        },
+        clock,
+      );
+      if (!made.ok) throw new Error(made.error);
+      expect(await consumeInvitation(db, made.invitation.id, "someone", clock.now())).toBe(true);
+      return made.invitation.id;
+    };
+    const usedLongAgo = await invite("used-long-ago@example.com");
     clock.advance(31 * 86_400);
+    const usedNow = await invite("used-now@example.com");
     await relogin();
     // Old and fresh audit rows, users stuck mid-creation and mid-deletion.
     const insertAudit = (id: string, ts: number) =>
@@ -339,8 +364,10 @@ describe("stats and maintenance", () => {
     const report = (await purged.json()) as Record<string, unknown>;
     expect(report["audit_rows_purged"]).toBeGreaterThanOrEqual(2);
     expect(await auditIds()).toEqual(["a-new"]);
+    expect(await getInvitation(db, usedLongAgo)).toBeNull();
+    expect(await getInvitation(db, usedNow)).not.toBeNull();
     expect(report).toMatchObject({
-      invitations_deleted: 1,
+      invitations_deleted: 2,
       users_repaired: 1,
       users_dropped: 1,
       users_deleted: 1,

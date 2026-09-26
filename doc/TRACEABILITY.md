@@ -241,7 +241,7 @@ Current phase: 7. Requirements: 286 (ci: 19, conformance: 2, covered: 243, load:
 | TIO-KEYS-015 | §10.3 | test | 1 | covered | test/component/keystore.test.ts<br>test/unit/keystore-roles.test.ts |
 | TIO-CRYPTO-020 | §10.4 | test | 0 | covered | test/unit/crypto.test.ts |
 | TIO-AUDIT-001 | §11.2 | test | 6 | covered | test/component/maintenance.test.ts<br>test/http/admin-users.test.ts<br>test/http/audit-events.test.ts<br>test/scripts/audit-catalog.test.ts<br>test/unit/audit-redaction.test.ts |
-| TIO-AUDIT-002 | §11.2 | test | 6 | covered | test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts |
+| TIO-AUDIT-002 | §11.2 | test | 6 | covered | test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts<br>test/unit/passkey.test.ts |
 | TIO-AUDIT-010 | §11.3 | test | 6 | covered | test/http/audit-endpoints.test.ts<br>test/http/audit-sink.test.ts |
 | TIO-AUDIT-011 | §11.3 | test | 6 | covered | test/http/audit-sink.test.ts |
 | TIO-AUDIT-012 | §11.3 | test | 6 | covered | test/http/audit-sink.test.ts |
@@ -250,7 +250,7 @@ Current phase: 7. Requirements: 286 (ci: 19, conformance: 2, covered: 243, load:
 | TIO-OBS-003 | §11.4 | test | 0 | covered | test/http/router.test.ts<br>test/http/wellknown.test.ts |
 | TIO-OBS-004 | §11.4 | test | 0 | covered | test/security/enumeration.test.ts<br>test/security/headers.test.ts |
 | TIO-PRIV-001 | §11.5 | test | 3 | covered | test/scripts/privacy.test.ts |
-| TIO-PRIV-002 | §11.5 | test | 3 | covered | test/http/admin-users.test.ts |
+| TIO-PRIV-002 | §11.5 | test | 3 | covered | test/http/admin-system.test.ts<br>test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
 | TIO-CFG-001 | §12.1 | ci | — | ci | test/scripts/lint-rules.test.ts |
 | TIO-CFG-002 | §12.1 | test | 0 | covered | test/http/router.test.ts<br>test/unit/env.test.ts |
 | TIO-CFG-003 | §12.2 | test | 3 | covered | test/component/settings.test.ts<br>test/http/admin-system.test.ts<br>test/unit/env.test.ts |
@@ -314,7 +314,7 @@ The test files behind every row of the threat model (§15), through the requirem
 | T13 Client impersonation | 3 | test/component/client-auth.test.ts<br>test/http/par.test.ts<br>test/http/token.test.ts |  |
 | T14 Denial of service / brute force | 5 | test/http/admin-auth.test.ts<br>test/http/interactions.test.ts<br>test/http/me.test.ts<br>test/http/par.test.ts<br>test/http/passkey-interaction.test.ts<br>test/http/router.test.ts<br>test/http/token.test.ts<br>test/scripts/lint-rules.test.ts<br>test/security/limits.test.ts<br>test/unit/routes.test.ts |  |
 | T15 Enumeration of users, credentials, invitations | 3 | test/component/client-auth.test.ts<br>test/http/interactions.test.ts<br>test/http/passkey-interaction.test.ts |  |
-| T16 Log or audit leakage | 3 | test/http/complete.test.ts<br>test/http/router.test.ts<br>test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts |  |
+| T16 Log or audit leakage | 3 | test/http/complete.test.ts<br>test/http/router.test.ts<br>test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts<br>test/unit/passkey.test.ts |  |
 | T17 Privilege escalation to admin | 3 | test/component/clients.test.ts<br>test/concurrency/creation.test.ts<br>test/http/admin-auth.test.ts<br>test/http/admin-clients.test.ts<br>test/http/bootstrap.test.ts<br>test/security/tokens.test.ts<br>test/unit/clients.test.ts |  |
 | T18 Malicious or buggy login app | 2 | test/http/interactions.test.ts |  |
 | T19 Host-header attacks | 1 | test/http/router.test.ts<br>test/security/headers.test.ts |  |

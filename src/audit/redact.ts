@@ -3,8 +3,10 @@ import { maskEmail } from "../users/email.ts";
 // Redaction of audit payloads (spec §11, TIO-AUDIT-002): whatever an emitter
 // puts into `data` or `reason`, nothing that looks like a token, a code, a
 // handle, a secret, a hash, a challenge, a WebAuthn response, an address, a
-// user agent or another person's email reaches a sink. The allow-lists of the
-// catalog drop unknown keys first; this is the second net.
+// user agent or an unmasked email reaches a sink — not even the subject's own
+// in an admin diff, which the Admin API already records as changed only
+// (ADR 0020). The allow-lists of the catalog drop unknown keys first; this is
+// the second net.
 
 export const REDACTED = "[redacted]";
 
@@ -47,19 +49,19 @@ const IPV6 = /^(?=.*[0-9a-f])[0-9a-f]*(?::[0-9a-f]*){2,7}$/i;
 const USER_AGENT = /Mozilla\/|AppleWebKit|Chrome\/|Safari\/|Firefox\//;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function scrubString(value: string, inDiff: boolean): string {
+function scrubString(value: string): string {
   if (HANDLE.test(value) || JWT.test(value) || USER_AGENT.test(value)) return REDACTED;
   // A bare opaque string is a secret whatever its key; key thumbprints travel as `kid:<thumbprint>`.
   if (!UUID.test(value) && OPAQUE.test(value)) return REDACTED;
   if (IPV4.test(value) || IPV6.test(value)) return REDACTED;
-  // The subject's own fields travel in a diff; anyone else's address is masked (TIO-IX-021).
-  if (!inDiff && EMAIL.test(value)) return maskEmail(value) as string;
+  // Addresses are masked wherever they appear (TIO-IX-021, TIO-PRIV-002).
+  if (EMAIL.test(value)) return maskEmail(value) as string;
   return value;
 }
 
-function scrub(value: unknown, inDiff: boolean): unknown {
-  if (typeof value === "string") return scrubString(value, inDiff);
-  if (Array.isArray(value)) return value.map((item) => scrub(item, inDiff));
+function scrub(value: unknown): unknown {
+  if (typeof value === "string") return scrubString(value);
+  if (Array.isArray(value)) return value.map((item) => scrub(item));
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
@@ -67,7 +69,7 @@ function scrub(value: unknown, inDiff: boolean): unknown {
         out[k] = REDACTED;
         continue;
       }
-      out[k] = scrub(v, inDiff || k === "diff");
+      out[k] = scrub(v);
     }
     return out;
   }
@@ -76,11 +78,11 @@ function scrub(value: unknown, inDiff: boolean): unknown {
 
 /** The `data` of an event with every suspicious value replaced. */
 export function redactData(data: Record<string, unknown>): Record<string, unknown> {
-  return scrub(data, false) as Record<string, unknown>;
+  return scrub(data) as Record<string, unknown>;
 }
 
 /** A `reason` is a machine-readable word; anything that looks like more is replaced. */
 export function redactReason(reason: string | null): string | null {
   if (reason === null) return null;
-  return scrubString(reason, false);
+  return scrubString(reason);
 }

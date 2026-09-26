@@ -1,11 +1,13 @@
 import type { Context } from "hono";
-import { boundedDiff } from "../audit/diff.ts";
+import { boundedDiff, PERSONAL_FIELDS } from "../audit/diff.ts";
 import type { AuditEvent, AuditOutcome } from "../audit/events.ts";
 import type { AppEnv } from "../router/context.ts";
 import type { AdminActor } from "./auth.ts";
 
 // The audit record of an admin mutation (TIO-ADMIN-002): the acting
-// administrator, the target and a bounded, secret-free diff.
+// administrator, the target and a bounded, secret-free diff; a user record's
+// diff names the personal fields that changed without their values
+// (TIO-PRIV-002, ADR 0020).
 
 export interface AdminMutation {
   type: string;
@@ -27,7 +29,8 @@ export function auditAdmin(c: Context<AppEnv>, mutation: AdminMutation): AuditEv
   const actor = c.get("admin") as AdminActor;
   const data: Record<string, unknown> = { target: mutation.target, ...mutation.data };
   if (mutation.before !== undefined || mutation.after !== undefined) {
-    data["diff"] = boundedDiff(mutation.before ?? null, mutation.after ?? null);
+    const masked = mutation.type.startsWith("user.") ? PERSONAL_FIELDS : undefined;
+    data["diff"] = boundedDiff(mutation.before ?? null, mutation.after ?? null, masked);
   }
   return c.get("audit").emit({
     type: mutation.type,

@@ -6,7 +6,7 @@ import { UuidV7 } from "../crypto/uuid.ts";
 import { PURGE_BATCH_ROWS, purgeAuditBatch } from "../db/audit.ts";
 import type { Db } from "../db/db.ts";
 import { identitiesOfUser } from "../db/identities.ts";
-import { deleteExpiredInvitations } from "../db/invitations.ts";
+import { deleteSpentInvitations } from "../db/invitations.ts";
 import { writeSettings } from "../db/settings.ts";
 import { listSealedUpstreams, updateUpstreamSecrets } from "../db/upstreams.ts";
 import {
@@ -26,7 +26,7 @@ import { userStub } from "../users/create.ts";
 
 export const MAINTENANCE_BUDGET_MS = 20_000;
 export const PURGE_MAX_BATCHES = 10;
-export const EXPIRED_INVITATION_GRACE_SECONDS = 30 * 86_400;
+export const SPENT_INVITATION_GRACE_SECONDS = 30 * 86_400;
 /** A `creating` row older than this is re-initialized (§3.4). */
 export const CREATING_REPAIR_AFTER_SECONDS = 60;
 /** A `creating` row older than this is dropped (§3.4). */
@@ -169,9 +169,9 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
     [
       "invitations",
       async () => {
-        report.invitations_deleted = await deleteExpiredInvitations(
+        report.invitations_deleted = await deleteSpentInvitations(
           db,
-          now - EXPIRED_INVITATION_GRACE_SECONDS,
+          now - SPENT_INVITATION_GRACE_SECONDS,
         );
       },
     ],

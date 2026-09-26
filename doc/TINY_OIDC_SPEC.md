@@ -532,7 +532,7 @@ Email is an attribute, not an identifier. At consumer scale an unverified email 
 
 **[TIO-DATA-009]** Disabling a user SHALL, in one `UserDO` transaction, set `disabled_at`, revoke all sessions and refresh families, and enqueue back-channel logout for every client in every session. Tests assert that a token refresh, a code exchange, a session-hit `/authorize`, `/userinfo` and every Self-service call fail after disable.
 
-**[TIO-DATA-010]** Deleting a user SHALL revoke as in disable, delete every D1 row referencing the user (index rows, group memberships, invitations bound to the user), call `UserDO.destroy()` (`deleteAll`), and emit `user.deleted`. Audit records already archived retain the user id, which is a random UUID and identifies no person by itself.
+**[TIO-DATA-010]** Deleting a user SHALL revoke as in disable, delete every D1 row referencing the user (index rows, group memberships, invitations bound to or redeemed by the user), call `UserDO.destroy()` (`deleteAll`), and emit `user.deleted`. Audit records already archived retain the user id, which is a random UUID and identifies no person by itself.
 
 ### 3.5 Groups
 
@@ -705,6 +705,7 @@ CREATE TABLE invitations (
 );
 CREATE INDEX invitations_expires ON invitations(expires_at);
 CREATE INDEX invitations_user    ON invitations(user_id);
+CREATE INDEX invitations_used    ON invitations(used_at);
 
 CREATE TABLE settings (
   key        TEXT PRIMARY KEY,
@@ -1684,7 +1685,7 @@ For first-party apps building "security settings" screens. Authorization: a user
 
 **[TIO-ADMIN-001]** Every `/api/v1/admin/*` request SHALL require a valid `at+jwt` with scope `admin` and `aud ∋ ISSUER`. For user subjects the user SHALL currently be a member of `admins` (checked in `UserDO` on each request, not only from the token). For client subjects the client SHALL have `admin` in `scopes_allowed` and not be disabled.
 
-**[TIO-ADMIN-002]** Every admin mutation SHALL emit an audit event with `actor = {kind: "admin", id: sub}` (user id or client id), the target, and a bounded diff of changed fields (no secrets).
+**[TIO-ADMIN-002]** Every admin mutation SHALL emit an audit event with `actor = {kind: "admin", id: sub}` (user id or client id), the target, and a bounded diff of changed fields (no secrets; a user record's `email`, `email_norm` and `display_name` are recorded as `{"changed": true}` without their values, ADR 0020).
 
 **[TIO-ADMIN-003]** The Admin API SHALL never return client secrets after creation or rotation responses, never return `private_jwk`, never return upstream secrets, and never return passkey public keys or refresh-token hashes.
 
@@ -1919,7 +1920,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-AUDIT-001]** Every event type above SHALL have at least one test that triggers it and asserts the emitted event's `type`, `outcome`, `actor`, and that `data` contains only allow-listed keys for that type.
 
-**[TIO-AUDIT-002]** Audit events SHALL never contain: tokens, codes, handles, secrets, hashes of secrets, challenges, WebAuthn responses, upstream tokens, raw IP addresses, full user agents, unmasked emails of users other than the subject, or `error_description` from upstreams. A redaction test feeds every event emitter a payload seeded with canary strings and asserts none reach any sink.
+**[TIO-AUDIT-002]** Audit events SHALL never contain: tokens, codes, handles, secrets, hashes of secrets, challenges, WebAuthn responses, upstream tokens, raw IP addresses, full user agents, unmasked emails (the subject's included: TIO-PRIV-002), or `error_description` from upstreams. A redaction test feeds every event emitter a payload seeded with canary strings and asserts none reach any sink.
 
 ### 11.3 Sinks
 
@@ -1943,7 +1944,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-PRIV-001]** The OP SHALL store about a user only: id, email, verified flag, display name, groups, passkey public material and metadata, federated identifiers and the attributes the upstream provided, sessions with pseudonymized network metadata, and consent grants. No profile pictures, no addresses, no phone numbers, no free-form attributes.
 
-**[TIO-PRIV-002]** `GET /api/v1/admin/users/{id}/export` and `DELETE /api/v1/admin/users/{id}` SHALL satisfy data-portability and erasure requests; archived audit lines reference the random user id only.
+**[TIO-PRIV-002]** `GET /api/v1/admin/users/{id}/export` and `DELETE /api/v1/admin/users/{id}` SHALL satisfy data-portability and erasure requests. Audit events SHALL carry no email or display name of the person (TIO-ADMIN-002, TIO-AUDIT-002), so hot and archived audit lines, and the log lines that repeat them, reference the random user id only. After a deletion the person's email and name SHALL remain in no D1 table; the recovery copies age out within their own windows — D1 Time Travel and Durable Object point-in-time recovery 30 days, `backups/` exports 90 days (runbook §8) — and a restore from them SHALL be followed by the deletion again.
 
 ---
 
@@ -2393,6 +2394,8 @@ Each entry: what the draft said → what this spec does → why.
 35. **Improvements adopted from the references:** `kid` as the RFC 7638 thumbprint with a 512-byte header test (authenti-kate `tests/test_key_id.py`, after a PEM-derived `kid` produced a 1,702-byte header); one `capabilities.ts` constant driving validators and discovery with an equality test (authenti-kate `app/prompts.py`, `tests/test_discovery_jwks.py`); the stale-parameter requirement TIO-AUTHZ-024 (authenti-kate `authorize.py:242-249` documents the exact bug); `prompt=none` never touching the session; lazy cleanup of grants and families when a client is deleted or re-created (tinyauth reconciles consents of vanished clients, `oidc_service.go:1051-1079`; a sweep over 1,000,000 Durable Objects is impossible, so ours is lazy); no `Date.now()` outside `Clock` (authenti-kate `app/times.py`); the e2e relying party never touches OP storage (authenti-kate `tests/e2e/rp_app.py`); generated `doc/CONFIG.md` and `.dev.vars.example` with a drift check (tinyauth `gen/docs/gen_env.go` and its `git diff --exit-code` CI step); an outbound-host allow-list with a no-network test (tinyauth's default-on heartbeat to its vendor); RFC citations as a code convention; introspection and telemetry named as exclusions; the unused `RL_INTERACTION` binding removed.
 36. **Kept deliberately although a reference does it more simply:** immutable `sub` (TIO-DATA-001; tinyauth derives it from `username:client_id`); S256-only PKCE (TIO-AUTHZ-008; both accept `plain`); rolling keys with pre-publication (TIO-KEYS-012; neither rotates); Durable-Object-backed codes and state (TIO-ARCH-002; tinyauth uses in-memory caches); refresh families with reuse detection (TIO-RT-002); unknown scopes rejected (TIO-SCOPE-001; tinyauth filters silently); no request objects (TIO-DISC-003; tinyauth parses them unverified); claims gated by scope (TIO-TOKEN-030); `email_verified` only from trusted sources (TIO-DATA-008; tinyauth infers it from a non-empty email); `Secure` cookies always (TIO-SESS-001); one JWKS per issuer (TIO-KEYS-001; authenti-kate publishes a key per client); exact redirect matching (TIO-CLIENT-011; authenti-kate uses an unanchored regex); no plaintext secrets and no tokens in logs (TIO-ARCH-007, TIO-KEYS-011, TIO-TOKEN-004, TIO-AUDIT-002); remembered consent (TIO-CONSENT-001); no public dynamic registration (TIO-CLIENT-001); a blocking coverage gate (TIO-TEST-002; tinyauth's is informational); `client_secret_post` (conformance); the `account` and `admin` scopes; the bundled reference login app.
 37. **PKCE mandatory for every client** → mandatory by default, with a per-client `require_pkce = 0` for confidential clients (2026-09-20, ADR 0013). *Why:* the OpenID Foundation conformance suite sends no `code_challenge` in any module of the certification plans except its one PKCE test (verified in the suite's source), so TIO-TEST-040 and the old TIO-AUTHZ-008 could not both hold; a waiver was not available because the reason is limited to unsupported features advertised in discovery. Public clients keep the requirement (PKCE is their only binding); a confidential client's code is bound by client authentication and `nonce`; a present `code_challenge` is verified regardless; the option is a registered, audited client property rather than a test-only path (TIO-TEST-041). `POST /authorize` was added at the same time (OIDC Core §3.1.2.1 requires both methods; the suite warns without it and warnings fail a plan).
+
+38. **Admin diffs of a user record carried its email and display name, and the redaction exempted the subject's own email inside a diff** → personal fields recorded as changed only, addresses masked everywhere, redeemed invitations deleted with the user and 30 days after use (2026-09-26, ADR 0020). *Why:* the archive is kept for a year and is to be write-once; TIO-PRIV-002 promised lines referencing the random id only, and the staging hot table held an administrator-created person's address.
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 

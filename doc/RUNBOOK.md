@@ -302,6 +302,18 @@ a lost authenticator; `DELETE /users/{id}/sessions` and
 back-channel logout); `POST /users/{id}/disable` to freeze an account under
 investigation (revokes everything at once, TIO-DATA-009).
 
+**Erasure** (TIO-PRIV-002, TIO-DATA-010): `DELETE /users/{id}` removes the
+person's rows from D1 — the `users` row, the index rows, memberships and the
+invitations made out to or redeemed by them — and destroys their object. Audit
+events never carried their email or name (ADR 0020). Three recovery copies
+still hold them until they age out: D1 Time Travel (30 days), the user's
+Durable Object point-in-time recovery (30 days) and the `backups/` exports
+(90 days, §9). A restore from any of them within those windows brings the
+person back: **repeat the deletion right after a restore**, and tell the
+requester the recovery copies are gone after 90 days.
+`test/http/admin-users.test.ts` ("erasure") scans every D1 table and every log
+line for the person's values after a deletion.
+
 **Point-in-time recovery of one user's object** (TIO-DEPLOY-003): a user's
 Durable Object can be rolled back to how it was at a past instant:
 
