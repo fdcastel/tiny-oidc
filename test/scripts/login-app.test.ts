@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 // without async/await, classes, generators, spread or rest syntax, optional
 // catch bindings, trailing commas in argument lists, the exponent operator,
 // regular-expression flags beyond g/i/m, Promise.prototype.finally or the
-// Fetch API (only an opt-in polyfill the suite does not enable). A syntax
+// Fetch API (only an opt-in polyfill the suite does not enable), and whose
+// loops share one `let`/`const` binding across iterations: a function made
+// inside the loop sees the last value (every upstream button started the last
+// upstream, nightly 2026-09-23 to 09-26). A syntax
 // error there stops the whole script, so nothing would render. The nightly
 // conformance run is the proof that the app works there; this test keeps the
 // constraints from creeping back between runs.
@@ -35,7 +38,37 @@ function violationsOf(text: string): Violation[] {
     }
     return false;
   };
+  const isFunctionLike = (node: ts.Node) =>
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node);
+  const namesOf = (name: ts.BindingName, into: Set<string>) => {
+    if (ts.isIdentifier(name)) into.add(name.text);
+    else for (const e of name.elements) if (!ts.isOmittedExpression(e)) namesOf(e.name, into);
+  };
+  const closureOverLoopBinding = (
+    loop: ts.ForStatement | ts.ForOfStatement | ts.ForInStatement,
+  ) => {
+    const init = loop.initializer;
+    if (init === undefined || !ts.isVariableDeclarationList(init)) return;
+    if ((init.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) === 0) return;
+    const names = new Set<string>();
+    for (const d of init.declarations) namesOf(d.name, names);
+    const uses = (node: ts.Node): boolean =>
+      (ts.isIdentifier(node) && names.has(node.text)) || (ts.forEachChild(node, uses) ?? false);
+    const inBody = (node: ts.Node) => {
+      if (isFunctionLike(node)) {
+        if (uses(node)) report(node, "closure over a loop binding");
+        return;
+      }
+      ts.forEachChild(node, inBody);
+    };
+    inBody(loop.statement);
+  };
   const visit = (node: ts.Node) => {
+    if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node))
+      closureOverLoopBinding(node);
     if (
       ts.isFunctionDeclaration(node) ||
       ts.isFunctionExpression(node) ||
@@ -80,7 +113,7 @@ function violationsOf(text: string): Violation[] {
 }
 
 describe("reference login app under the conformance suite's browser (TIO-TEST-041)", () => {
-  it("[TIO-TEST-041] examples/login-app/app.js uses no syntax or API HtmlUnit's Rhino lacks (async/await, classes, generators, spread, rest, bare catch, trailing argument commas, unguarded fetch)", () => {
+  it("[TIO-TEST-041] examples/login-app/app.js uses no syntax or API HtmlUnit's Rhino lacks (async/await, classes, generators, spread, rest, bare catch, trailing argument commas, unguarded fetch, closures over loop bindings)", () => {
     const text = readFileSync(SOURCE, "utf8");
     expect(violationsOf(text)).toEqual([]);
     // The fallback transport exists, and fetch is only used behind its guard.
@@ -110,6 +143,12 @@ describe("reference login app under the conformance suite's browser (TIO-TEST-04
       ["p.finally(() => 1);", "Promise.prototype.finally"],
       ["import x from 'y';", "module syntax"],
       ["const m = import('y');", "dynamic import"],
+      ["for (const u of us) { b.on('click', () => go(u)); }", "closure over a loop binding"],
+      [
+        "for (let i = 0; i < n; i++) { f(function () { return i; }); }",
+        "closure over a loop binding",
+      ],
+      ["for (const { a } of xs) { g(() => a); }", "closure over a loop binding"],
     ];
     for (const [snippet, what] of cases) {
       expect(
@@ -126,6 +165,8 @@ describe("reference login app under the conformance suite's browser (TIO-TEST-04
       "const r = /a/gim; try { f(); } catch (e) { g(e); }",
       "const o = { a, b() {}, get c() { return 1; } };",
       "Object.assign({}, a, { b: 1 }); Array.from(list).map((x) => x);",
+      "us.forEach(function (u) { b.on('click', () => go(u)); });",
+      "for (const b of bs) { b.disabled = true; } for (const u of us) { f(() => other); }",
     ];
     for (const snippet of allowed) expect(violationsOf(snippet), snippet).toEqual([]);
   });

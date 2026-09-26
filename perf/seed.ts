@@ -245,6 +245,12 @@ interface ImportLine {
 }
 
 async function importUsers(): Promise<void> {
+  // The identities must name the upstream the harvest logs in through: under the placeholder
+  // issuer the harvest's logins find no account, and with auto_create on each one makes a new
+  // account that holds the population's identities from then on (the soak of 2026-09-22 ran
+  // without TIO_FAKE_ISSUER; every later import was refused, identity_already_linked).
+  if (values["upstream-issuer"] === undefined && values["fake-issuer"] === undefined)
+    throw new Error("import: --fake-issuer (TIO_FAKE_ISSUER) or --upstream-issuer is required");
   const a = admin();
   const users = int("users");
   const from = int("from");
@@ -266,6 +272,7 @@ async function importUsers(): Promise<void> {
   }
   const batches = chunks(from, users, int("batch"));
   const statuses: Record<string, number> = {};
+  const conflicts: Record<string, number> = {};
   const errors: string[] = [];
   const durations: number[] = [];
   let done = 0;
@@ -290,6 +297,10 @@ async function importUsers(): Promise<void> {
       for (const raw of text.trimEnd().split("\n")) {
         const line = JSON.parse(raw) as ImportLine;
         statuses[line.status] = (statuses[line.status] ?? 0) + 1;
+        if (line.status === "conflict") {
+          const reason = line.error ?? "unknown";
+          conflicts[reason] = (conflicts[reason] ?? 0) + 1;
+        }
         if (line.status === "error" && errors.length < 20)
           errors.push(`line ${batch.from + line.line - 1}: ${line.error}`);
       }
@@ -364,6 +375,7 @@ async function importUsers(): Promise<void> {
     duration_s: Math.round(durationS * 10) / 10,
     users_per_s: Math.round(users / durationS),
     statuses,
+    conflicts,
     batch_ms: percentiles(durations),
     errors,
     verification: {
@@ -379,7 +391,7 @@ async function importUsers(): Promise<void> {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   log(
-    `import: done in ${report.duration_s}s (${report.users_per_s} users/s), statuses ${JSON.stringify(statuses)}, ${mismatches.length} mismatches in ${picked.length} sampled; report ${path}`,
+    `import: done in ${report.duration_s}s (${report.users_per_s} users/s), statuses ${JSON.stringify(statuses)}, conflicts ${JSON.stringify(conflicts)}, ${mismatches.length} mismatches in ${picked.length} sampled; report ${path}`,
   );
   if (mismatches.length > 0 || (statuses["error"] ?? 0) > 0 || (statuses["http_error"] ?? 0) > 0)
     process.exitCode = 1;
@@ -509,8 +521,13 @@ async function login(
   });
   if (exchanged.status !== 200)
     throw new Error(`token: ${exchanged.status} ${await exchanged.text()}`);
-  const tokens = (await exchanged.json()) as { refresh_token?: string };
+  const tokens = (await exchanged.json()) as { refresh_token?: string; id_token?: string };
   if (!tokens.refresh_token) throw new Error("token: no refresh_token");
+  // The account is the imported one: a login that matched no link would have made a new
+  // account (auto_create) and the run would measure users the import never placed.
+  const email = emailInIdToken(tokens.id_token);
+  if (email !== emailOf(population, n))
+    throw new Error(`token: signed in as ${email ?? "no email"}, not ${emailOf(population, n)}`);
   return {
     n,
     sub: subjectOf(population, n),
@@ -518,6 +535,16 @@ async function login(
     session,
     refresh_token: tokens.refresh_token,
   };
+}
+
+/** The `email` claim of an ID token (read only: the OP just issued it over TLS). */
+function emailInIdToken(idToken: string | undefined): string | null {
+  const payload = idToken?.split(".")[1];
+  if (payload === undefined) return null;
+  const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+    email?: string;
+  };
+  return claims.email ?? null;
 }
 
 async function harvest(): Promise<void> {

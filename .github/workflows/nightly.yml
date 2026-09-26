@@ -49,15 +49,15 @@ jobs:
       TIO_STAGING_UPSTREAM_ALIAS: ${{ vars.TIO_STAGING_UPSTREAM_ALIAS || 'fake' }}
       IMAGE_TAG: ${{ vars.CONFORMANCE_IMAGE_TAG || 'latest' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Checkout the suite's runner scripts
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: openid-certification/conformance-suite
           ref: ${{ vars.CONFORMANCE_SUITE_REF || 'master' }}
@@ -109,7 +109,7 @@ jobs:
           mkdir -p conformance/results
           docker compose -f conformance/docker-compose.yml logs --no-color server > conformance/results/server.log 2>&1 || true
           docker compose -f conformance/docker-compose.yml down -v || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: conformance-results
@@ -155,9 +155,9 @@ jobs:
       TIO_PERF_HARVEST: ${{ vars.TIO_PERF_HARVEST || '100000' }}
       TIO_PERF_DURATION: ${{ inputs.duration || vars.TIO_PERF_DURATION || '5m' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -198,7 +198,7 @@ jobs:
       - name: Load summary
         if: always()
         run: node scripts/load-summary.ts perf/data >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: load-reports
@@ -222,15 +222,21 @@ jobs:
       TIO_PERF_LOGIN_URL: ${{ secrets.TIO_STAGING_LOGIN_URL }}
       TIO_PERF_CLIENT_ID: ${{ secrets.TIO_STAGING_CLIENT_ID }}
       TIO_PERF_CLIENT_SECRET: ${{ secrets.TIO_STAGING_CLIENT_SECRET }}
+      # The population's identities name the fake upstream the harvest logs in through; without
+      # it they named a placeholder issuer, and the harvest's logins made new accounts that hold
+      # those identities (the soak of 2026-09-22; every nightly import after it was refused).
+      TIO_FAKE_ISSUER: ${{ secrets.TIO_STAGING_FAKE_ISSUER }}
+      TIO_FAKE_CLIENT_ID: ${{ secrets.TIO_STAGING_FAKE_CLIENT_ID }}
+      TIO_FAKE_CLIENT_SECRET: ${{ secrets.TIO_STAGING_FAKE_CLIENT_SECRET }}
       TIO_PERF_SEED: ${{ vars.TIO_PERF_SEED || '1' }}
       # The soak rotates the harvested families for two hours; with a small population every
       # family is rotated hundreds of times, which is what the per-user storage check wants.
       TIO_PERF_HARVEST: ${{ vars.TIO_PERF_HARVEST || '40000' }}
       TIO_PERF_USERS: ${{ vars.TIO_PERF_USERS || '1000000' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -251,7 +257,7 @@ jobs:
       - name: Load summary
         if: always()
         run: node scripts/load-summary.ts perf/data >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: soak-reports
@@ -270,9 +276,9 @@ jobs:
     continue-on-error: true
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -283,7 +289,7 @@ jobs:
       - name: Mutation score
         if: always()
         run: node scripts/mutation-summary.ts reports/mutation/mutation.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report

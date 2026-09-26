@@ -310,7 +310,9 @@
         el("p", { class: "muted", id: "no-passkeys" }, "This browser does not support passkeys.")
       );
     }
-    for (const upstream of upstreams) {
+    // A function per upstream, not a loop: HtmlUnit's Rhino shares one loop binding across
+    // iterations, so every button would start the last upstream.
+    upstreams.forEach((upstream) => {
       const b = el(
         "button",
         { id: `upstream-${upstream.alias}` },
@@ -325,7 +327,7 @@
         )
       );
       actions.appendChild(b);
-    }
+    });
     if (canRegister) {
       const b = el("button", { class: "linkish", id: "register" }, "Create an account");
       b.addEventListener("click", () => registerScreen(id, doc));
