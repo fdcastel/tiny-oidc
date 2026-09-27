@@ -28,7 +28,7 @@ const STRIDE = maxVusOf(options);
 let mine = null;
 
 export function tokenCodeExchange() {
-  if (mine === null) mine = ownedByThisVu(STRIDE);
+  if (mine === null) mine = ownedByThisVu(STRIDE, { share: true });
   const entry = mine[__ITER % mine.length];
   const { verifier, challenge } = pkce();
   const hit = sessionHit(entry, { challenge }, { scenario: "token_code_exchange_steps" });

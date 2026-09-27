@@ -38,6 +38,10 @@ export const doCalls = new Counter("do_calls");
 export const d1Reads = new Counter("d1_reads");
 export const d1Writes = new Counter("d1_writes");
 export const withinBudget = new Rate("within_budget");
+/** Refresh families a run stopped using after a failed rotation (see `rotateOwned`). */
+export const familiesRetired = new Counter("families_retired");
+/** Iterations of a VU that owns no refresh family: nothing to send (see `ownedByThisVu`). */
+export const idleIterations = new Counter("idle_iterations");
 
 /** Parses `app;dur=12, do;desc="1", d1r;desc="0", d1w;desc="0"`. */
 export function serverTiming(header) {
@@ -141,14 +145,62 @@ export function maxVusOf(options) {
  * A slice of the population owned by this VU alone, so single-use tokens are
  * never shared. `stride` is the run's maximum VU count (maxVusOf): VU ids
  * are unique across scenarios, and a fixed stride keeps slices disjoint even
- * when VUs are initialized late.
+ * when VUs are initialized late. A VU whose id is beyond the population owns
+ * nothing; with `share` (session cookies, which any number of requests may
+ * present) it borrows another VU's entry instead. Refresh tokens are never
+ * shared: two VUs presenting one token is reuse, which revokes the family
+ * (TIO-RT-002) — the nightly of 2026-09-27 lost families that way when a
+ * slower staging made k6 start VUs past the 600 tokens of its slice.
  */
-export function ownedByThisVu(stride) {
+export function ownedByThisVu(stride, { share = false } = {}) {
   const mine = [];
   for (let i = exec.vu.idInInstance - 1; i < tokens.length; i += stride)
     mine.push({ ...tokens[i] });
-  if (mine.length === 0) mine.push({ ...tokens[exec.vu.idInInstance % tokens.length] });
+  if (mine.length === 0 && share) mine.push({ ...tokens[exec.vu.idInInstance % tokens.length] });
   return mine;
+}
+
+const MAX_FAILURE_LOGS_PER_VU = 3;
+let failureLogs = 0;
+
+/**
+ * One rotation of the next live family this VU owns; null when it owns none
+ * (counted as idle). A family whose rotation failed is retired: the OP may
+ * have rotated it before the answer was lost, and presenting the old token
+ * again would be reuse, turning one failure into every later refresh of the
+ * family. The first failures of each VU are logged with their status.
+ */
+export function rotateOwned(mine, state) {
+  let entry = null;
+  for (let tries = 0; tries < mine.length; tries++) {
+    const candidate = mine[state.cursor % mine.length];
+    state.cursor++;
+    if (!candidate.retired) {
+      entry = candidate;
+      break;
+    }
+  }
+  if (entry === null) {
+    idleIterations.add(1, { scenario: exec.scenario.name });
+    return null;
+  }
+  const res = refresh(entry);
+  const ok = check(res, {
+    "refresh 200 with a rotated token": (r) => r.status === 200 && !!r.json("refresh_token"),
+  });
+  if (ok) {
+    entry.refresh_token = res.json("refresh_token");
+  } else {
+    entry.retired = true;
+    familiesRetired.add(1, { scenario: exec.scenario.name });
+    if (failureLogs < MAX_FAILURE_LOGS_PER_VU) {
+      failureLogs++;
+      console.warn(
+        `refresh failed: status ${res.status} ${res.error || ""} ${String(res.body || "").slice(0, 160)}`,
+      );
+    }
+  }
+  return res;
 }
 
 /** An access token with the `admin` scope for the automation client of the run. */

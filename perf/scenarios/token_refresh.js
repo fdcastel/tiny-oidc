@@ -10,7 +10,7 @@ import {
   maxVusOf,
   ownedByThisVu,
   record,
-  refresh,
+  rotateOwned,
   SUMMARY_TREND_STATS,
   summary,
   thresholds,
@@ -34,17 +34,12 @@ export const options = {
 
 const STRIDE = maxVusOf(options);
 let mine = null;
-let cursor = 0;
+const state = { cursor: 0 };
 
 export function tokenRefresh() {
   if (mine === null) mine = ownedByThisVu(STRIDE);
-  const entry = mine[cursor % mine.length];
-  cursor++;
-  const res = refresh(entry);
-  const ok = check(res, {
-    "refresh 200 with a rotated token": (r) => r.status === 200 && !!r.json("refresh_token"),
-  });
-  if (ok) entry.refresh_token = res.json("refresh_token");
+  const res = rotateOwned(mine, state);
+  if (res === null) return;
   const timing = record(res);
   check(timing, { "refresh is one hop, no D1 write": (t) => t.do <= 1 && t.d1w === 0 });
 }

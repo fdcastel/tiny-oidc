@@ -15,7 +15,7 @@ import {
   maxVusOf,
   ownedByThisVu,
   record,
-  refresh,
+  rotateOwned,
   SUMMARY_TREND_STATS,
   summary,
   thresholds,
@@ -52,7 +52,7 @@ export const options = {
 const STRIDE = maxVusOf(options);
 const windowed = new Trend("server_ms_windowed", true);
 let mine = null;
-let cursor = 0;
+const state = { cursor: 0 };
 let startedAt = null;
 
 function sampledIds() {
@@ -95,13 +95,8 @@ export function soakRefresh(data) {
     mine = ownedByThisVu(STRIDE);
     startedAt = data.startedAt;
   }
-  const entry = mine[cursor % mine.length];
-  cursor++;
-  const res = refresh(entry);
-  const ok = check(res, {
-    "refresh 200 with a rotated token": (r) => r.status === 200 && !!r.json("refresh_token"),
-  });
-  if (ok) entry.refresh_token = res.json("refresh_token");
+  const res = rotateOwned(mine, state);
+  if (res === null) return;
   const timing = record(res);
   const elapsed = Date.now() - startedAt;
   if (timing.app !== null && timing.d1r === 0) {

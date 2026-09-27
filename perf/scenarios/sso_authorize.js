@@ -27,7 +27,7 @@ const STRIDE = maxVusOf(options);
 let mine = null;
 
 export function ssoAuthorize() {
-  if (mine === null) mine = ownedByThisVu(STRIDE);
+  if (mine === null) mine = ownedByThisVu(STRIDE, { share: true });
   const entry = mine[__ITER % mine.length];
   const res = sessionHit(entry, pkce(), { scenario: "sso_authorize" });
   check(res, {
