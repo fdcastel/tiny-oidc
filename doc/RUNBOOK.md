@@ -314,21 +314,15 @@ requester the recovery copies are gone after 90 days.
 `test/http/admin-users.test.ts` ("erasure") scans every D1 table and every log
 line for the person's values after a deletion.
 
-**Point-in-time recovery of one user's object** (TIO-DEPLOY-003): a user's
-Durable Object can be rolled back to how it was at a past instant:
-
-```sh
-curl -s -X POST $ISSUER/api/v1/admin/users/$USER_ID/restore -H "Authorization: Bearer $TOKEN" \
-  -H "content-type: application/json" -d '{"bookmark_time":1790000000}'
-```
-
-`202` with the bookmark applied; the object restarts from that state on its
-next request. Then run the user's reindex (§10) so the directory matches the
-restored object. Sessions and refresh tokens created after the bookmark are
-gone (they were in the object). The local Durable Object backend has no
-point-in-time recovery, so this call is tested only for its input validation
-and its 503 `restore_unavailable` path; verify it on staging before relying on
-it in production.
+**No per-user point-in-time restore in v1** (TIO-DEPLOY-003, ADR 0021).
+Rolling one user's object back to a bookmark would bring back everything
+withdrawn since: revoked sessions and refresh tokens, consumed codes, removed
+passkeys, unlinked identities, revoked consent and removed group memberships.
+Recover a user with the tools above instead: a recovery invitation for lost
+passkeys, `DELETE …/passkeys/{pid}` and `DELETE /users/{id}/sessions` for a
+compromise, and the reindex (§10) when the directory disagrees with the object.
+Cloudflare still keeps 30 days of the object's history (TIO-PRIV-002 counts it
+as a recovery copy), but nothing in the OP applies it.
 
 ## 9. D1 backup and restore
 

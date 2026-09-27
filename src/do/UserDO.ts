@@ -1845,30 +1845,4 @@ export class UserDO extends DurableObject<Env> {
       },
     };
   }
-
-  /**
-   * Point-in-time recovery (TIO-DEPLOY-003): the next session of this object
-   * starts from the storage as it was at `bookmarkTime` (Unix seconds), and
-   * the object ends right after answering so the restore takes effect at once.
-   */
-  async restore(
-    bookmarkTime: number,
-  ): Promise<DoResult<{ bookmark: string }, "restore_unavailable">> {
-    try {
-      return await this.applyBookmark(
-        await this.ctx.storage.getBookmarkForTime(bookmarkTime * 1000),
-      );
-    } catch {
-      return fail("restore_unavailable");
-    }
-  }
-
-  /* istanbul ignore next -- reason: the local Durable Object backend implements no point-in-time recovery, so no bookmark is ever applied in tests */
-  private async applyBookmark(bookmark: string): Promise<DoResult<{ bookmark: string }, never>> {
-    await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
-    this.ctx.waitUntil(
-      Promise.resolve().then(() => this.ctx.abort("restored by an administrator")),
-    );
-    return { ok: true, bookmark };
-  }
 }

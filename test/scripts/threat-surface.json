@@ -87,7 +87,6 @@
     "POST /api/v1/admin/users/:id/enable",
     "POST /api/v1/admin/users/:id/invitations",
     "POST /api/v1/admin/users/:id/reindex",
-    "POST /api/v1/admin/users/:id/restore",
     "POST /api/v1/interactions/:id/abort",
     "POST /api/v1/interactions/:id/consent",
     "POST /api/v1/interactions/:id/logout",

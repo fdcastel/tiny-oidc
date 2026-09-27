@@ -197,7 +197,6 @@ function adminRoutes(): Route[] {
     ["POST", "users/:id/invitations"],
     ["POST", "users/:id/reindex"],
     ["GET", "users/:id/export"],
-    ["POST", "users/:id/restore"],
     ["GET", "groups"],
     ["POST", "groups"],
     ["GET", "groups/:id"],

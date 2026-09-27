@@ -156,7 +156,8 @@ names what would enforce it. **Fixed** marks what P7-10 closed.
 - **M5 — `/admin/audit` filters on `actor_id` and `outcome` have no index**,
   against §9.2's "indexed columns only". **Enforce:** an `EXPLAIN QUERY PLAN`
   test per filter.
-- **M6 — `POST /admin/users/{id}/restore` revives revoked sessions and
+- **M6 — Fixed by removal (P7-11, ADR 0021; the safe version is plan B-08).**
+  `POST /admin/users/{id}/restore` revived revoked sessions and
   consumed tokens and rolls back passkey counters.** Its success path has
   never run in a test. **Enforce:** revoke everything issued before the
   restore time, keep the highest counter, reindex.

@@ -5,14 +5,13 @@ import {
   AdminUserListQuerySchema,
   AdminUserPatchSchema,
   RecoverInvitationBodySchema,
-  RestoreBodySchema,
 } from "../api/definitions.ts";
 import { isUuid, UuidV7 } from "../crypto/uuid.ts";
 import { getClient } from "../db/clients.ts";
 import { getGroupByName } from "../db/groups.ts";
 import { releaseIdentity } from "../db/identities.ts";
 import { getUser, listUsers, type UserFilters, type UserRow } from "../db/users.ts";
-import type { ClientRef, PasskeyRecord, UserCounts, UserDO, UserProfile } from "../do/UserDO.ts";
+import type { ClientRef, PasskeyRecord, UserCounts, UserProfile } from "../do/UserDO.ts";
 import type { Clock, Settings } from "../env.ts";
 import { notifyEndedSessions } from "../logout/rp-logout.ts";
 import type { AppContext } from "../oidc/token-common.ts";
@@ -771,35 +770,5 @@ export function exportUserHandler(clock: Clock): Handler<AppEnv> {
     } catch {
       return unavailable(c);
     }
-  };
-}
-
-export function restoreUserHandler(clock: Clock): Handler<AppEnv> {
-  return async (c) => {
-    const user = await loadUser(c);
-    if (user instanceof Response) return user;
-    const body = await readBody(c, RestoreBodySchema);
-    if (!body.ok) return body.response;
-    if (body.value.bookmark_time >= clock.now()) {
-      return errorResponse(c, 400, "invalid_request", "bookmark_time must be in the past");
-    }
-    let restored: Awaited<ReturnType<UserDO["restore"]>>;
-    try {
-      restored = await user.stub.restore(body.value.bookmark_time);
-    } catch {
-      return unavailable(c);
-    }
-    /* istanbul ignore next -- reason: the local Durable Object backend implements no point-in-time recovery, so a successful restore never happens in tests */
-    if (restored.ok) {
-      auditAdmin(c, {
-        type: "user.updated",
-        target: user.row.id,
-        user_id: user.row.id,
-        reason: "restored",
-        data: { bookmark_time: body.value.bookmark_time },
-      });
-      return c.json({ bookmark: restored.bookmark }, 202);
-    }
-    return errorResponse(c, 503, "restore_unavailable", "point-in-time recovery is not available");
   };
 }

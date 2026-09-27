@@ -740,7 +740,7 @@ describe("sub-resources", () => {
     ).toBe(503);
   });
 
-  it("[TIO-REG-004] [TIO-DATA-027] [TIO-DEPLOY-003] recovery invitations, reindex of a corrupted mirror, events placeholder and restore", async () => {
+  it("[TIO-REG-004] [TIO-DATA-027] [TIO-DEPLOY-003] recovery invitations, reindex of a corrupted mirror, events placeholder, and no per-object restore endpoint", async () => {
     const user = await userWithPasskey(clock, { groups: ["staff"] });
     const id = user.profile.id;
     const invited = await call("POST", `users/${id}/invitations`, {
@@ -844,19 +844,13 @@ describe("sub-resources", () => {
       next_cursor: null,
     });
 
+    // Per-object point-in-time restore is not exposed (ADR 0021): it would bring back what was
+    // withdrawn since the bookmark (sessions, tokens, passkeys, identities, consent, groups).
     const restore = await call("POST", `users/${id}/restore`, {
       bookmark_time: clock.now() - 3600,
     });
-    expect(restore.status).toBe(503);
-    expect(await restore.json()).toMatchObject({ error: "restore_unavailable" });
-    expect(
-      (await call("POST", `users/${id}/restore`, { bookmark_time: clock.now() + 1 })).status,
-    ).toBe(400);
-    expect((await call("POST", `users/${id}/restore`, {})).status).toBe(400);
-    expect(
-      (await call("POST", `users/${id}/restore`, { bookmark_time: 1 }, { env: brokenDoFor(id) }))
-        .status,
-    ).toBe(503);
+    expect(restore.status).toBe(404);
+    expect(await restore.json()).toMatchObject({ error: "not_found" });
   });
 });
 
@@ -893,7 +887,6 @@ describe("objects that vanish mid-request", () => {
       ["POST", "invitations"],
       ["POST", "reindex"],
       ["GET", "export"],
-      ["POST", "restore"],
     ] as const) {
       const res = await call(
         method,

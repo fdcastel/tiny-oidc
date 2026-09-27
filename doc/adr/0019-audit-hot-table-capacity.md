@@ -189,7 +189,7 @@ These changes go into `doc/TINY_OIDC_SPEC.md` in the implementing commit:
   estimate, SHALL stay within 50 % of the D1 database cap, and the hot rows
   per day within 25 % of the purge capacity of TIO-CFG-010; a CI test
   computes both from the catalog classes and the events each flow emits."
-- **Appendix B #39:** "Every audit event in `audit_hot` → a hot subset by
+- **Appendix B #40:** "Every audit event in `audit_hot` → a hot subset by
   type (ADR 0019). *Why:* at the §2.7 rates every event means 6.2 M rows a
   day and a full D1 in three days."
 

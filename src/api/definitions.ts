@@ -650,11 +650,6 @@ export const ReindexReportSchema = z
   })
   .openapi("ReindexReport");
 
-export const RestoreBodySchema = z
-  .object({ bookmark_time: z.int().openapi({ description: "Unix seconds" }) })
-  .strict()
-  .openapi("RestoreBody");
-
 const listOf = (item: z.ZodType, name: string, description: string) => ({
   200: {
     description,
@@ -1000,27 +995,6 @@ export const adminUserExportRoute = createRoute({
   },
 });
 
-export const adminUserRestoreRoute = createRoute({
-  method: "post",
-  path: `${USER_PATH}/restore`,
-  tags: ["admin"],
-  summary: "Point-in-time recovery of the user's object (TIO-DEPLOY-003)",
-  security: adminSecurity,
-  request: { params: UserIdParams, body: jsonBody(RestoreBodySchema) },
-  responses: {
-    202: {
-      description: "The restore is scheduled; the object restarts from the bookmark",
-      content: { "application/json": { schema: z.object({ bookmark: z.string() }) } },
-    },
-    400: errorResponse("invalid_request"),
-    404: errorResponse("user_not_found"),
-    503: errorResponse("restore_unavailable or temporarily_unavailable"),
-    401: errorResponse("invalid_token"),
-    403: errorResponse("insufficient_scope"),
-    429: errorResponse("rate_limited"),
-  },
-});
-
 export const ADMIN_USER_ROUTES = [
   adminUsersListRoute,
   adminUserCreateRoute,
@@ -1045,7 +1019,6 @@ export const ADMIN_USER_ROUTES = [
   adminUserInvitationRoute,
   adminUserReindexRoute,
   adminUserExportRoute,
-  adminUserRestoreRoute,
 ] as const;
 
 // Admin groups (§9.4 Groups, §3.5)
