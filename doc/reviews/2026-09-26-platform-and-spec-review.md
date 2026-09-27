@@ -10,6 +10,7 @@ proposal becomes an ADR and a plan row when the owner decides it.
 |---|---|
 | Done | Privacy fix (P7-10, ADR 0020, commit `c9299ec`) |
 | Proposed | ADR 0019 (audit capacity), to be rewritten as "audit storage and telemetry" after the owner decides on §7's recommendation |
+| Revised | 2026-09-27, after a second review: M8 and M9 added, the lock shortened to 90 days with preconditions, formats and key layout corrected, §7 worded as observation, §8 given recommendations |
 | Pending | The owner's decisions in §8 |
 
 ## 1. Summary
@@ -24,8 +25,9 @@ proposal becomes an ADR and a plan row when the owner decides it.
   which the service itself (Workers and Durable Object requests) is ~$120–140.
   The rest is audit, logs, metrics and per-refresh storage writes (§3).
 - **Better products exist for the audit record.** The proposed design:
-  - Cloudflare Pipelines writes Parquet into an R2 bucket under a bucket lock,
-    so the record is write-once.
+  - Every event is archived in R2 under a bucket lock, so the record cannot
+    be rewritten for 90 days. It is written as gzip NDJSON under
+    time-partitioned keys that are unique per write (M8).
   - DuckDB reads it directly for investigations, with no Iceberg and no
     DuckLake.
   - A small D1 table keeps only the events the API reads back.
@@ -162,15 +164,36 @@ names what would enforce it. **Fixed** marks what P7-10 closed.
   nothing checks.** **Enforce:** the deploy script verifies the lifecycle
   rules; a nightly check that the newest `backups/` object is under 8 days
   old.
-- **Already known — the archive is called "immutable" (§4.5) and nothing
-  makes it so.** The consumer overwrites by key, and no bucket lock exists.
-  **Enforce:** the lock in §5.
+- **M8 — The archive key cannot live under a lock, and ADR 0019's version
+  loses events even without one.** §4.5 calls the objects "immutable", and
+  nothing makes them so.
+  - **Today:** the key is derived from the batch's first event id, and
+    TIO-DATA-025 relies on a redelivered batch "overwriting an identical
+    object". A lock refuses every overwrite (R2 error 10069, "cannot be
+    modified or deleted"). Queues deliver at least once, so a redelivery
+    after a successful write fails, retries five times and ends in the
+    dead-letter queue.
+  - **ADR 0019's per-batch objects:** a retried consumer batch can regroup
+    its messages behind the same first event with a different tail.
+    - Under a lock, the write is refused and the tail is never archived.
+    - Without one, the new object replaces the old, and the old tail
+      disappears silently.
+  - **Enforce:**
+    - a key unique per write attempt (the first event's id plus a fresh
+      UUID), with readers deduplicating by event id;
+    - TIO-DATA-025's overwrite sentence removed;
+    - a sink test against a bucket that refuses existing keys.
+- **M9 — Queue messages are bounded by count, not bytes.** The producer puts
+  up to 50 events in a message, each with up to 4 KB of data, against
+  Queues' 128 KB message limit. What an oversized `send()` does is not
+  documented. Under TIO-AUDIT-012 a failed send is logged and the batch is
+  lost. **Enforce:** split batches by serialized size (under ~120 KB) and test
+  with 50 maximal events.
 
 **Low**
 - Hash comparisons with `!==` where TIO-CRYPTO-003 wants constant time: five
   sites, not exploitable (256-bit secrets). The WebAuthn challenge in a
   registration failure reason is **fixed** in P7-10.
-- §4.5's "≤ 128 KB" queue message does not hold for 50 events of 4 KB.
 - Queue peak and headroom are understated (~7×, not 15×).
 - A cron-finished deletion emits no `user.deleted` and sends no back-channel
   logout.
@@ -200,11 +223,11 @@ Verified on 2026-09-26 unless marked; sources in §9.
 | Our need | Candidate | Status | Verdict | Why |
 |---|---|---|---|---|
 | Audit record | **Pipelines → R2 sink (Parquet, zstd, `year=/month=/day=`)** | Open beta, billed since 2026-08-03 | **Not for v1 (§7)** | Tested: silent loss while no pipeline reads the stream (90 %, reproduced) and for schema-invalid events; no deduplication; 0.7–2.3 s per call. Ingest free. Sinks $0.06/GB of uncompressed Parquet after 50 GB, so ~$3–10 a month. Sinks are "exactly-once" and one stream can feed several sinks. Rejection behaviour of `send()` is undocumented; invalid events are "accepted but dropped". |
-| Write-once archive | **R2 bucket lock** (+ move to Infrequent Access after 90 days) | Available | **Adopt** | Prevents delete and overwrite for an age, a date or indefinitely, above lifecycle rules. The Worker's binding cannot lift it; an account admin can. |
+| Write-once archive | **R2 bucket lock** (+ move to Infrequent Access after 90 days) | Available | **Adopt: a 90-day lock over a 365-day lifecycle, after M8 and the preconditions in §6** | Prevents delete and overwrite for an age, a date or indefinitely, above lifecycle rules. The Worker's binding cannot lift it, but any token with bucket-configuration rights can. So it guards against the Worker and mistakes, not the account, and its age should match the tamper-evidence window rather than the retention. A 365-day lock would make the next leak permanent for a year; H1 shows leaks happen. Whether a PUT of a new key under a locked prefix is accepted is not documented: test it first. |
 | Querying the archive | **DuckDB over `r2://` with a read-only token** | DuckDB 1.5.5 | **Adopt** | Hive-partition pruning on the paths. No catalog, no maintenance, compatible with the lock. Runs on an operator machine or a Container. |
 | | Iceberg + R2 Data Catalog + R2 SQL | Public / open beta | **No** | Maintenance deletes files (conflicts with the lock). R2 SQL has no Worker binding and needs an admin-scoped token. |
 | | DuckLake 1.0 | Released Apr 2026 | **No** | Takes ownership of registered files and deletes them in maintenance. Needs a catalog database. Open bug with externally written files. Adds nothing to an append-only log. |
-| Request logs | **Head sampling ~10 %** and no per-event lines | Available | **Adopt** | ~$6 a month. Logpush → R2 at ~$15 if every request must be kept. |
+| Request logs | **Head sampling ~10 %** and no per-event lines | Available | **Adopt, as a spec change** | ~$6 a month; Logpush → R2 at ~$15 if every request must be kept. TIO-AUDIT-010 (2) requires one log line per event, and sampling is per request. Pair the change with the R2 read-back erasure test (§6), which the log lines stand in for today. |
 | | OpenTelemetry export, tracing | Beta; tracing billed from 2026-10-01 | **No** for now | Keep tracing off. |
 | Metrics | Analytics Engine, one point per request | Not billed yet | **Keep, trim** | Audit-type counts come from the archive instead. |
 | Long maintenance jobs | **Workflows** | GA | **Consider** | Resumable steps for deletion, master-key re-encryption and repair. Not for logout retries (~$44 against ~$4 on the queue). |
@@ -247,12 +270,12 @@ flowchart LR
     IDO[("InteractionDO")]
     D1[("D1 · directory + config ·<br/>audit_hot: hot types only, 14 days ·<br/>read replicas")]:::changed
     PS[["Pipelines stream<br/>every audit event"]]:::new
-    R2A[("R2 audit bucket · bucket lock 365 d ·<br/>Parquet zstd, year=/month=/day= ·<br/>IA after 90 d")]:::new
+    R2A[("R2 audit bucket · lock 90 d, lifecycle 365 d ·<br/>gzip NDJSON, year=/month=/day=/hour= ·<br/>key unique per write · IA after 90 d")]:::new
     Q[["Queue TASKS<br/>hot events · logout retries ·<br/>fallback when send() is refused"]]:::changed
     QC["queue() consumer"]
     R2B[("R2 backups/<br/>lifecycle 90 d, freshness checked")]:::changed
     AE[("Analytics Engine<br/>one point per request")]:::changed
-    LOGS[("Workers Logs<br/>~10 % head sampling")]:::changed
+    LOGS[("Workers Logs<br/>~10 % head sampling (spec change)")]:::changed
     WF["Workflows<br/>deletion · re-encryption · repair"]:::new
     CRON["scheduled() sweeps"]
   end
@@ -289,8 +312,7 @@ Green is new and yellow is changed. The diagram shows the Pipelines variant.
 For v1, §7 recommends the generally available path instead: no stream; the
 queue carries every event, and the consumer writes one locked object per
 consumer batch. Everything else is the same. What changes:
-- **Every audit event goes to Pipelines**, so it reaches the locked R2 bucket
-  as Parquet.
+- **Every audit event goes to Pipelines**, so it reaches the locked R2 bucket.
 - **Only the hot types also travel the queue into `audit_hot`**, as ADR 0019
   proposes (one hot row per login, 14 days). That table is what
   `/me/events`, `/users/{id}/events` and `/admin/audit` read in milliseconds.
@@ -303,10 +325,36 @@ consumer batch. Everything else is the same. What changes:
   the locked originals are never touched.
 - **Refresh writes** drop to ≤ 2 rows (M1), and **families are capped** per
   user and client (M2).
-- **Logs are sampled; metrics lose the per-event points.**
+- **Formats and keys.**
+  - Workers compress only gzip and deflate, not zstd. A Parquet writer would
+    be a WASM library inside the 1.5 MB bundle budget (TIO-PERF-002). So the
+    consumer writes gzip NDJSON, as today.
+  - Parquet with zstd, if wanted, comes from the operator-side compaction job,
+    under its own prefix.
+  - Keys become
+    `audit/year=YYYY/month=MM/day=DD/hour=HH/<first-event-id>-<uuid>.ndjson.gz`,
+    so DuckDB's Hive pruning works and every write has a new key (M8). That
+    changes §4.5 and the archive listing (M4).
+- **Before the lock goes on production:**
+  1. M8 is fixed.
+  2. The erasure test reads the R2 objects back instead of using log lines as
+     a proxy.
+  3. The runbook has the remediation for a leak into locked objects (lift the
+     rule, delete, recreate the rule).
+  4. A PUT of a new key under the locked prefix is tested on staging.
+- **Logs are sampled**, a spec change to TIO-AUDIT-010's per-event log line,
+  paired with precondition 2. **Metrics lose the per-event points.**
 - **The long cron jobs become Workflows.** The sweeps stay on the cron.
 - **Edge controls are optional and decided separately:** the WAF rule, Access
-  on the Admin API, Turnstile where state is created.
+  on the Admin API, Turnstile where state is created (§8 recommends).
+
+**Option B** (per-user events in `UserDO`) was declined in ADR 0019 because
+it costs one object write per event. Under option A the hot stream is about
+250,000 events a day, and a login's `session.created` repeats what the
+sessions table already holds, so that reason is stale. The current reason to
+leave B out of v1: cross-user queries (`/admin/audit`) would still need an
+indexed global store, and the change is larger than v1 needs. The rewritten
+ADR says so.
 
 **Estimated cost at the target**, per month:
 
@@ -375,9 +423,11 @@ Other observations:
    signal to the caller:
    - Events that do not match the stream's schema. This is preventable: the
      Worker validates each event against the same schema before sending.
-   - **Events sent while no pipeline reads the stream: 90 % lost, reproduced
-     twice.** The stream did not buffer them for the next pipeline. A pipeline's
-     SQL cannot be changed, only deleted and recreated, so an ordinary change
+   - **Events sent while no pipeline reads the stream: 90 % did not arrive,
+     reproduced twice.** Why is not shown. The docs promise streams "no data
+     loss even during downstream processing delays or failures", and one
+     surviving event per call matches no documented model. A pipeline's SQL
+     cannot be changed, only deleted and recreated, so an ordinary change
      opens exactly this window.
    - Whether adding the new pipeline *before* deleting the old one (one stream
      may feed several pipelines) avoids the loss was not tested.
@@ -389,7 +439,8 @@ Other observations:
 **Recommendation.**
 - **Do not make Pipelines the only path for the audit record in v1.**
 - **Ship v1 on the generally available path:** the queue, one R2 object per
-  consumer *batch* (not per message), a bucket lock, and the D1 hot subset.
+  consumer *batch* (not per message) under a key unique per write (M8), the
+  90-day lock once its preconditions hold (§6), and the D1 hot subset.
 - At today's traffic its cost is near zero. The ~$208 a month for queue
   operations appears only near the §2.7 target, and ~$4.50 for R2 writes
   replaces the ~$779 of today's per-message objects.
@@ -399,23 +450,39 @@ Other observations:
   2. in-Worker schema validation;
   3. a daily reconciliation that compares the archive's counts per type with
      the Analytics Engine counts (TIO-OBS-002) and alerts on a gap.
-- **Either way,** DuckDB remains the query tool: the consumer writes
-  zstd-compressed Parquet or gzip NDJSON under `year=/month=/day=` keys it
-  chooses itself.
+- **Either way,** DuckDB remains the query tool. On the generally available
+  path the consumer writes gzip NDJSON under `year=/month=/day=/hour=` keys it
+  chooses itself. Parquet comes from the operator-side compaction job.
 
 ## 8. Decisions for the owner
 
-1. **The audit transport for v1.** Recommended after §7: the generally
-   available path (queue, one R2 object per consumer batch, bucket lock, D1 hot
-   subset), with Pipelines reconsidered later under the three conditions of §7.
-2. **Edge controls:** the Pro plan (WAF rule), Access on the Admin API,
-   Turnstile on invitation redemption and auto-create — each yes or no.
-3. **Order of the remaining work.** Proposed:
+1. **The audit transport for v1.** Recommended:
+   - the generally available path: queue, one R2 object per consumer batch
+     under a key unique per write (M8), and the D1 hot subset;
+   - the 90-day lock once the §6 preconditions hold;
+   - Pipelines reconsidered later, under the three conditions of §7.
+2. **Edge controls:**
+   - **WAF rate-limiting rule (Pro plan): yes, at the production launch.**
+     The binding cannot act before the Worker, and the docs advise against
+     its IP keys.
+   - **Access on the Admin API: no for v1.** It would put a non-standard
+     header pair on every admin client's calls.
+   - **Turnstile: no for v1.** Invitations already gate registration, and
+     auto-create is off.
+3. **May production launch on today's design?** Recommended: yes, on four
+   conditions:
+   - hot retention at 7 days;
+   - an alarm on the `/admin/stats` `audit_hot` row count;
+   - no bucket lock before M8 is fixed;
+   - **M6 fixed, or the restore endpoint disabled.** Restore reviving revoked
+     sessions is a security defect today.
+4. **Order of the remaining work.** Proposed:
    1. H2, the gate that must see the problem.
-   2. ADR 0019 rewritten as "audit storage and telemetry", with TIO-PERF-003
-      covering cost as well as size.
-   3. M1 and M2 (per-user writes and storage), measured on staging first.
-   4. M6 (restore).
+   2. M6 (restore).
+   3. ADR 0019 rewritten as "audit storage and telemetry", with M8, M9, the
+      lock's preconditions, and TIO-PERF-003 covering cost as well as size.
+   4. M1 and M2 (per-user writes and storage), measured on staging first:
+      they bite only near the target.
    5. M4, M5 and M7.
    6. The low items.
 
@@ -465,4 +532,6 @@ All pages read on 2026-09-26; "updated" is the page's own date.
   - R2 SQL latency.
   - Whether Durable Object index writes count as rows written.
   - The Rate Limiting binding's price.
+  - Whether a PUT of a new key under a locked R2 prefix is accepted.
+  - What an oversized Queues `send()` does.
   - D1 read replication's GA status.

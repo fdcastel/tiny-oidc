@@ -2,6 +2,8 @@
 
 Date: 2026-09-26 · Status: **Proposed — awaiting the owner's sign-off** · Task: P7-09
 
+> **Note (2026-09-27): do not implement item 3 as written.** Keying a per-batch object by its first event loses events. Under a bucket lock the rewrite is refused. Without one, a regrouped retry replaces the earlier object. See M8 in `doc/reviews/2026-09-26-platform-and-spec-review.md`. This record is to be rewritten as "audit storage and telemetry".
+
 ## Context
 
 After a week of load runs on a 7,000-user population, the staging D1 database
