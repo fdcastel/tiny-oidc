@@ -163,6 +163,21 @@ export async function listAuditPage(
   return rows.results.map(rowToEvent);
 }
 
+/**
+ * The table's size from its rowid range: two index reads, where `COUNT(*)`
+ * reads every row (6.8 s over 7 M rows on staging). The purge deletes the
+ * oldest rows, so the range stays dense; the estimate was within 0.2 % of the
+ * count on staging (TIO-OBS-005). Zero for an empty table.
+ */
+export async function estimateAuditRows(db: Db): Promise<number> {
+  const row = await db
+    .prepare(
+      "SELECT (SELECT max(rowid) FROM audit_hot) - (SELECT min(rowid) FROM audit_hot) + 1 AS n",
+    )
+    .first<{ n: number | null }>();
+  return row?.n ?? 0;
+}
+
 export async function countAuditRows(db: Db): Promise<number> {
   const row = await db.prepare("SELECT COUNT(*) AS n FROM audit_hot").first<{ n: number }>();
   return (row as { n: number }).n;

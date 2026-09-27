@@ -46,7 +46,7 @@ The initial draft (`tmp/INITIAL_TINY_OIDC_SPEC.md`) was a good statement of valu
 1. The OP is headless. There is no login page, consent page, or template engine in the OP. The login app is a separate application, and the OP exposes an Interaction API for it (§7).
 2. Hot-path state (sessions, authorization codes, refresh-token families, passkeys, consent grants) lives in one Durable Object per user, not in D1. D1 holds the directory and global configuration. Login and refresh do zero D1 writes (§2.3).
 3. Signing keys live in an encrypted key store in D1 and rotate through the admin API, not through a Worker secret and a redeploy (§10).
-4. Audit events flow through a Queue to an R2 archive and a 30-day hot table. At 1,000,000 users an unbounded audit table in D1 would exceed the 10 GB database limit within a year (§11).
+4. Audit events flow through a Queue to an R2 archive and a hot table of recent days (7 by default). At 1,000,000 users an unbounded audit table in D1 would exceed the 10 GB database limit within a year (§11).
 5. Modern extensions are in: PAR, `iss` in the authorization response, RFC 9068 JWT access tokens, resource indicators, back-channel logout, revocation, `client_credentials` with `private_key_jwt`, groups, a self-service API, bulk import. DPoP and Apple Sign-in are deferred by decision (§1.5).
 
 ### 0.4 Document map
@@ -119,7 +119,7 @@ Each principle is a decision filter. When a proposal conflicts with one, the pro
 - Consent with per-client persistent grants; first-party clients may skip consent.
 - Registration policy (`closed`, `invite`, `open`), invitations, admin-driven recovery.
 - Interaction API for the login app; Self-service API for end users; Admin API with bootstrap, bulk NDJSON import, settings, key rotation, audit query.
-- Audit pipeline (30-day hot table, R2 archive, per-user views of the hot table), structured logs, optional metrics.
+- Audit pipeline (hot table of recent days, R2 archive, per-user views of the hot table), structured logs, optional metrics.
 - Rate limiting, cron maintenance, D1 and Durable Object schema migrations, OpenAPI 3.1 document.
 - Deploy-to-Cloudflare button for one-click evaluation, with an optional bundled reference login app served as static assets on the OP origin (§7.9, §12.3).
 
@@ -176,7 +176,7 @@ authentik is the feature reference. Appendix A maps every authentik capability t
  │ SQLite each     │   │ signing_keys     │        │         │ every 5 min    │
  │                 │   │ invitations      │        ▼         └────────────────┘
  │                 │   │ settings         │  ┌────────────┐
- │                 │   │ audit_hot (30 d) │  │ R2 archive │
+ │                 │   │ audit_hot (7 d)  │  │ R2 archive │
  └─────────────────┘   └──────────────────┘  │ audit/…    │
                                              └────────────┘
                         ▲
@@ -225,7 +225,7 @@ The rule: **a user's Durable Object is the source of truth for everything about 
 | PAR request | `InteractionDO` (same object becomes the interaction) | One-minute lifetime. |
 | Clients, upstreams, groups, settings, invitations | D1 | Global configuration. Low write rate. Isolate-cached reads. |
 | Signing keys (public + encrypted private) | D1 | Global. Cached in isolates for 60 seconds. |
-| Audit events | `TASKS` queue → D1 `audit_hot` (30 days) + R2 archive (indefinite) | Volume is unbounded; D1 cannot hold it. |
+| Audit events | `TASKS` queue → D1 `audit_hot` (7 days by default) + R2 archive (indefinite) | Volume is unbounded; D1 cannot hold it. |
 
 **[TIO-ARCH-004]** The authorization-code exchange, refresh-token rotation, passkey assertion verification and session validation paths SHALL perform no D1 write. Component tests wrap the D1 binding in a spy and assert zero write statements.
 
@@ -950,7 +950,7 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 | Authorization codes | 60 s + lazy purge | `UserDO` purge |
 | Consumed refresh tokens | `refresh_reuse_window` (24 h) | `UserDO` purge |
 | Expired/revoked families and sessions | 24 h after expiry | `UserDO` purge |
-| `audit_hot` | `audit.hot_retention_days` (30) | Cron, 1,000 rows per run per iteration, bounded to 10 iterations |
+| `audit_hot` | `audit.hot_retention_days` (7) | Cron, 1,000 rows per run per iteration, bounded to 10 iterations |
 | R2 archive | The operator's choice; recommended 365 days for `audit/` and 90 days for `backups/` (runbook §12) | Bucket lifecycle rules |
 | Invitations | Deleted 30 days after expiry or use | Cron |
 | Retired signing keys | Row kept 90 days with `private_jwk_enc = NULL`, then deleted | Cron |
@@ -1940,6 +1940,8 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line — `d1r` counting the reads the request issued and the cache loads of §2.8 it waited for another request to finish, since its latency carries them —, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
 
+**[TIO-OBS-005]** Every cron run SHALL estimate the `audit_hot` row count from the table's rowid range (two index reads, not `COUNT(*)`), report it as `audit_hot_rows` in its report and in `system.cron_run`, and log at `error` when it exceeds 6,000,000 rows — about 3.4 GB at the ~560 bytes a row measured on staging, which with the directory of §2.7 keeps D1 under half its 10 GB cap. A scheduled workflow (`.github/workflows/watch.yml`, every six hours) SHALL fail, and so notify the repository owner, when an environment's `GET /api/v1/admin/stats` reports more rows than that or a `last_cron_run` older than 30 minutes.
+
 ### 11.5 Privacy
 
 **[TIO-PRIV-001]** The OP SHALL store about a user only: id, email, verified flag, display name, groups, passkey public material and metadata, federated identifiers and the attributes the upstream provided, sessions with pseudonymized network metadata, and consent grants. No profile pictures, no addresses, no phone numbers, no free-form attributes.
@@ -2035,7 +2037,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 | `session.idle_ttl`, `session.absolute_ttl` | `86400`, `2592000` | |
 | `tokens.access_ttl`, `tokens.id_ttl`, `tokens.refresh_idle_ttl`, `tokens.refresh_absolute_ttl`, `tokens.refresh_reuse_window` | `600`, `600`, `1209600`, `2592000`, `86400` | |
 | `keys.rotation_days`, `keys.prepublish_seconds`, `keys.retire_after_seconds` | `90`, `86400`, `604800` | |
-| `audit.hot_retention_days` | `30` | 1–365 |
+| `audit.hot_retention_days` | `7` | 1–365 |
 | `me.allow_email_change` | `false` | |
 | `me.passkey_add_max_auth_age` | `900` | |
 | `bootstrapped_at` | unset | System-managed |
@@ -2458,7 +2460,7 @@ Identifiers are numbered per area; gaps are intentional to leave room. The trace
 | **Directory** | The D1 database: existence, uniqueness, configuration. |
 | **UserDO / InteractionDO** | The two Durable Object classes. |
 | **Related Origin Requests** | WebAuthn mechanism letting origins outside the RP ID's domain use its passkeys via `/.well-known/webauthn`. |
-| **Hot table** | `audit_hot`, the last 30 days of audit events in D1. |
+| **Hot table** | `audit_hot`, the recent audit events in D1 (`audit.hot_retention_days`, 7 by default). |
 | **Reindex** | Rebuilding a user's D1 mirror and index rows from `UserDO`. |
 
 ---

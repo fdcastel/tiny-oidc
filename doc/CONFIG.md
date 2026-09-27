@@ -52,7 +52,7 @@ Runtime settings stored in the D1 `settings` table and edited through `PATCH /ap
 | `keys.rotation_days` | integer | `90` | 0–365 | Automatic signing-key rotation interval in days; 0 disables. |
 | `keys.prepublish_seconds` | integer | `86400` | 0–2592000 | How long a new signing key is published before it starts signing. |
 | `keys.retire_after_seconds` | integer | `604800` | 3600–7776000 | How long a superseded key keeps verifying before retirement; must exceed the longest token lifetime plus one hour. |
-| `audit.hot_retention_days` | integer | `30` | 1–365 | Days of audit events kept in the D1 hot table. |
+| `audit.hot_retention_days` | integer | `7` | 1–365 | Days of audit events kept in the D1 hot table. |
 | `me.allow_email_change` | boolean | `false` |  | Whether users may change their email through the Self-service API. |
 | `me.passkey_add_max_auth_age` | integer | `900` | 0–86400 | Maximum age of the session authentication, in seconds, for adding a passkey through the Self-service API. |
 | `bootstrapped_at` | integer \| null | `null` |  | System-managed: when bootstrap completed. |

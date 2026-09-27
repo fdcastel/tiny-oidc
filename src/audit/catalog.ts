@@ -92,6 +92,7 @@ export const AUDIT_CATALOG = {
   "ratelimit.exceeded": ["class"],
   "system.cron_run": [
     "audit_rows_purged",
+    "audit_hot_rows",
     "invitations_deleted",
     "users_repaired",
     "users_dropped",

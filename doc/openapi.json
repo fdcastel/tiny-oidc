@@ -2535,6 +2535,9 @@
           "audit_rows_purged": {
             "type": "integer"
           },
+          "audit_hot_rows": {
+            "type": "integer"
+          },
           "invitations_deleted": {
             "type": "integer"
           },
@@ -2607,6 +2610,7 @@
         },
         "required": [
           "audit_rows_purged",
+          "audit_hot_rows",
           "invitations_deleted",
           "users_repaired",
           "users_dropped",

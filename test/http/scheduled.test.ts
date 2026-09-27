@@ -69,6 +69,38 @@ describe("scheduled()", () => {
     ]);
   });
 
+  it("[TIO-OBS-005] reports the estimated audit_hot size in every run and logs an error above the alarm threshold, not below it", async () => {
+    await env.DB.prepare(
+      "INSERT INTO audit_hot (id, ts, type, outcome, actor_kind, actor_id, user_id, client_id, upstream, ip_hash, data) VALUES ('alarm-1', ?, 'x', 'success', 'system', NULL, NULL, NULL, NULL, NULL, '{}')",
+    )
+      .bind(clock.now())
+      .run();
+    const alarmed: LogLine[] = [];
+    await createScheduled({ clock, sink: (l) => alarmed.push(l), auditHotAlarmRows: 0 })(
+      createScheduledController({ cron: "*/5 * * * *", scheduledTime: clock.nowMs() }),
+      env,
+      createExecutionContext(),
+    );
+    const report = alarmed.find((l) => l["msg"] === "cron") as LogLine;
+    expect(report["audit_hot_rows"]).toBeGreaterThanOrEqual(1);
+    expect(alarmed.find((l) => l["msg"] === "audit_hot above its alarm threshold")).toMatchObject({
+      level: "error",
+      rows: report["audit_hot_rows"],
+      threshold: 0,
+    });
+    // At the real threshold a test database is far below it: no alarm.
+    const quiet: LogLine[] = [];
+    await createScheduled({ clock, sink: (l) => quiet.push(l) })(
+      createScheduledController({ cron: "*/5 * * * *", scheduledTime: clock.nowMs() }),
+      env,
+      createExecutionContext(),
+    );
+    expect(quiet.some((l) => l["msg"] === "audit_hot above its alarm threshold")).toBe(false);
+    expect(
+      (quiet.find((l) => l["msg"] === "cron") as LogLine)["audit_hot_rows"],
+    ).toBeGreaterThanOrEqual(1);
+  });
+
   it("[TIO-CFG-010] logs and returns when the configuration is invalid or storage fails; the next trigger tries again", async () => {
     lines.length = 0;
     await run({ ...env, MASTER_KEYS: "not json" } as Env);

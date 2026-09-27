@@ -1,0 +1,41 @@
+# The capacity watch (TIO-OBS-005): every six hours each environment's
+# Admin API reports its hot audit table and its last cron run; the job fails,
+# and GitHub mails the repository owner, when the table is above its alarm
+# threshold or the cron has stopped. An environment whose issuer secret is not
+# set is skipped (production before it exists).
+name: watch
+
+on:
+  schedule:
+    - cron: "43 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: capacity watch (TIO-OBS-005)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Staging
+        if: always()
+        run: node scripts/watch.ts
+        env:
+          TIO_WATCH_NAME: staging
+          TIO_WATCH_ISSUER: ${{ secrets.TIO_STAGING_ISSUER }}
+          TIO_WATCH_CLIENT_ID: ${{ secrets.TIO_STAGING_CLIENT_ID }}
+          TIO_WATCH_CLIENT_SECRET: ${{ secrets.TIO_STAGING_CLIENT_SECRET }}
+      - name: Production
+        if: always()
+        run: node scripts/watch.ts
+        env:
+          TIO_WATCH_NAME: production
+          TIO_WATCH_ISSUER: ${{ secrets.TIO_PRODUCTION_ISSUER }}
+          TIO_WATCH_CLIENT_ID: ${{ secrets.TIO_PRODUCTION_CLIENT_ID }}
+          TIO_WATCH_CLIENT_SECRET: ${{ secrets.TIO_PRODUCTION_CLIENT_SECRET }}

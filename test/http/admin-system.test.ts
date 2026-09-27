@@ -363,6 +363,8 @@ describe("stats and maintenance", () => {
     expect(purged.status).toBe(200);
     const report = (await purged.json()) as Record<string, unknown>;
     expect(report["audit_rows_purged"]).toBeGreaterThanOrEqual(2);
+    // The estimate after the purge counts at least the fresh row kept (TIO-OBS-005).
+    expect(report["audit_hot_rows"]).toBeGreaterThanOrEqual(1);
     expect(await auditIds()).toEqual(["a-new"]);
     expect(await getInvitation(db, usedLongAgo)).toBeNull();
     expect(await getInvitation(db, usedNow)).not.toBeNull();

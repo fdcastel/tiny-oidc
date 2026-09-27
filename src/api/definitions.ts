@@ -1878,6 +1878,7 @@ export const adminStatsRoute = createRoute({
 export const MaintenanceReportSchema = z
   .object({
     audit_rows_purged: z.int(),
+    audit_hot_rows: z.int(),
     invitations_deleted: z.int(),
     users_repaired: z.int(),
     users_dropped: z.int(),

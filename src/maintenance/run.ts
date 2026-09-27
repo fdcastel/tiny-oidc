@@ -3,7 +3,7 @@ import { maintainSigningKeys, rekeySigningKeys } from "../crypto/keystore.ts";
 import type { DerivedKeys } from "../crypto/master-keys.ts";
 import { openSecret, sealedUnderVersion, sealSecret } from "../crypto/secretbox.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
-import { PURGE_BATCH_ROWS, purgeAuditBatch } from "../db/audit.ts";
+import { estimateAuditRows, PURGE_BATCH_ROWS, purgeAuditBatch } from "../db/audit.ts";
 import type { Db } from "../db/db.ts";
 import { identitiesOfUser } from "../db/identities.ts";
 import { deleteSpentInvitations } from "../db/invitations.ts";
@@ -38,6 +38,8 @@ export const LAST_CRON_RUN_KEY = "system.last_cron_run";
 
 export interface MaintenanceReport {
   audit_rows_purged: number;
+  /** The hot table's size after the purge, estimated (TIO-OBS-005); 0 when the step was skipped. */
+  audit_hot_rows: number;
   invitations_deleted: number;
   users_repaired: number;
   users_dropped: number;
@@ -144,6 +146,7 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
   const budget = deps.budgetMs ?? MAINTENANCE_BUDGET_MS;
   const report: MaintenanceReport = {
     audit_rows_purged: 0,
+    audit_hot_rows: 0,
     invitations_deleted: 0,
     users_repaired: 0,
     users_dropped: 0,
@@ -164,6 +167,7 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
           report.audit_rows_purged += purged;
           if (purged < PURGE_BATCH_ROWS) break;
         }
+        report.audit_hot_rows = await estimateAuditRows(db);
       },
     ],
     [

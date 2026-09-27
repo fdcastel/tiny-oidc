@@ -421,6 +421,17 @@ cover both endpoints.
   `tiny-oidc-<env>-tasks`; after five failed attempts a message lands in
   `tiny-oidc-<env>-dlq`. A growing dead-letter queue means R2 or D1 refused
   writes (audit) or a relying party's `backchannel_logout_uri` is down.
+- **Capacity alarm** (TIO-OBS-005). Every cron run estimates the hot audit
+  table's rows (`audit_hot_rows` in the `cron` log line and in
+  `system.cron_run`) and logs `audit_hot above its alarm threshold` at `error`
+  above 6,000,000. The `watch` workflow checks every environment's stats every
+  six hours and fails (you get GitHub's mail) above the same threshold or when
+  the cron has not run for 30 minutes. It needs `TIO_<ENV>_ISSUER`,
+  `_CLIENT_ID` and `_CLIENT_SECRET` secrets for each environment; production
+  is skipped until they exist. **Remedy:** lower `audit.hot_retention_days`
+  (`PATCH /admin/settings`, default 7). The cron then purges up to 10,000 rows
+  every five minutes, 2.88 M a day. Run `POST /admin/maintenance/purge` for
+  more.
 - Rate limits are two Workers bindings (`RL_IP` 120/60 s per address,
   `RL_CLIENT` 2,000/10 s per client, §6.7); `ratelimit.exceeded` events name
   the class. Raise them in `wrangler.jsonc` and deploy.

@@ -1,3 +1,4 @@
+import { AUDIT_HOT_ALARM_ROWS } from "../audit/capacity.ts";
 import { Auditor } from "../audit/events.ts";
 import { shipAuditEvents } from "../audit/sink.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
@@ -14,6 +15,8 @@ import { runMaintenance } from "./run.ts";
 export interface ScheduledDeps {
   clock: Clock;
   sink?: LogSink;
+  /** The `audit_hot` alarm threshold (TIO-OBS-005); tests lower it. */
+  auditHotAlarmRows?: number;
 }
 
 export type ScheduledHandler = (
@@ -26,6 +29,7 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
   const sink = deps.sink ?? consoleSink;
   const settingsLoader = new SettingsLoader(deps.clock);
   const uuids = new UuidV7(deps.clock);
+  const alarmRows = deps.auditHotAlarmRows ?? AUDIT_HOT_ALARM_ROWS;
   return async (controller, env, ctx) => {
     const runId = uuids.next();
     const config = buildConfig(env);
@@ -53,6 +57,14 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
         actor: { kind: "system", id: null },
       });
       logger.log("info", "cron", { ...base, ...report });
+      // The capacity alarm (TIO-OBS-005): at the error level, which log alerts watch.
+      if (report.audit_hot_rows > alarmRows) {
+        logger.log("error", "audit_hot above its alarm threshold", {
+          ...base,
+          rows: report.audit_hot_rows,
+          threshold: alarmRows,
+        });
+      }
     } catch (error) {
       logger.log("error", "cron failed", { ...base, reason: String(error) });
     }

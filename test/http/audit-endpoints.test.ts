@@ -275,6 +275,9 @@ describe("admin audit listing", () => {
 
 describe("a person's events", () => {
   it("[TIO-AUDIT-010] the Admin and Self-service views show one user's events within the hot retention window, newest first, with only the §8 fields", async () => {
+    // The window's mechanics, under a retention the seeded events fit (T0 is ten days back).
+    await writeSettings(db, { "audit.hot_retention_days": 30 }, "test", clock.now());
+    clock.advance(61);
     const stale = event({
       ts: clock.now() - 31 * 86_400,
       type: "session.created",
@@ -337,6 +340,13 @@ describe("a person's events", () => {
     expect(wider.items.some((e) => e.id === stale.id)).toBe(true);
     await writeSettings(db, { "audit.hot_retention_days": null }, "test", clock.now());
     clock.advance(61);
+    // The default window (7 days, P7-12) leaves the ten-day-old seeded events out.
+    const byDefault = (await (
+      await admin(h, token, `users/${alice.profile.id}/events?limit=200`)
+    ).json()) as Page<{ id: string; ts: number }>;
+    expect(byDefault.items.some((e) => e.id === fresh.id)).toBe(true);
+    expect(byDefault.items.every((e) => e.ts >= clock.now() - 7 * 86_400)).toBe(true);
+    expect(byDefault.items.length).toBeLessThan(wider.items.length);
     // Storage trouble on the events and on the settings.
     expect(
       (
@@ -365,7 +375,9 @@ describe("a person's events", () => {
     );
     expect(settingsOnly.status).toBe(503);
     expect(await settingsOnly.json()).toMatchObject({ error_description: "settings unavailable" });
-    // Self-service: the person's own token sees the same list.
+    // Self-service: the person's own token sees the same list, under the same 30-day window.
+    await writeSettings(db, { "audit.hot_retention_days": 30 }, "test", clock.now());
+    clock.advance(61);
     const own = await (async () => {
       const started = await h.start(operator.client, { scope: "openid account" });
       const { publicKey } = (await (await h.post(started, "passkey/options", {})).json()) as {
