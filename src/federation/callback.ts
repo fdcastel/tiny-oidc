@@ -1,5 +1,6 @@
 import type { Handler } from "hono";
 import type { JWTPayload } from "jose";
+import { hashesEqual } from "../crypto/hash.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import type { Db } from "../db/db.ts";
 import { lookupIdentity, releaseIdentity } from "../db/identities.ts";
@@ -291,7 +292,7 @@ export function federationCallbackHandler(clock: Clock): Handler<AppEnv> {
     const consumed = await stub.consumeFederation(encodeBase64Url(opened.secret_hash), now);
     if (!consumed.ok) return toLoginApp("invalid_state");
     const { doc, leg } = consumed;
-    if (doc.binding_hash !== encodeBase64Url(binding.secret_hash)) {
+    if (!(await hashesEqual(doc.binding_hash, encodeBase64Url(binding.secret_hash)))) {
       return toLoginApp("interaction_binding_failed");
     }
     const fail = (error: string, description: string, reason: string) =>

@@ -5,7 +5,7 @@ import {
   counterPolicy,
   verifyAssertionSignature,
 } from "../auth/passkey.ts";
-import { sha256 } from "../crypto/hash.ts";
+import { publicLengthEqual, sha256 } from "../crypto/hash.ts";
 import type { Env } from "../env.ts";
 import { encodeBase64Url } from "../util/base64url.ts";
 import { parseJson } from "../util/json.ts";
@@ -1156,7 +1156,10 @@ export class UserDO extends DurableObject<Env> {
       // (TIO-TOKEN-011): a mismatch either way is a confused or replayed request.
       if (code.code_challenge === null) {
         if (input.code_verifier !== null) return fail("invalid_grant");
-      } else if (expectedChallenge === null || expectedChallenge !== code.code_challenge) {
+      } else if (
+        expectedChallenge === null ||
+        !publicLengthEqual(expectedChallenge, code.code_challenge)
+      ) {
         return fail("invalid_grant");
       }
       if (user.disabled_at !== null) return fail("invalid_grant");

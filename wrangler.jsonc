@@ -92,7 +92,8 @@
       "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "tiny_oidc_staging" }]
     },
     "production": {
-      "name": "tiny-oidc",
+      // Not the button profile's `tiny-oidc`: no two profiles share a name (TIO-DEPLOY-001).
+      "name": "tiny-oidc-production",
       // A 10 % head sample of request log lines (TIO-OBS-001, ADR 0022): ~$6 a month at
       // the §2.7 rates instead of ~$170; staging keeps every line.
       "observability": {

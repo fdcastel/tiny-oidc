@@ -1,4 +1,8 @@
-import { createExecutionContext } from "cloudflare:test";
+import {
+  createExecutionContext,
+  createScheduledController,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { createLocalJWKSet, decodeJwt, decodeProtectedHeader, jwtVerify, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
@@ -6,12 +10,14 @@ import { signJwt } from "../../src/crypto/jwt.ts";
 import { KeyStore, retireSigningKeyNow, rotateSigningKey } from "../../src/crypto/keystore.ts";
 import { Db } from "../../src/db/db.ts";
 import { writeSettings } from "../../src/db/settings.ts";
+import { getUser, setUserStatus } from "../../src/db/users.ts";
 import type { Env } from "../../src/env.ts";
 import {
   BackchannelTaskSchema,
   MAX_ATTEMPTS,
   RETRY_DELAYS_SECONDS,
 } from "../../src/logout/backchannel.ts";
+import { createScheduled } from "../../src/maintenance/scheduled.ts";
 import type { LogLine } from "../../src/obs/log.ts";
 import type { Client } from "../../src/oidc/clients.ts";
 import { interactionStub } from "../../src/oidc/interactions.ts";
@@ -862,6 +868,77 @@ describe("other revocation paths", () => {
     expect(
       events("logout.backchannel_sent").filter((e) => e.client_id === silent.client_id),
     ).toEqual([]);
+  });
+
+  it("[TIO-LOGOUT-013] [TIO-DATA-010] a deletion the cron or the purge endpoint finishes, after the request that began it stopped, revokes the sessions, emits user.deleted and sends logout tokens", async () => {
+    const operator = await adminUser(h);
+    const cronLines: LogLine[] = [];
+    const scheduled = createScheduled({ clock, sink: (line) => cronLines.push(line) });
+    // The request marked the user deleting and went no further.
+    const mallory = await userWithPasskey(clock, { email: "mallory@example.com" });
+    const session = await login(mallory, web);
+    await setUserStatus(db, mallory.profile.id, "deleting", clock.now());
+    received.length = 0;
+    const ctx = createExecutionContext();
+    await scheduled(createScheduledController(), env, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(received.map((r) => [r.path, decodeJwt(r.token)["sid"]])).toEqual([
+      ["/backchannel", session.sid],
+    ]);
+    const cronEvents = cronLines
+      .filter((l) => l["msg"] === "audit")
+      .map((l) => l["event"] as AuditEvent);
+    expect(cronEvents.find((e) => e.type === "user.deleted")).toMatchObject({
+      outcome: "success",
+      actor: { kind: "system", id: null },
+      user_id: mallory.profile.id,
+      data: { target: mallory.profile.id, sessions_revoked: 1, via: "cron" },
+    });
+    expect(cronEvents.filter((e) => e.type === "logout.backchannel_sent")).toHaveLength(1);
+    expect(await getUser(db, mallory.profile.id)).toBeNull();
+    // The purge endpoint runs the same body, as the administrator.
+    const nia = await userWithPasskey(clock, { email: "nia@example.com" });
+    const nias = await login(nia, other);
+    await setUserStatus(db, nia.profile.id, "deleting", clock.now());
+    received.length = 0;
+    expect(
+      (await admin(h, operator.access_token, "maintenance/purge", { method: "POST" })).status,
+    ).toBe(200);
+    expect(received.map((r) => [r.path, decodeJwt(r.token)["sid"]])).toEqual([
+      ["/other-backchannel", nias.sid],
+    ]);
+    expect(events("user.deleted").at(-1)).toMatchObject({
+      actor: { kind: "admin", id: operator.user.profile.id },
+      user_id: nia.profile.id,
+      data: { sessions_revoked: 1, via: "cron" },
+    });
+    // An object the request had already destroyed revokes nothing and notifies no one.
+    const olga = await userWithPasskey(clock, { email: "olga@example.com" });
+    await login(olga, web);
+    await olga.stub.destroy();
+    await setUserStatus(db, olga.profile.id, "deleting", clock.now());
+    received.length = 0;
+    const quiet = createExecutionContext();
+    await scheduled(createScheduledController(), env, quiet);
+    await waitOnExecutionContext(quiet);
+    expect(received).toEqual([]);
+    expect(await getUser(db, olga.profile.id)).toBeNull();
+    // Without the signing keys the deletion still finishes; the clients go unnotified, logged.
+    const pat = await userWithPasskey(clock, { email: "pat@example.com" });
+    await login(pat, web);
+    await setUserStatus(db, pat.profile.id, "deleting", clock.now());
+    received.length = 0;
+    const blindLines: LogLine[] = [];
+    const blind = createScheduled({ clock, sink: (line) => blindLines.push(line) });
+    const noKeys = { ...env, DB: failingD1(/FROM signing_keys/) } as Env;
+    const blindCtx = createExecutionContext();
+    await blind(createScheduledController(), noKeys, blindCtx);
+    await waitOnExecutionContext(blindCtx);
+    expect(received).toEqual([]);
+    expect(await getUser(db, pat.profile.id)).toBeNull();
+    expect(
+      blindLines.some((l) => l["msg"] === "backchannel logout skipped: keys unavailable"),
+    ).toBe(true);
   });
 
   it("[TIO-LOGOUT-005] [TIO-LOGOUT-011] a client the directory cannot describe or that vanished gets no token; a session still ends when no logout token can be minted; /logout answers 503 without keys or settings", async () => {

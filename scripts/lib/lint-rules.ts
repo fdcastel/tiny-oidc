@@ -1,5 +1,5 @@
 // Lint rules that encode requirements (TIO-TEST-060, TIO-TEST-005, TIO-GEN-004,
-// TIO-TEST-033, TIO-DATA-015, TIO-CRYPTO-001, TIO-CRYPTO-002). Each rule is a
+// TIO-TEST-033, TIO-DATA-015, TIO-CRYPTO-001..003). Each rule is a
 // small text check over repository files; scripts/lint-rules.ts runs them all.
 
 export interface Violation {
@@ -154,6 +154,9 @@ const CRYPTO_PACKAGE =
   /^(node:)?crypto$|crypto-js|@noble\/|tweetnacl|elliptic|bcrypt|argon2|scrypt|sha\.js|hash\.js|jsrsasign|node-forge|sjcl|aes-js|js-sha|md5|@peculiar\/webcrypto|@stablelib\//;
 const CRYPTO_ALLOWLIST = new Set(["jose", "@simplewebauthn/server"]);
 
+/** A hash, secret, challenge or MAC by name: `doc.binding_hash`, `stateHash`, `expectedChallenge`. */
+const SECRET_OPERAND = String.raw`[\w$.]*(?:_hash|Hash|secret|Secret|_challenge|Challenge|_mac|Mac)\b(?:\(\))?`;
+
 export const RULES: Rule[] = [
   patternRule(
     "no-math-random",
@@ -287,6 +290,15 @@ export const RULES: Rule[] = [
     (p) => inTest(p) && isTs(p) && !p.startsWith("test/support/"),
     /\bsetTimeout\s*\(/,
     "tests never sleep; control time through the injected Clock",
+  ),
+  patternRule(
+    "no-plain-secret-compare",
+    ["TIO-CRYPTO-003", "TIO-TEST-060"],
+    (p) => inSrc(p) && isTs(p),
+    new RegExp(
+      `${SECRET_OPERAND}\\s*[!=]==(?!\\s*(?:null|undefined|""|''|\\d))|[!=]==\\s*${SECRET_OPERAND}`,
+    ),
+    "compare hashes, secrets, challenges and MACs with hashesEqual, secretsEqual or publicLengthEqual",
   ),
   patternRule(
     "no-any",

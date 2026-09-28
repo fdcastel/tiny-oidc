@@ -215,7 +215,9 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
       ["versions", "deploy", `${CANDIDATE}@100%`],
     ]);
     expect(calls[3]).toContain("--var");
-    expect(smokes[0]?.headers).toEqual({ [VERSION_OVERRIDE_HEADER]: `tiny-oidc="${CANDIDATE}"` });
+    expect(smokes[0]?.headers).toEqual({
+      [VERSION_OVERRIDE_HEADER]: `tiny-oidc-production="${CANDIDATE}"`,
+    });
     const smokeIndex = logs.indexOf("smoke https://auth.example.com");
     const fullIndex = logs.indexOf(
       `wrangler versions deploy ${CANDIDATE}@100% --yes ${scoped("production").join(" ")}`,
@@ -382,7 +384,7 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
         .production.d1_databases[0]?.database_id,
     ).toBe("x");
     expect(workerName(realConfig, "staging")).toBe("tiny-oidc-staging");
-    expect(workerName(realConfig, "production")).toBe("tiny-oidc");
+    expect(workerName(realConfig, "production")).toBe("tiny-oidc-production");
     expect(() => workerName('{ "env": {} }', "production")).toThrow("env.production has no name");
     expect(liveVersion(STATUS)).toBe(LIVE);
     // An interrupted rollout leaves the new version at 0% beside the live one: still restorable.

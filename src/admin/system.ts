@@ -15,6 +15,7 @@ import { readAllSettings, writeSettings } from "../db/settings.ts";
 import { countUpstreams } from "../db/upstreams.ts";
 import { countUsersByStatus, listUsers } from "../db/users.ts";
 import { type Clock, resolveSettings, type Settings, SettingsSchema } from "../env.ts";
+import { notifyEndedSessions } from "../logout/rp-logout.ts";
 import {
   LAST_CRON_RUN_KEY,
   REKEY_CHUNK,
@@ -290,6 +291,7 @@ export function purgeHandler(clock: Clock): Handler<AppEnv> {
         clock,
         audit: c.get("audit"),
         actor: { kind: "admin", id: actor.id },
+        notify: (ended) => notifyEndedSessions(c, clock, ended),
       });
       c.get("keyStore").invalidate();
       return c.json(report);

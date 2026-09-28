@@ -187,7 +187,7 @@ authentik is the feature reference. Appendix A maps every authentik capability t
               └────────────────────┘
 ```
 
-**[TIO-ARCH-001]** (V: review) The deployable unit SHALL be a single Worker script exporting `fetch`, `queue` and `scheduled` handlers and the two Durable Object classes `UserDO` and `InteractionDO`.
+**[TIO-ARCH-001]** The deployable unit SHALL be a single Worker script exporting `fetch`, `queue` and `scheduled` handlers and the two Durable Object classes `UserDO` and `InteractionDO`.
 
 **[TIO-ARCH-002]** No request path SHALL depend on a Durable Object that is shared by all users or all clients. Per-deployment state (clients, upstreams, keys, settings) is read from D1 through isolate caches. Tests assert that the Durable Object namespaces are only addressed by user id, interaction id or client id.
 
@@ -534,7 +534,7 @@ Email is an attribute, not an identifier. At consumer scale an unverified email 
 
 **[TIO-DATA-009]** Disabling a user SHALL, in one `UserDO` transaction, set `disabled_at`, revoke all sessions and refresh families, and enqueue back-channel logout for every client in every session. Tests assert that a token refresh, a code exchange, a session-hit `/authorize`, `/userinfo` and every Self-service call fail after disable.
 
-**[TIO-DATA-010]** Deleting a user SHALL revoke as in disable, delete every D1 row referencing the user (index rows, group memberships, invitations bound to or redeemed by the user), call `UserDO.destroy()` (`deleteAll`), and emit `user.deleted`. Audit records already archived retain the user id, which is a random UUID and identifies no person by itself.
+**[TIO-DATA-010]** Deleting a user SHALL revoke as in disable, delete every D1 row referencing the user (index rows, group memberships, invitations bound to or redeemed by the user), call `UserDO.destroy()` (`deleteAll`), and emit `user.deleted`. A deletion whose request stopped after marking the user `deleting` is finished by the next maintenance run the same way: it revokes what is left, emits `user.deleted` (`via: cron`) and sends back-channel logout for the sessions it revoked (TIO-LOGOUT-013). Audit records already archived retain the user id, which is a random UUID and identifies no person by itself.
 
 ### 3.5 Groups
 
@@ -1492,17 +1492,19 @@ There is no password fallback and no email-only recovery.
 
 Limits use the Rate Limiting binding (per-colo, permissive) for coarse protection, and `UserDO`/`InteractionDO` state for exact per-entity limits.
 
-| Key | Scope | Limit | Binding / store |
-|---|---|---|---|
-| IP | `/authorize`, `/par`, `/logout`, `/federation/callback` | 60 per 60 s | `RL_IP` |
-| IP | `/token`, `/par`, `/revoke` (failed client auth) | 120 per 60 s | `RL_IP` |
-| IP | `/api/v1/interactions/*` | 120 per 60 s | `RL_IP` |
-| IP | `/api/v1/me/*` | 120 per 60 s | `RL_IP` |
-| client id | `/token`, `/par`, `/revoke` (failed client auth) | 20 per 60 s | `RL_CLIENT` |
-| client id | `/token` successful | 2,000 per 10 s | `RL_CLIENT` |
-| interaction id | passkey and registration attempts | 10 per interaction | `InteractionDO` |
-| user id | Self-service passkey registration attempts | 10 per 10 min | `UserDO` |
-| admin token | `/api/v1/admin/*` | 600 per 60 s | `RL_CLIENT` keyed by `jti` prefix |
+| Key | Scope | Target | In force (production) | Binding / store |
+|---|---|---|---|---|
+| IP | `/authorize`, `/par`, `/logout`, `/federation/callback` | 60 per 60 s | 120 per 60 s | `RL_IP` |
+| IP | `/token`, `/par`, `/revoke` (failed client auth) | 120 per 60 s | 120 per 60 s | `RL_IP` |
+| IP | `/api/v1/interactions/*` | 120 per 60 s | 120 per 60 s | `RL_IP` |
+| IP | `/api/v1/me/*` | 120 per 60 s | 120 per 60 s | `RL_IP` |
+| client id | `/token`, `/par`, `/revoke` (failed client auth) | 20 per 60 s | 2,000 per 10 s | `RL_CLIENT` |
+| client id | `/token` successful | 2,000 per 10 s | 2,000 per 10 s | `RL_CLIENT` |
+| interaction id | passkey and registration attempts | 10 per interaction | 10 per interaction | `InteractionDO` |
+| user id | Self-service passkey registration attempts | 10 per 10 min | 10 per 10 min | `UserDO` |
+| admin token | `/api/v1/admin/*` | 600 per 60 s | 2,000 per 10 s | `RL_CLIENT` keyed by `jti` prefix |
+
+A `simple` binding carries one limit, and §12.1 declares two, so every class of a binding shares its limit (ADR 0001): the **in force** column is what production enforces, the **target** column what one binding per class would. The classes stay distinct in their keys, in `ratelimit.exceeded` and in the metrics. The widest gap is failed client authentication, 2,000 per 10 s per client instead of 20 per 60 s; it guards 256-bit client secrets, and the per-address class still cuts a guessing source off at 120 per 60 s. Both bindings count per data centre and eventually, so a flood spread over many data centres or addresses passes them; the exact limits are the Durable Objects'. `RL_IP` is keyed by address, which Cloudflare's documentation advises against (shared NATs, IPv6 ranges); the OP keys IPv6 by its /64 (TIO-RL-003) and runs no WAF rule in front in v1 (review 2026-09-26, §5). Staging raises `RL_IP` to 100,000 per 60 s for the load tests.
 
 **[TIO-RL-001]** Exceeding a binding limit SHALL return 429 with `Retry-After: 10` and `{"error":"rate_limited"}`; on protocol endpoints where a redirect is expected, the error is rendered through `login_url`. Tests use a fake binding.
 
@@ -1827,7 +1829,7 @@ The token is returned once at creation as `token` and `url` (`login_url?invitati
 
 **[TIO-CRYPTO-002]** Every random value (challenges, secrets, ids, nonces, verifiers) SHALL come from `crypto.getRandomValues` or `crypto.randomUUID`; `Math.random` is forbidden by lint.
 
-**[TIO-CRYPTO-003]** Every comparison involving a secret, hash, or MAC SHALL use `timingSafeEqual` on equal-length inputs; a length mismatch returns false after hashing both inputs to fixed length.
+**[TIO-CRYPTO-003]** Every comparison involving a secret, hash, or MAC SHALL use `timingSafeEqual` on equal-length inputs; a length mismatch returns false after hashing both inputs to fixed length. Inside a Durable Object's synchronous transaction, which cannot await a digest, values whose length is public (a SHA-256 digest against a client's own `code_challenge`) return false on a length mismatch without hashing. A lint rule refuses `===` and `!==` on operands named as hashes, secrets, challenges or MACs in `src/`.
 
 **[TIO-CRYPTO-004]** SHA-256 without salt or stretching is the storage form for client secrets, handle secrets and invitation secrets because each has ≥ 256 bits of entropy from the OP's CSPRNG; the OP never stores a hash of a human-chosen secret. A test asserts every hashed secret's generator produces 32 random bytes.
 
@@ -2003,7 +2005,7 @@ The configuration is host-neutral: it names no hostname, zone or account. The to
                     "queues": { "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-staging-tasks" }],
                                 "consumers": [{ "queue": "tiny-oidc-staging-tasks", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "tiny-oidc-staging-dlq" }] },
                     "r2_buckets": [{ "binding": "AUDIT_BUCKET", "bucket_name": "tiny-oidc-staging-audit" }] },
-    "production": { "name": "tiny-oidc", "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
+    "production": { "name": "tiny-oidc-production", "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
                     "d1_databases": [{ "binding": "DB", "database_name": "tiny-oidc-production", "migrations_dir": "migrations" }],
                     "queues": { "producers": [{ "binding": "TASKS", "queue": "tiny-oidc-production-tasks" }],
                                 "consumers": [{ "queue": "tiny-oidc-production-tasks", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 5, "dead_letter_queue": "tiny-oidc-production-dlq" }] },
@@ -2060,11 +2062,11 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 ### 12.3 Environments, deployment and releases
 
-**[TIO-DEPLOY-001]** (V: review) Four deployment profiles SHALL exist: `dev` (local `wrangler dev` with local D1, Durable Objects, Queues and R2), `button` (the top-level configuration profile used by the Deploy-to-Cloudflare button: workers.dev hostname, bundled login app on), `staging` (the operator's Cloudflare account, seeded with synthetic users, target of conformance and load tests, with a staging-only auto-approving fake upstream deployed as a separate Worker), and `production`. No credential, key, database, queue or bucket is shared between profiles.
+**[TIO-DEPLOY-001]** Four deployment profiles SHALL exist: `dev` (local `wrangler dev` with local D1, Durable Objects, Queues and R2), `button` (the top-level configuration profile used by the Deploy-to-Cloudflare button: workers.dev hostname, bundled login app on), `staging` (the operator's Cloudflare account, seeded with synthetic users, target of conformance and load tests, with a staging-only auto-approving fake upstream deployed as a separate Worker), and `production`. No credential, key, database, queue, bucket, rate-limit namespace, dataset or Worker name is shared between profiles (the button profile's Worker is `tiny-oidc`, production's `tiny-oidc-production`, so the button used in the operator's own account cannot overwrite production).
 
 **[TIO-DEPLOY-005]** (V: ci) The public repository SHALL be host- and account-neutral: no hostname of any real deployment, no zone name, no Cloudflare account id, no D1 database id of a real database, and no credential may appear in any committed file, including this document, workflows and examples. Deployment-specific values live in the operator's private infrastructure repository and in the Cloudflare dashboard. A CI grep with an operator-maintained deny-list (kept outside the public repo and run only in the operator's environment) plus a public generic check (no 32-hex account ids, no `database_id` other than the placeholder) enforce this.
 
-**[TIO-DEPLOY-006]** (V: review) Staging and production SHALL be deployed by Cloudflare Workers Builds connected to the GitHub repository, not by GitHub Actions: one connected Worker per environment, `staging` building the default branch `main` and `production` building the protected `production` branch. Build variables set in the Cloudflare dashboard per Worker supply `TIO_ENV`, `TIO_ISSUER`, `TIO_RP_ID` and `TIO_RP_NAME`. No Cloudflare API token is stored in GitHub. GitHub Actions runs tests and gates only.
+**[TIO-DEPLOY-006]** Staging and production SHALL be deployed by Cloudflare Workers Builds connected to the GitHub repository, not by GitHub Actions: one connected Worker per environment, `staging` building the default branch `main` and `production` building the protected `production` branch. Build variables set in the Cloudflare dashboard per Worker supply `TIO_ENV`, `TIO_ISSUER`, `TIO_RP_ID` and `TIO_RP_NAME`. No Cloudflare API token is stored in GitHub. GitHub Actions runs tests and gates only.
 
 **[TIO-DEPLOY-007]** The deploy command for every profile SHALL be `pnpm run deploy`, which runs `scripts/deploy.ts`: read `TIO_ENV` (default: top-level profile); apply D1 migrations with `wrangler d1 migrations apply DB --remote [--env]`; for `staging` and `production`, resolve the D1 `database_id` by `database_name` through `wrangler d1 list --json` and write a generated configuration file (never committed) that adds it; pass `--var ISSUER:$TIO_ISSUER --var RP_ID:$TIO_RP_ID --var RP_NAME:$TIO_RP_NAME --var VERSION:<commit>`; for `staging` and `production`, a staged rollout: read the live version (`wrangler deployments status --json`) before anything changes, `wrangler versions upload`, `wrangler versions deploy <new>@0% <live>@100%`, run the smoke test (`scripts/smoke.ts`: discovery, JWKS, health) on the issuer's own hostname with the `Cloudflare-Workers-Version-Overrides` header naming the new version — health must report the deploy's `VERSION` — then `<new>@100%`, or `<live>@100%` again when the smoke test fails; for `button`, `wrangler deploy`. `TIO_DIRECT_DEPLOY=true` deploys `staging` or `production` with `wrangler deploy` for the Worker's first deployment and for a release carrying a Durable Object class migration, which cannot be uploaded as a version. Any failing step aborts before traffic changes. The script is unit-tested with a fake `wrangler` and runs for real on every staging deploy ([ADR 0018](adr/0018-staged-rollout-through-version-overrides.md)).
 
@@ -2078,7 +2080,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-DEPLOY-003]** D1 SHALL be backed up weekly by `wrangler d1 export` to `AUDIT_BUCKET/backups/`, and D1 Time Travel (30 days) is the point-in-time recovery mechanism. `GET /api/v1/admin/stats` reports the newest export as `last_backup_at`; the watch workflow fails when production's is missing or older than 8 days. The deploy script refuses a staging or production deploy whose audit bucket has no expiry rule for `audit/` or `backups/` (§4.7); a credential that cannot read the rules logs a warning instead. Durable Object point-in-time recovery is not exposed in v1 (ADR 0021): restoring one user's object to a bookmark would bring back what was withdrawn since — revoked sessions and refresh families, consumed tokens and codes, removed passkeys, unlinked identities, revoked consent, removed group memberships — and roll passkey counters back. A restore that re-grants nothing is deferred (plan B-08).
 
-**[TIO-DEPLOY-004]** (V: review) A `doc/RUNBOOK.md` SHALL document: bootstrap, key rotation, master-key rotation, emergency key retirement, client-secret rotation, user recovery, D1 restore, reindex, and what to do when `MASTER_KEYS` is lost (re-key everything; all sessions and refresh tokens invalid; upstream secrets and signing keys must be regenerated).
+**[TIO-DEPLOY-004]** A `doc/RUNBOOK.md` SHALL document: bootstrap, key rotation, master-key rotation, emergency key retirement, client-secret rotation, user recovery, D1 restore, reindex, and what to do when `MASTER_KEYS` is lost (re-key everything; all sessions and refresh tokens invalid; upstream secrets and signing keys must be regenerated).
 
 ### 12.4 Cron maintenance
 
@@ -2309,7 +2311,7 @@ For planning only: roughly 9,000–12,000 lines of `src/` TypeScript and 2–3×
 | T11 | Master-key compromise | Handles become forgeable only in structure; every handle still requires a server-side record; documented re-key runbook | ARCH-009, CRYPTO-011, DEPLOY-004 |
 | T12 | Signing-key compromise | Emergency retire endpoint; short token lifetimes; JWKS pre-publication makes rotation routine | KEYS-012, KEYS-013 |
 | T13 | Client impersonation | Strict per-client auth method; secret hashed; `private_key_jwt` with a 60-second assertion lifetime and `aud` check; failed-auth rate limits | TOKEN-002, TOKEN-003, TOKEN-004 |
-| T14 | Denial of service / brute force | Per-IP, per-client, per-interaction and per-user limits — the per-address class on the client-authenticated endpoints counts failed client authentication only (ADR 0012), so a credential-guessing source is cut off per address while a relying party's successful traffic is bounded per client; body and query limits; no unbounded loops; per-user isolation stops one user from affecting others | RL-001–RL-003, HTTP-004, ARCH-002 |
+| T14 | Denial of service / brute force | Per-IP, per-client, per-interaction and per-user limits, at the binding's limit where §6.7's target is lower (ADR 0001: failed client authentication 2,000 per 10 s per client, navigation 120 per 60 s per address) — the per-address class on the client-authenticated endpoints counts failed client authentication only (ADR 0012), so a credential-guessing source is cut off per address while a relying party's successful traffic is bounded per client; body and query limits; no unbounded loops; per-user isolation stops one user from affecting others | RL-001–RL-003, HTTP-004, ARCH-002 |
 | T15 | Enumeration of users, credentials, invitations | Uniform responses; masked emails; no existence disclosure in the Interaction API | ERR-002, IX-001, IX-070 |
 | T16 | Log or audit leakage | Redaction canaries; allow-listed data keys; pseudonymized IP | AUDIT-002, OBS-001, SESS-005 |
 | T17 | Privilege escalation to admin | `admin` scope requires live `admins` membership; only admins can grant `admin` to clients; bootstrap single-use | ADMIN-001, CLIENT-002, ADMIN-010 |
@@ -2410,6 +2412,8 @@ Each entry: what the draft said → what this spec does → why.
 39. **Per-user point-in-time restore endpoint** → removed from v1 (2026-09-27, ADR 0021). *Why:* the bookmark replaces the object's storage, so everything withdrawn since the bookmark came back live, and the local runtime cannot run a restore, so no fix could be proven there; a safe restore needs a snapshot kept outside the object and a staging test.
 
 40. **Every audit event in `audit_hot`** → hot and archive-only types (TIO-AUDIT-013), the archive written per consumer batch under keys unique to each write, 14-day hot retention, the capacity model as a CI check (TIO-PERF-003) (2026-09-28, ADR 0022). *Why:* at the §2.7 rates every event in D1 meant 6.2 M rows a day, a full D1 in about three days and a purge that could not keep up, while §2.7 budgeted ~4 M rows for 30 days; and an archive key reused on redelivery collides with a bucket lock.
+
+41. **The review's low items** → hash comparisons in constant time with a lint rule behind them (TIO-CRYPTO-003, a synchronous form where a Durable Object transaction cannot await); a deletion the cron finishes emits `user.deleted` and sends back-channel logout (TIO-DATA-010); §6.7 states the limits in force beside the targets (ADR 0001); the production Worker is `tiny-oidc-production`, not the button profile's `tiny-oidc` (TIO-DEPLOY-001); TIO-ARCH-001, TIO-DEPLOY-001, TIO-DEPLOY-004 and TIO-DEPLOY-006 verified by tests instead of review (2026-09-28, review 2026-09-26 §4). *Why:* each was a gap between what the spec said and what the code or configuration did, found by the review; the tests keep them from reopening.
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 

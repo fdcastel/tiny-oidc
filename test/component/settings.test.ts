@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { hmacSha256, secretsEqual, sha256 } from "../../src/crypto/hash.ts";
+import {
+  hashesEqual,
+  hmacSha256,
+  publicLengthEqual,
+  secretsEqual,
+  sha256,
+} from "../../src/crypto/hash.ts";
 import { Db } from "../../src/db/db.ts";
 import { pingDb, readAllSettings, writeSettings } from "../../src/db/settings.ts";
 import {
@@ -52,6 +58,13 @@ describe("hash", () => {
     expect(await secretsEqual(a, c)).toBe(false);
     expect(await secretsEqual(a, new Uint8Array(31).fill(1))).toBe(false);
     expect(await secretsEqual(new Uint8Array(0), new Uint8Array(0))).toBe(true);
+    // The text forms: base64url hashes, and the synchronous form for a transactionSync.
+    expect(await hashesEqual("abc", "abc")).toBe(true);
+    expect(await hashesEqual("abc", "abd")).toBe(false);
+    expect(await hashesEqual("abc", "ab")).toBe(false);
+    expect(publicLengthEqual("abc", "abc")).toBe(true);
+    expect(publicLengthEqual("abc", "abd")).toBe(false);
+    expect(publicLengthEqual("abc", "abcd")).toBe(false);
   });
 
   it("hashes strings and bytes with SHA-256 and signs with HMAC-SHA256", async () => {

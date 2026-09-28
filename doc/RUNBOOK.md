@@ -12,7 +12,7 @@ section says so.
 |---|---|
 | `$ISSUER` | The deployment's issuer URL, for example `https://auth.example.com`. Every endpoint below is relative to it. |
 | `$TOKEN` | An access token with the `admin` scope (§1). |
-| `--env staging` / `--env production` | The `wrangler` environment. The Worker names are `tiny-oidc-staging` and `tiny-oidc` (`wrangler.jsonc`); the D1 databases `tiny-oidc-staging` and `tiny-oidc-production`; the R2 buckets `tiny-oidc-staging-audit` and `tiny-oidc-production-audit`. The `button` profile (top level, no `--env`) uses `tiny-oidc` and `tiny-oidc-audit`. |
+| `--env staging` / `--env production` | The `wrangler` environment. The Worker names are `tiny-oidc-staging` and `tiny-oidc-production` (`wrangler.jsonc`); the D1 databases `tiny-oidc-staging` and `tiny-oidc-production`; the R2 buckets `tiny-oidc-staging-audit` and `tiny-oidc-production-audit`. The `button` profile (top level, no `--env`) uses `tiny-oidc` and `tiny-oidc-audit`. |
 
 Admin calls are JSON over `https` with `Authorization: Bearer $TOKEN`; errors are
 `{ error, error_description, request_id }` (spec §5.13). Every mutation emits an
@@ -520,7 +520,7 @@ ADR 0020):
 
 Staging and production are deployed by Cloudflare Workers Builds
 (TIO-DEPLOY-006): `main` builds `tiny-oidc-staging`, the protected
-`production` branch builds `tiny-oidc`. Build variables `TIO_ENV`,
+`production` branch builds `tiny-oidc-production`. Build variables `TIO_ENV`,
 `TIO_ISSUER`, `TIO_RP_ID` and `TIO_RP_NAME` are set per Worker in the
 dashboard; the build runs `pnpm run build` and `pnpm run deploy`
 (`scripts/deploy.ts`, TIO-DEPLOY-007). Both environments deploy by **staged

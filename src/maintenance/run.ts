@@ -22,6 +22,7 @@ import {
   type UserRow,
 } from "../db/users.ts";
 import type { Clock, Config, Env, Settings } from "../env.ts";
+import type { EndedSession } from "../logout/backchannel.ts";
 import { userStub } from "../users/create.ts";
 
 // The maintenance body (spec §12.4, TIO-CFG-010): what `scheduled()` runs
@@ -64,6 +65,8 @@ export interface MaintenanceDeps {
   /** Where `system.cron_run` goes; the caller flushes it. */
   audit: Pick<Auditor, "emit">;
   actor: AuditInput["actor"];
+  /** Back-channel logout for the sessions a finished deletion revoked (TIO-LOGOUT-013). */
+  notify?: (ended: EndedSession[]) => Promise<void>;
   budgetMs?: number;
 }
 
@@ -209,9 +212,23 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<Maintenance
         const pending = await listUsers(db, { status: "deleting" }, null, REPAIR_BATCH);
         for (const row of pending) {
           if (!within()) break;
-          await userStub(env, row.id).destroy();
+          // The request that began the deletion stopped short of its end: finish it the way
+          // that request would have — sessions revoked, user.deleted, back-channel logout.
+          // An object the request already disabled or destroyed revokes nothing more.
+          const stub = userStub(env, row.id);
+          const revoked = await stub.setDisabled(now, now);
+          await stub.destroy();
           await deleteUserRow(db, row.id);
           report.users_deleted++;
+          const ended = revoked.ok ? revoked.revoked : [];
+          deps.audit.emit({
+            type: "user.deleted",
+            outcome: "success",
+            actor: deps.actor,
+            user_id: row.id,
+            data: { target: row.id, sessions_revoked: ended.length, via: "cron" },
+          });
+          await deps.notify?.(ended.map((s) => ({ uid: row.id, ...s })));
         }
       },
     ],

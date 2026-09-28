@@ -6,7 +6,7 @@ import {
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
 import type { Env } from "../../src/env.ts";
-import worker from "../../src/index.ts";
+import worker, * as entry from "../../src/index.ts";
 import { createScheduled } from "../../src/maintenance/scheduled.ts";
 import type { LogLine } from "../../src/obs/log.ts";
 import { FakeClock } from "../support/clock.ts";
@@ -27,6 +27,16 @@ const run = (testEnv: Env = env) =>
     testEnv,
     createExecutionContext(),
   );
+
+describe("the Worker script", () => {
+  it("[TIO-ARCH-001] exports fetch, queue and scheduled handlers and the UserDO and InteractionDO classes, and nothing else", () => {
+    expect(Object.keys(entry).sort()).toEqual(["InteractionDO", "UserDO", "default"]);
+    expect(Object.keys(worker).sort()).toEqual(["fetch", "queue", "scheduled"]);
+    for (const handler of Object.values(worker)) expect(typeof handler).toBe("function");
+    expect(typeof entry.UserDO).toBe("function");
+    expect(typeof entry.InteractionDO).toBe("function");
+  });
+});
 
 describe("scheduled()", () => {
   it("[TIO-CFG-010] runs the maintenance body every trigger as the system actor, logging the report and a system.cron_run event", async () => {

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { hashesEqual } from "../crypto/hash.ts";
 import type { Env } from "../env.ts";
 import {
   canTransition,
@@ -308,7 +309,7 @@ export class InteractionDO extends DurableObject<Env> {
     const current = await this.get(now);
     if (!current.ok) return current;
     const leg = current.doc.federation;
-    if (leg === null || leg.state_hash !== stateHash || leg.expires_at <= now) {
+    if (leg === null || !(await hashesEqual(leg.state_hash, stateHash)) || leg.expires_at <= now) {
       return fail("interaction_invalid_state");
     }
     if (current.doc.status !== "login_required") return fail("interaction_invalid_state");

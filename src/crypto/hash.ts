@@ -22,6 +22,22 @@ export async function secretsEqual(a: Uint8Array, b: Uint8Array): Promise<boolea
   return crypto.subtle.timingSafeEqual(a, b);
 }
 
+/** `secretsEqual` over text: a stored base64url hash against one just computed. */
+export async function hashesEqual(a: string, b: string): Promise<boolean> {
+  return secretsEqual(utf8(a), utf8(b));
+}
+
+/**
+ * The synchronous form, for a Durable Object's `transactionSync`, which cannot
+ * await a digest. Only for values whose length is public (a SHA-256 digest, a
+ * client's own `code_challenge`), so a length mismatch returns false at once.
+ */
+export function publicLengthEqual(a: string, b: string): boolean {
+  const x = utf8(a);
+  const y = utf8(b);
+  return x.length === y.length && crypto.subtle.timingSafeEqual(x, y);
+}
+
 export async function hmacSha256(key: CryptoKey, ...parts: Uint8Array[]): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.sign("HMAC", key, concatBytes(...parts)));
 }

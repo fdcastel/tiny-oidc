@@ -1,5 +1,5 @@
 import type { Handler } from "hono";
-import { sha256 } from "../crypto/hash.ts";
+import { hashesEqual, sha256 } from "../crypto/hash.ts";
 import { newSecret } from "../crypto/random.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import type { ExistingSession, InteractionDocument, LogoutRequest } from "../do/InteractionDO.ts";
@@ -105,7 +105,7 @@ export function completeHandler(clock: Clock): Handler<AppEnv> {
     const got = await stub.get(now);
     if (!got.ok || got.doc.status === "pushed") return toLoginApp("interaction_not_found");
     const doc = got.doc;
-    if (doc.binding_hash !== encodeBase64Url(binding.secret_hash)) {
+    if (!(await hashesEqual(doc.binding_hash, encodeBase64Url(binding.secret_hash)))) {
       return toLoginApp("interaction_binding_failed");
     }
     // TIO-IX-061: not there yet, or already done. Ready and failed are taken exactly once.

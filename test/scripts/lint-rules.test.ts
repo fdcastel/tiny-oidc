@@ -30,6 +30,35 @@ describe("lint rules (TIO-TEST-060)", () => {
     for (const rule of RULES) expect(rule.spec.length, rule.id).toBeGreaterThan(0);
   });
 
+  it("[TIO-CRYPTO-003] forbids comparing hashes, secrets, challenges and MACs with === or !==, but not their null checks", () => {
+    expect(
+      rulesHit({
+        "src/a.ts": [
+          "if (doc.binding_hash !== computed) return;",
+          "if (leg.state_hash === stateHash) ok();",
+          "if (expectedChallenge !== code.code_challenge) no();",
+          "if (a === row.client_secret) no();",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      "src/a.ts:1:no-plain-secret-compare",
+      "src/a.ts:2:no-plain-secret-compare",
+      "src/a.ts:3:no-plain-secret-compare",
+      "src/a.ts:4:no-plain-secret-compare",
+    ]);
+    expect(
+      rulesHit({
+        "src/a.ts": [
+          "if (code.code_challenge === null) return;",
+          'if (url.hash !== "") return;',
+          "if (a.hash === b.hash) same();",
+          "if (!(await hashesEqual(doc.binding_hash, computed))) return;",
+          "// binding_hash !== computed",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
   it("[TIO-CRYPTO-002] forbids Math.random in code but not in comments", () => {
     expect(rulesHit({ "src/a.ts": "const x = Math.random();" })).toEqual([
       "src/a.ts:1:no-math-random",

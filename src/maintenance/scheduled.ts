@@ -1,10 +1,13 @@
 import { AUDIT_HOT_ALARM_ROWS } from "../audit/capacity.ts";
 import { Auditor } from "../audit/events.ts";
 import { shipAuditEvents } from "../audit/sink.ts";
+import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
 import { buildConfig, type Clock, type Env, SettingsLoader } from "../env.ts";
+import { type EndedSession, notifyClients } from "../logout/backchannel.ts";
 import { consoleSink, Logger, type LogSink } from "../obs/log.ts";
+import { ClientCache } from "../oidc/client-cache.ts";
 import { runMaintenance } from "./run.ts";
 
 // The `scheduled()` handler (spec §12.4, TIO-CFG-010): every five minutes the
@@ -29,6 +32,8 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
   const sink = deps.sink ?? consoleSink;
   const settingsLoader = new SettingsLoader(deps.clock);
   const uuids = new UuidV7(deps.clock);
+  const keyStore = new KeyStore(deps.clock);
+  const clients = new ClientCache(deps.clock);
   const alarmRows = deps.auditHotAlarmRows ?? AUDIT_HOT_ALARM_ROWS;
   return async (controller, env, ctx) => {
     const runId = uuids.next();
@@ -45,6 +50,31 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
       uuids,
       deps.clock,
     );
+    // Back-channel logout for deletions the run finishes (TIO-LOGOUT-013); like a request's,
+    // it never fails the run: without keys the sessions stay ended and the clients unnotified.
+    const notify = async (ended: EndedSession[]) => {
+      if (ended.length === 0) return;
+      try {
+        const keys = await keyStore.get(db, config.config.keys);
+        const backchannel = {
+          env,
+          db,
+          keys,
+          issuer: config.config.issuerUrl,
+          clients,
+          clock: deps.clock,
+          audit: auditor,
+          logger,
+          waitUntil: (promise: Promise<unknown>) => ctx.waitUntil(promise),
+        };
+        for (const session of ended) await notifyClients(backchannel, session);
+      } catch (error) {
+        logger.log("error", "backchannel logout skipped: keys unavailable", {
+          ...base,
+          reason: String(error),
+        });
+      }
+    };
     try {
       const settings = await settingsLoader.get(db, config.config);
       const report = await runMaintenance({
@@ -55,6 +85,7 @@ export function createScheduled(deps: ScheduledDeps): ScheduledHandler {
         clock: deps.clock,
         audit: auditor,
         actor: { kind: "system", id: null },
+        notify,
       });
       logger.log("info", "cron", { ...base, ...report });
       // The capacity alarm (TIO-OBS-005): at the error level, which log alerts watch.

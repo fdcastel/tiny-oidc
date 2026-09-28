@@ -5,6 +5,7 @@ import {
   type InteractionDocumentBody,
   type InteractionStep,
 } from "../api/definitions.ts";
+import { hashesEqual } from "../crypto/hash.ts";
 import { listEnabledUpstreams } from "../db/upstreams.ts";
 import type { InteractionDO, InteractionDocument, LinkCandidate } from "../do/InteractionDO.ts";
 import type { ClientRef } from "../do/UserDO.ts";
@@ -101,7 +102,9 @@ export async function guard(c: AppContext, clock: Clock): Promise<Guarded | Resp
   if (!got.ok || got.doc.status === "pushed") {
     return errorResponse(c, 404, "interaction_not_found", "no such interaction");
   }
-  if (got.doc.binding_hash !== encodeBase64Url(binding.secret_hash)) return bindingFailed();
+  if (!(await hashesEqual(got.doc.binding_hash, encodeBase64Url(binding.secret_hash)))) {
+    return bindingFailed();
+  }
   if (c.req.method !== "GET" && isTerminal(got.doc.status)) {
     return errorResponse(c, 404, "interaction_not_found", "no such interaction");
   }
