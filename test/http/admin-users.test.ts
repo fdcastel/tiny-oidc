@@ -1,6 +1,6 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env as workers } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AuditEvent } from "../../src/audit/events.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { deleteClient } from "../../src/db/clients.ts";
@@ -463,7 +463,7 @@ describe("disable, enable and delete", () => {
 });
 
 describe("erasure (TIO-PRIV-002)", () => {
-  it("[TIO-PRIV-002] [TIO-DATA-010] [TIO-ADMIN-002] after deletion a person's email and name remain in no D1 table, no audit event and no log line; admin diffs record them as changed only", async () => {
+  it("[TIO-PRIV-002] [TIO-DATA-010] [TIO-ADMIN-002] after deletion a person's email and name remain in no D1 table, no audit event, no log line and no archive object; admin diffs record them as changed only", async () => {
     const EMAIL = "Erase.Me.Canary@Example.com";
     const NAME = "Erase Me Canary";
     const RENAMED = "Erase Me Renamed";
@@ -506,9 +506,32 @@ describe("erasure (TIO-PRIV-002)", () => {
       const rows = JSON.stringify((await env.DB.prepare(`SELECT * FROM "${name}"`).all()).results);
       for (const value of values) expect(rows, `${name} keeps ${value}`).not.toContain(value);
     }
-    // Every audit event is also a log line: nothing the queue, the archive or the logs received.
+    // Every audit event is also a log line: nothing the queue or the logs received.
     const logged = JSON.stringify(h.lines);
     for (const value of values) expect(logged, value).not.toContain(value);
+    // The archive itself, read back once the consumer has written this person's events
+    // (the runtime delivers the queue asynchronously): the precondition of the lock (P8-04).
+    const archivedText = async () => {
+      const listed = await env.AUDIT_BUCKET.list({ prefix: "audit/" });
+      const texts = await Promise.all(
+        listed.objects.map(async (o) => {
+          const body = await env.AUDIT_BUCKET.get(o.key);
+          const stream = (body as R2ObjectBody).body.pipeThrough(new DecompressionStream("gzip"));
+          return new Response(stream).text();
+        }),
+      );
+      return texts.join(String.fromCharCode(10));
+    };
+    await vi.waitFor(
+      async () => {
+        const text = await archivedText();
+        expect(text).toContain(`"type":"user.deleted"`);
+        expect(text).toContain(id);
+      },
+      { timeout: 10_000, interval: 200 },
+    );
+    const archive = await archivedText();
+    for (const value of values) expect(archive, `the archive keeps ${value}`).not.toContain(value);
   });
 
   it("[TIO-PRIV-002] migration 0009 turns the email and name values of earlier user diffs into changed-only entries and leaves other events alone", async () => {

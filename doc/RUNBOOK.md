@@ -438,28 +438,78 @@ cover both endpoints.
 
 ## 12. Audit archive
 
-`audit_hot` keeps `audit.hot_retention_days` (default 30) of events for
-`GET /api/v1/admin/audit` and `/users/{id}/events`; the queue consumer also
-writes every batch to the R2 bucket under
-`audit/<yyyy>/<mm>/<dd>/<hh>/<first event id>.ndjson.gz` (§4.5, TIO-DATA-025).
-`GET /api/v1/admin/audit/archive?from=<date>&to=<date>` lists
-the object keys; download with `wrangler r2 object get <bucket>/<key> --remote`.
-Events never carry emails, tokens or addresses in clear (TIO-AUDIT-002).
+`audit_hot` keeps `audit.hot_retention_days` (default 14) of the **hot**
+event types for `GET /api/v1/admin/audit` and the per-user views
+(TIO-AUDIT-013). The queue consumer writes **every** event to the R2 bucket,
+one object per group of messages, under
+`audit/year=<yyyy>/month=<mm>/day=<dd>/hour=<hh>/<first event id>-<write id>.ndjson.gz`
+(§4.5, TIO-DATA-025). Every write takes a new key, so an event redelivered by
+the queue may appear twice. Deduplicate by `id` when reading.
+`GET /api/v1/admin/audit/archive?from=<date>&to=<date>` lists the object
+keys; download with `wrangler r2 object get <bucket>/<key> --remote`.
+Objects written before ADR 0022 sit under `audit/<yyyy>/<mm>/<dd>/<hh>/`.
+Events never carry emails, names, tokens or addresses in clear (TIO-AUDIT-002,
+ADR 0020).
 
-Without a lifecycle rule the bucket keeps everything forever, including the
-weekly D1 exports under `backups/` (§9), which hold emails and profiles —
-so a deleted user's email would outlive the deletion in every old export.
-The recommended rules, set once per bucket:
+**Investigations with DuckDB** (read-only R2 token; the path segments prune by
+time):
+
+```sql
+CREATE SECRET (TYPE r2, KEY_ID '…', SECRET '…', ACCOUNT_ID '…');
+SELECT DISTINCT ON (id) *
+FROM read_json_auto('r2://<bucket>/audit/year=2026/month=10/day=*/hour=*/*.ndjson.gz', hive_partitioning = true)
+WHERE user_id = '<user id>'
+ORDER BY ts;
+```
+
+**Retention.** Without a lifecycle rule the bucket keeps everything forever,
+including the weekly D1 exports under `backups/` (§9), which hold emails and
+profiles. A deleted user's email would then outlive the deletion in every old
+export. The recommended rules, set once per bucket:
 
 ```sh
 wrangler r2 bucket lifecycle add <bucket> backups-90d "backups/" --expire-days 90
-wrangler r2 bucket lifecycle add <bucket> audit-365d "audit/" --expire-days 365
+wrangler r2 bucket lifecycle add <bucket> audit-365d "audit/" --expire-days 365 --ia-transition-days 120
 ```
 
-Ninety days of exports is well past the 30 days D1 Time Travel already
-covers; 365 days of audit history is the usual baseline for security logs.
-Raising a period later is safe (objects not yet expired are kept); lowering
-it deletes what is older at the next lifecycle run.
+- Ninety days of exports is well past the 30 days D1 Time Travel already
+  covers, and 365 days of audit history is the usual baseline for security
+  logs.
+- Objects move to Infrequent Access at 120 days, after the lock's 90 days
+  below. The docs do not say whether a locked object may change storage
+  class.
+- Raising a period later is safe: objects not yet expired are kept. Lowering
+  it deletes what is older at the next lifecycle run.
+
+**The lock** (P8-04, ADR 0022). A bucket lock keeps the archive write-once for
+90 days:
+
+```sh
+wrangler r2 bucket lock add <bucket> audit-90d --prefix "audit/year=" --retention-days 90
+```
+
+What it does, as tested on a throw-away bucket on 2026-09-28:
+- A **new** key under the locked prefix is accepted.
+- **Rewriting** an existing key is refused with R2 error `10069` ("The object
+  is locked by the bucket policy", HTTP 409). The consumer never rewrites: every
+  write takes a new key.
+- A **delete** is refused too, **but `wrangler r2 object delete` still prints
+  "Delete complete."** Check with `wrangler r2 object get`.
+- The rule guards against the Worker's own binding and mistakes, not against
+  the account: anyone with bucket-configuration rights can lift it. That is
+  also the way out of a leak.
+- The prefix `audit/year=` leaves the objects written before ADR 0022
+  unlocked.
+
+**A leak into locked objects** (personal data archived by mistake, as before
+ADR 0020):
+1. `wrangler r2 bucket lock list <bucket>`, then
+   `wrangler r2 bucket lock remove <bucket> --name audit-90d`.
+2. Find the affected keys (DuckDB, filtering on the leaked value), delete them
+   with `wrangler r2 object delete <bucket>/<key> --remote`, and confirm each
+   is gone with `wrangler r2 object get` (it must fail).
+3. Put the rule back with the `lock add` command above, the same day.
+4. Record what was removed and why. The archive no longer shows it.
 
 ## 13. Deployment, release and rollback
 

@@ -1,4 +1,4 @@
-# Tiny OIDC — Implementation Plan (living document)
+ |  |  | 🔧 IN PROGRESS | — |  |  | ✅ DONE | pending# Tiny OIDC — Implementation Plan (living document)
 
 | | |
 |---|---|
