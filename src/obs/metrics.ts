@@ -1,8 +1,11 @@
+import { isHotType } from "../audit/catalog.ts";
 import type { AuditEvent } from "../audit/events.ts";
 import type { Logger, RequestLog } from "./log.ts";
 
 // Analytics Engine data points (TIO-OBS-002): one per request, and one per
-// audit event type and outcome the request emitted, carrying the count. A
+// hot audit event type and outcome the request emitted, carrying the count
+// (archive-only types — refreshes, code and token issuance — are ~96 % of the
+// events and are counted from the archive instead, ADR 0022). A
 // bulk import emits thousands of events in one request and the binding
 // refuses writes past its per-invocation limit, so events are aggregated and
 // a refused write is logged, never surfaced.
@@ -24,6 +27,7 @@ export function metricPoints(line: RequestLog, events: readonly AuditEvent[]): D
   ];
   const counts = new Map<string, { type: string; outcome: string; count: number }>();
   for (const event of events) {
+    if (!isHotType(event.type)) continue;
     const key = `${event.type}\u0000${event.outcome}`;
     const entry = counts.get(key) ?? { type: event.type, outcome: event.outcome, count: 0 };
     entry.count++;

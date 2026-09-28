@@ -93,6 +93,12 @@
     },
     "production": {
       "name": "tiny-oidc",
+      // A 10 % head sample of request log lines (TIO-OBS-001, ADR 0022): ~$6 a month at
+      // the §2.7 rates instead of ~$170; staging keeps every line.
+      "observability": {
+        "enabled": true,
+        "logs": { "invocation_logs": false, "head_sampling_rate": 0.1 }
+      },
       "vars": { "BUNDLED_LOGIN_APP": "false", "LOG_LEVEL": "info", "DO_JURISDICTION": "" },
       "d1_databases": [
         { "binding": "DB", "database_name": "tiny-oidc-production", "migrations_dir": "migrations" }

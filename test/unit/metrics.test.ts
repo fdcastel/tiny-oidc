@@ -23,8 +23,9 @@ const event = (type: string, outcome: "success" | "failure"): AuditEvent =>
   ({ type, outcome }) as unknown as AuditEvent;
 
 describe("metric points", () => {
-  it("emit the request, then one point per event type and outcome carrying the count, in first-seen order", () => {
+  it("[TIO-OBS-002] emit the request, then one point per hot event type and outcome carrying the count, in first-seen order; archive-only types add none", () => {
     const events = [
+      event("token.refreshed", "success"),
       event("user.created", "success"),
       event("identity.linked", "success"),
       event("identity.linked", "success"),

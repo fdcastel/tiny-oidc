@@ -115,9 +115,13 @@ export class Auditor {
     return event;
   }
 
-  /** Hands every collected event to the log sink (TIO-AUDIT-010 sink 2) and reports what was dropped. */
+  /**
+   * Hands every collected event to the log sink at `debug` (TIO-AUDIT-010 sink
+   * 2; the archive is the record, so production's `info` level leaves them out,
+   * ADR 0022) and reports what was dropped.
+   */
   flush(logger: Logger): void {
-    for (const event of this.events) logger.log("info", "audit", { event });
+    for (const event of this.events) logger.log("debug", "audit", { event });
     for (const { type, keys } of this.dropped) {
       logger.log("warn", "audit data outside the catalog dropped", {
         type,

@@ -243,12 +243,12 @@ Current phase: 7. Requirements: 289 (ci: 20, conformance: 2, covered: 245, load:
 | TIO-CRYPTO-020 | §10.4 | test | 0 | covered | test/unit/crypto.test.ts |
 | TIO-AUDIT-001 | §11.2 | test | 6 | covered | test/component/maintenance.test.ts<br>test/http/admin-users.test.ts<br>test/http/audit-events.test.ts<br>test/scripts/audit-catalog.test.ts<br>test/unit/audit-redaction.test.ts |
 | TIO-AUDIT-002 | §11.2 | test | 6 | covered | test/security/redaction.test.ts<br>test/unit/audit-redaction.test.ts<br>test/unit/passkey.test.ts |
-| TIO-AUDIT-010 | §11.3 | test | 6 | covered | test/http/audit-endpoints.test.ts<br>test/http/audit-sink.test.ts |
+| TIO-AUDIT-010 | §11.3 | test | 6 | covered | test/http/audit-endpoints.test.ts<br>test/http/audit-sink.test.ts<br>test/unit/audit.test.ts |
 | TIO-AUDIT-011 | §11.3 | test | 6 | covered | test/http/audit-sink.test.ts |
 | TIO-AUDIT-012 | §11.3 | test | 6 | covered | test/http/audit-sink.test.ts |
 | TIO-AUDIT-013 | §11.3 | test | 6 | covered | test/http/audit-sink.test.ts<br>test/scripts/audit-catalog.test.ts |
 | TIO-OBS-001 | §11.4 | test | 0 | covered | test/http/router.test.ts<br>test/security/redaction.test.ts |
-| TIO-OBS-002 | §11.4 | test | 6 | covered | test/http/router.test.ts |
+| TIO-OBS-002 | §11.4 | test | 6 | covered | test/http/router.test.ts<br>test/unit/metrics.test.ts |
 | TIO-OBS-003 | §11.4 | test | 0 | covered | test/http/router.test.ts<br>test/http/wellknown.test.ts |
 | TIO-OBS-004 | §11.4 | test | 0 | covered | test/security/enumeration.test.ts<br>test/security/headers.test.ts |
 | TIO-OBS-005 | §11.4 | test | 0 | covered | test/http/scheduled.test.ts<br>test/scripts/watch.test.ts |

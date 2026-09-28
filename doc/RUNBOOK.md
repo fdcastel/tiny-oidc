@@ -469,8 +469,13 @@ export. The recommended rules, set once per bucket:
 
 ```sh
 wrangler r2 bucket lifecycle add <bucket> backups-90d "backups/" --expire-days 90
-wrangler r2 bucket lifecycle add <bucket> audit-365d "audit/" --expire-days 365 --ia-transition-days 120
+wrangler r2 bucket lifecycle add <bucket> audit-365d "audit/" --expire-days 365
+wrangler r2 bucket lifecycle add <bucket> audit-ia-120d "audit/" --ia-transition-days 120
 ```
+
+Use two rules: wrangler 4.135 given both flags in one rule recorded the
+transition at the expiry age (365 days), as `lifecycle list` showed on
+staging on 2026-09-28. Check with `wrangler r2 bucket lifecycle list <bucket>`.
 
 - Ninety days of exports is well past the 30 days D1 Time Travel already
   covers, and 365 days of audit history is the usual baseline for security

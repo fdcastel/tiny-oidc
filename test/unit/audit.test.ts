@@ -26,7 +26,7 @@ function auditor() {
 }
 
 describe("Auditor", () => {
-  it("[TIO-ADMIN-002] fills the §11.1 record from the request context, defaults the optional references to null and flushes one info line per event", () => {
+  it("[TIO-ADMIN-002] [TIO-AUDIT-010] fills the §11.1 record from the request context, defaults the optional references to null and flushes one debug line per event, none at info", () => {
     const a = auditor();
     const event = a.emit({
       type: "client.created",
@@ -59,12 +59,16 @@ describe("Auditor", () => {
       actor: { kind: "system", id: null },
       reason: "partial_failure",
     });
+    // The log sink is `debug` (TIO-AUDIT-010, ADR 0022): production's `info` leaves it out.
+    const quiet: LogLine[] = [];
+    a.flush(new Logger((line) => quiet.push(line), "info"));
+    expect(quiet).toEqual([]);
     const lines: LogLine[] = [];
-    a.flush(new Logger((line) => lines.push(line), "info"));
+    a.flush(new Logger((line) => lines.push(line), "debug"));
     expect(lines.map((l) => [l["level"], l["msg"], (l["event"] as { type: string }).type])).toEqual(
       [
-        ["info", "audit", "client.created"],
-        ["info", "audit", "user.updated"],
+        ["debug", "audit", "client.created"],
+        ["debug", "audit", "user.updated"],
       ],
     );
     expect((lines[1] as LogLine)["event"]).toMatchObject({ reason: "partial_failure" });
