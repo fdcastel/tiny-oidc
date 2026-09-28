@@ -133,7 +133,7 @@ names what would enforce it. **Fixed** marks what P7-10 closed.
   ignored `used_at`. **Fixed** (ADR 0020): the test scans every D1 table and
   every log line after a deletion. What remains is documented: D1 Time Travel
   and Durable Object PITR keep 30 days and `backups/` 90 days.
-- **H2 — The load gate's D1-write check reads per-request `Server-Timing`**
+- **H2 — Fixed (P8-01).** The load gate's D1-write check read per-request `Server-Timing`
   (`perf/scenarios/token_refresh.js:49`). It cannot see the queue consumer's
   inserts. TIO-TEST-051 says the rate comes from `/admin/stats` deltas.
   **Enforce:** implement the delta, `audit_hot` included.
@@ -149,7 +149,7 @@ names what would enforce it. **Fixed** marks what P7-10 closed.
   `refresh_tokens`, `auth_codes` and `challenges`. **Enforce:** report
   `databaseSize` in counts, cap families per (user, client), and a component
   test of row counts after 48 h of rotation.
-- **M3 — The directory estimate is 1.39 GB, not 0.9 GB.** **Enforce:** the
+- **M3 — Fixed (P8-02: TIO-PERF-003 measures it from the migrations, ~1.3 GB).** The directory estimate is 1.39 GB, not 0.9 GB. **Enforce:** the
   capacity test derives it from the migrations.
 - **M4 — `/admin/audit/archive` builds one unbounded list** of up to 31 days of
   keys (today ~5.8 M a day). **Enforce:** a limit and cursor.
@@ -165,7 +165,7 @@ names what would enforce it. **Fixed** marks what P7-10 closed.
   nothing checks.** **Enforce:** the deploy script verifies the lifecycle
   rules; a nightly check that the newest `backups/` object is under 8 days
   old.
-- **M8 — The archive key cannot live under a lock, and ADR 0019's version
+- **M8 — Fixed (P8-02, ADR 0022: a key unique to each write).** The archive key cannot live under a lock, and ADR 0019's version
   loses events even without one.** §4.5 calls the objects "immutable", and
   nothing makes them so.
   - **Today:** the key is derived from the batch's first event id, and
@@ -224,7 +224,7 @@ Verified on 2026-09-26 unless marked; sources in §9.
 | Our need | Candidate | Status | Verdict | Why |
 |---|---|---|---|---|
 | Audit record | **Pipelines → R2 sink (Parquet, zstd, `year=/month=/day=`)** | Open beta, billed since 2026-08-03 | **Not for v1 (§7)** | Tested: silent loss while no pipeline reads the stream (90 %, reproduced) and for schema-invalid events; no deduplication; 0.7–2.3 s per call. Ingest free. Sinks $0.06/GB of uncompressed Parquet after 50 GB, so ~$3–10 a month. Sinks are "exactly-once" and one stream can feed several sinks. Rejection behaviour of `send()` is undocumented; invalid events are "accepted but dropped". |
-| Write-once archive | **R2 bucket lock** (+ move to Infrequent Access after 90 days) | Available | **Adopt: a 90-day lock over a 365-day lifecycle, after M8 and the preconditions in §6** | Prevents delete and overwrite for an age, a date or indefinitely, above lifecycle rules. The Worker's binding cannot lift it, but any token with bucket-configuration rights can. So it guards against the Worker and mistakes, not the account, and its age should match the tamper-evidence window rather than the retention. A 365-day lock would make the next leak permanent for a year; H1 shows leaks happen. Whether a PUT of a new key under a locked prefix is accepted is not documented: test it first. |
+| Write-once archive | **R2 bucket lock** (+ move to Infrequent Access after 120 days: after the lock's age, because the docs do not say whether a locked object may change storage class) | Available | **Adopt: a 90-day lock over a 365-day lifecycle, after M8 and the preconditions in §6** | Prevents delete and overwrite for an age, a date or indefinitely, above lifecycle rules. The Worker's binding cannot lift it, but any token with bucket-configuration rights can. So it guards against the Worker and mistakes, not the account, and its age should match the tamper-evidence window rather than the retention. A 365-day lock would make the next leak permanent for a year; H1 shows leaks happen. Whether a PUT of a new key under a locked prefix is accepted is not documented: test it first. |
 | Querying the archive | **DuckDB over `r2://` with a read-only token** | DuckDB 1.5.5 | **Adopt** | Hive-partition pruning on the paths. No catalog, no maintenance, compatible with the lock. Runs on an operator machine or a Container. |
 | | Iceberg + R2 Data Catalog + R2 SQL | Public / open beta | **No** | Maintenance deletes files (conflicts with the lock). R2 SQL has no Worker binding and needs an admin-scoped token. |
 | | DuckLake 1.0 | Released Apr 2026 | **No** | Takes ownership of registered files and deletes them in maintenance. Needs a catalog database. Open bug with externally written files. Adds nothing to an append-only log. |
@@ -271,7 +271,7 @@ flowchart LR
     IDO[("InteractionDO")]
     D1[("D1 · directory + config ·<br/>audit_hot: hot types only, 14 days ·<br/>read replicas")]:::changed
     PS[["Pipelines stream<br/>every audit event"]]:::new
-    R2A[("R2 audit bucket · lock 90 d, lifecycle 365 d ·<br/>gzip NDJSON, year=/month=/day=/hour= ·<br/>key unique per write · IA after 90 d")]:::new
+    R2A[("R2 audit bucket · lock 90 d, lifecycle 365 d · IA after 120 d<br/>(format and keys: the sink's own in this variant;<br/>gzip NDJSON, year=/month=/day=/hour=, a key per write on the GA path)")]:::new
     Q[["Queue TASKS<br/>hot events · logout retries ·<br/>fallback when send() is refused"]]:::changed
     QC["queue() consumer"]
     R2B[("R2 backups/<br/>lifecycle 90 d, freshness checked")]:::changed
@@ -450,7 +450,9 @@ Other observations:
   1. a test that make-before-break pipeline changes lose nothing;
   2. in-Worker schema validation;
   3. a daily reconciliation that compares the archive's counts per type with
-     the Analytics Engine counts (TIO-OBS-002) and alerts on a gap.
+     the Analytics Engine counts (TIO-OBS-002) and alerts on a gap;
+  4. a test of a Pipelines sink writing into a locked bucket: it rolls files
+     and leaves incomplete multipart uploads (§7), which a lock may refuse.
 - **Either way,** DuckDB remains the query tool. On the generally available
   path the consumer writes gzip NDJSON under `year=/month=/day=/hour=` keys it
   chooses itself. Parquet comes from the operator-side compaction job.

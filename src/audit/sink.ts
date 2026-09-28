@@ -3,15 +3,17 @@ import { insertAuditStatement } from "../db/audit.ts";
 import type { Db } from "../db/db.ts";
 import { dateOf, type Env } from "../env.ts";
 import type { Logger } from "../obs/log.ts";
+import { isHotType } from "./catalog.ts";
 import type { AuditEvent } from "./events.ts";
 
 // The queue sink of audit events (spec §11.3): the producer ships each
 // request's events to TASKS in batches, after the response (TIO-AUDIT-010);
-// the consumer writes every batch to `audit_hot` and to the R2 archive and
-// acknowledges only when both are done (TIO-AUDIT-011). Inserts ignore
-// duplicates and the object key follows from the first event, so a
-// redelivered batch changes nothing (TIO-DATA-025). A queue that refuses a
-// batch is logged and the request is unaffected (TIO-AUDIT-012).
+// the consumer writes the events of a whole queue batch together — the hot
+// ones to `audit_hot`, all of them to one R2 object — and acknowledges its
+// messages only when both are done (TIO-AUDIT-011, TIO-AUDIT-013). Inserts
+// ignore duplicates and every write gets a new archive key, so a redelivered
+// batch adds no row and overwrites no object (TIO-DATA-025). A queue that
+// refuses a batch is logged and the request is unaffected (TIO-AUDIT-012).
 
 /** Events per queue message (§4.5). */
 export const AUDIT_BATCH_SIZE = 50;
@@ -69,11 +71,25 @@ export async function shipAuditEvents(
   }
 }
 
-/** The archive key of a batch: the hour of its first event and that event's id (TIO-DATA-025). */
-export function archiveKey(first: AuditEvent): string {
+/**
+ * The archive key of one write: Hive-style time segments from the first
+ * event (so DuckDB prunes by `year=/month=/day=/hour=`), that event's id, and
+ * `attempt`, fresh for every write (TIO-DATA-025, ADR 0022). A key is never
+ * written twice: a redelivered or regrouped batch lands under a new key, the
+ * archive may then hold an event twice, and readers deduplicate by `id`.
+ * (A key reused for a regrouped batch would overwrite the earlier object's
+ * events, and a bucket lock refuses the rewrite.)
+ */
+export function archiveKey(first: AuditEvent, attempt: string): string {
   const at = dateOf(first.ts);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `audit/${at.getUTCFullYear()}/${pad(at.getUTCMonth() + 1)}/${pad(at.getUTCDate())}/${pad(at.getUTCHours())}/${first.id}.ndjson.gz`;
+  return `audit/year=${at.getUTCFullYear()}/month=${pad(at.getUTCMonth() + 1)}/day=${pad(at.getUTCDate())}/hour=${pad(at.getUTCHours())}/${first.id}-${attempt}.ndjson.gz`;
+}
+
+/** The key prefix of one UTC day (`YYYY-MM-DD`) in the archive. */
+export function archiveDayPrefix(day: string): string {
+  const [year, month, date] = day.split("-");
+  return `audit/year=${year}/month=${month}/day=${date}/`;
 }
 
 /** One JSON object per line, gzip-compressed. */
@@ -83,22 +99,31 @@ export async function gzipNdjson(events: readonly AuditEvent[]): Promise<Uint8Ar
   return new Uint8Array(await new Response(compressed).arrayBuffer());
 }
 
-/** Writes a batch to `audit_hot` (≤ 9 rows per statement, one D1 batch) and to R2. */
+/** How many `audit_hot` insert statements `events` need (TIO-AUDIT-013: hot types only). */
+export function hotStatementsFor(events: readonly AuditEvent[]): number {
+  return Math.ceil(events.filter((e) => isHotType(e.type)).length / AUDIT_ROWS_PER_STATEMENT);
+}
+
+/**
+ * Writes one group of events: the hot ones to `audit_hot` (≤ 9 rows per
+ * statement, one D1 batch; none when the group has no hot event) and all of
+ * them to R2 as one object under a key unique to this write.
+ */
 export async function storeAuditBatch(
   env: Env,
   db: Db,
   events: readonly AuditEvent[],
-): Promise<{ key: string }> {
+  attempt: string,
+): Promise<{ key: string; hot: number }> {
+  const hot = events.filter((e) => isHotType(e.type));
   const statements = [];
-  for (let start = 0; start < events.length; start += AUDIT_ROWS_PER_STATEMENT) {
-    statements.push(
-      insertAuditStatement(db, events.slice(start, start + AUDIT_ROWS_PER_STATEMENT)),
-    );
+  for (let start = 0; start < hot.length; start += AUDIT_ROWS_PER_STATEMENT) {
+    statements.push(insertAuditStatement(db, hot.slice(start, start + AUDIT_ROWS_PER_STATEMENT)));
   }
-  await db.batch(statements);
-  const key = archiveKey(events[0] as AuditEvent);
+  if (statements.length > 0) await db.batch(statements);
+  const key = archiveKey(events[0] as AuditEvent, attempt);
   await env.AUDIT_BUCKET.put(key, await gzipNdjson(events), {
     httpMetadata: { contentType: "application/x-ndjson", contentEncoding: "gzip" },
   });
-  return { key };
+  return { key, hot: hot.length };
 }

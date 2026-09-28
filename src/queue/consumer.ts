@@ -1,5 +1,11 @@
+import type { AuditEvent } from "../audit/events.ts";
 import { Auditor } from "../audit/events.ts";
-import { AuditTaskSchema, shipAuditEvents, storeAuditBatch } from "../audit/sink.ts";
+import {
+  AuditTaskSchema,
+  hotStatementsFor,
+  shipAuditEvents,
+  storeAuditBatch,
+} from "../audit/sink.ts";
 import { KeyStore } from "../crypto/keystore.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
 import { Db } from "../db/db.ts";
@@ -14,8 +20,20 @@ import { consoleSink, Logger, type LogSink } from "../obs/log.ts";
 // and logged (nothing would change on redelivery); a failure of the OP's own
 // infrastructure (storage, keys, configuration) retries the message.
 
+/** Events per archive object: a queue batch's audit messages are written in groups of at most this many. */
+export const ARCHIVE_GROUP_EVENTS = 1_000;
+/**
+ * `audit_hot` statements one invocation may send: Workers allow 1,000 D1
+ * queries per invocation, and a bulk import can fill a batch with hot rows.
+ * Groups beyond it are retried, to land in a later invocation.
+ */
+export const HOT_STATEMENTS_PER_INVOCATION = 800;
+
 export interface QueueDeps {
   clock: Clock;
+  /** ARCHIVE_GROUP_EVENTS and HOT_STATEMENTS_PER_INVOCATION, lowered by tests. */
+  archiveGroupEvents?: number;
+  hotStatementsPerInvocation?: number;
   sink?: LogSink;
   fetch?: typeof fetch;
 }
@@ -37,6 +55,8 @@ export function createQueue(deps: QueueDeps): QueueHandler {
   const sink = deps.sink ?? consoleSink;
   const keyStore = new KeyStore(deps.clock);
   const uuids = new UuidV7(deps.clock);
+  const groupEvents = deps.archiveGroupEvents ?? ARCHIVE_GROUP_EVENTS;
+  const statementBudget = deps.hotStatementsPerInvocation ?? HOT_STATEMENTS_PER_INVOCATION;
   return async (batch, env, ctx) => {
     const runId = uuids.next();
     const config = buildConfig(env);
@@ -57,6 +77,8 @@ export function createQueue(deps: QueueDeps): QueueHandler {
       deps.clock,
     );
     let handled = 0;
+    type AuditMessage = { message: Message<unknown>; events: AuditEvent[] };
+    const audit: AuditMessage[] = [];
     for (const message of batch.messages) {
       const kind = kindOf(message.body);
       if (kind === "audit") {
@@ -66,23 +88,7 @@ export function createQueue(deps: QueueDeps): QueueHandler {
           message.ack();
           continue;
         }
-        try {
-          const { key } = await storeAuditBatch(env, db, parsed.data.events);
-          logger.log("info", "audit batch archived", {
-            ...base,
-            key,
-            events: parsed.data.events.length,
-          });
-          message.ack();
-          handled += 1;
-        } catch (error) {
-          logger.log("error", "audit batch retried", {
-            ...base,
-            id: message.id,
-            reason: String(error),
-          });
-          message.retry();
-        }
+        audit.push({ message, events: parsed.data.events });
         continue;
       }
       if (kind !== "backchannel_logout") {
@@ -109,6 +115,47 @@ export function createQueue(deps: QueueDeps): QueueHandler {
       } catch (error) {
         logger.log("error", "task retried", { ...base, id: message.id, reason: String(error) });
         message.retry();
+      }
+    }
+    // The audit messages, in groups of at most ARCHIVE_GROUP_EVENTS events: one D1 batch and
+    // one archive object per group, its messages acknowledged only when both are written.
+    const groups: AuditMessage[][] = [];
+    for (const item of audit) {
+      const last = groups.at(-1);
+      const size = last?.reduce((n, m) => n + m.events.length, 0) ?? groupEvents;
+      if (last !== undefined && size + item.events.length <= groupEvents) last.push(item);
+      else groups.push([item]);
+    }
+    let statements = 0;
+    for (const group of groups) {
+      const events = group.flatMap((m) => m.events);
+      statements += hotStatementsFor(events);
+      if (statements > statementBudget) {
+        logger.log("warn", "audit group deferred to a later invocation", {
+          ...base,
+          messages: group.length,
+        });
+        for (const m of group) m.message.retry();
+        continue;
+      }
+      try {
+        const { key, hot } = await storeAuditBatch(env, db, events, uuids.next());
+        logger.log("info", "audit batch archived", {
+          ...base,
+          key,
+          messages: group.length,
+          events: events.length,
+          hot,
+        });
+        for (const m of group) m.message.ack();
+        handled += group.length;
+      } catch (error) {
+        logger.log("error", "audit batch retried", {
+          ...base,
+          messages: group.length,
+          reason: String(error),
+        });
+        for (const m of group) m.message.retry();
       }
     }
     logger.log("info", "queue", { ...base, handled });

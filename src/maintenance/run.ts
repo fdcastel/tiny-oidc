@@ -3,7 +3,12 @@ import { maintainSigningKeys, rekeySigningKeys } from "../crypto/keystore.ts";
 import type { DerivedKeys } from "../crypto/master-keys.ts";
 import { openSecret, sealedUnderVersion, sealSecret } from "../crypto/secretbox.ts";
 import { UuidV7 } from "../crypto/uuid.ts";
-import { estimateAuditRows, PURGE_BATCH_ROWS, purgeAuditBatch } from "../db/audit.ts";
+import {
+  estimateAuditRows,
+  PURGE_BATCH_ROWS,
+  PURGE_MAX_BATCHES,
+  purgeAuditBatch,
+} from "../db/audit.ts";
 import type { Db } from "../db/db.ts";
 import { identitiesOfUser } from "../db/identities.ts";
 import { deleteSpentInvitations } from "../db/invitations.ts";
@@ -25,7 +30,6 @@ import { userStub } from "../users/create.ts";
 // steps so a slow step never drags the next run along.
 
 export const MAINTENANCE_BUDGET_MS = 20_000;
-export const PURGE_MAX_BATCHES = 10;
 export const SPENT_INVITATION_GRACE_SECONDS = 30 * 86_400;
 /** A `creating` row older than this is re-initialized (§3.4). */
 export const CREATING_REPAIR_AFTER_SECONDS = 60;

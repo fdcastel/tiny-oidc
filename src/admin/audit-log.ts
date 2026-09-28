@@ -1,6 +1,7 @@
 import type { Handler } from "hono";
 import { z } from "zod";
 import type { AuditEvent } from "../audit/events.ts";
+import { archiveDayPrefix } from "../audit/sink.ts";
 import { isUuid } from "../crypto/uuid.ts";
 import { type AuditFilters, type AuditKeyset, listAuditPage } from "../db/audit.ts";
 import { getUser } from "../db/users.ts";
@@ -177,7 +178,7 @@ export function listArchiveHandler(): Handler<AppEnv> {
         let listCursor: string | undefined;
         do {
           const listed = await c.env.AUDIT_BUCKET.list({
-            prefix: `audit/${day.replaceAll("-", "/")}/`,
+            prefix: archiveDayPrefix(day),
             ...(listCursor === undefined ? {} : { cursor: listCursor }),
           });
           for (const object of listed.objects) {

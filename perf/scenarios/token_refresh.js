@@ -7,9 +7,11 @@
 import { check } from "k6";
 import {
   arrival,
+  d1WriteBaseline,
   maxVusOf,
   ownedByThisVu,
   record,
+  recordD1WriteRate,
   rotateOwned,
   SUMMARY_TREND_STATS,
   summary,
@@ -29,8 +31,18 @@ export const options = {
   thresholds: {
     ...thresholds("token_refresh"),
     ...thresholds("token_refresh", "token_refresh_burst"),
+    // TIO-TEST-051: D1 under 5 rows a second, the queue consumer's writes included (review H2).
+    "d1_rows_per_s{scenario:token_refresh}": ["max<5"],
   },
 };
+
+export function setup() {
+  return d1WriteBaseline();
+}
+
+export function teardown(baseline) {
+  recordD1WriteRate(baseline, "token_refresh");
+}
 
 const STRIDE = maxVusOf(options);
 let mine = null;

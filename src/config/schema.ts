@@ -185,7 +185,7 @@ export const SettingsSchema = z.object({
     .int()
     .min(1)
     .max(365)
-    .default(7)
+    .default(14)
     .describe("Days of audit events kept in the D1 hot table."),
   "me.allow_email_change": z
     .boolean()

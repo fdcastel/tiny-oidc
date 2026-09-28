@@ -23,8 +23,6 @@ describe("capacity watch", () => {
       "audit_hot holds 10 rows, above the alarm threshold of 5",
       "the cron has never run",
     ]);
-    // The threshold keeps D1 under half its cap at the measured row size (ADR 0019).
-    expect(AUDIT_HOT_ALARM_ROWS * 560 + 1.39e9).toBeLessThan(5e9);
   });
 
   it("[TIO-OBS-005] reads the stats with a client_credentials administrator token and reports HTTP failures", async () => {

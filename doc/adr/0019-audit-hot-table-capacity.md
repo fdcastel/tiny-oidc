@@ -1,6 +1,6 @@
 # 0019 — The audit hot table keeps a bounded subset of events; the archive is written per consumer batch
 
-Date: 2026-09-26 · Status: **Proposed — awaiting the owner's sign-off** · Task: P7-09
+Date: 2026-09-26 · Status: **Superseded by ADR 0022** (never accepted; kept for its measurements) · Task: P7-09
 
 > **Note (2026-09-27): do not implement item 3 as written.** Keying a per-batch object by its first event loses events. Under a bucket lock the rewrite is refused. Without one, a regrouped retry replaces the earlier object. See M8 in `doc/reviews/2026-09-26-platform-and-spec-review.md`. This record is to be rewritten as "audit storage and telemetry".
 

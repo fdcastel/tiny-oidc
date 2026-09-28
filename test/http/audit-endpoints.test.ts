@@ -1,7 +1,7 @@
 import { createExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { type AuditEvent, Auditor } from "../../src/audit/events.ts";
-import { archiveKey } from "../../src/audit/sink.ts";
+import { archiveDayPrefix } from "../../src/audit/sink.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
 import { Db } from "../../src/db/db.ts";
 import { writeSettings } from "../../src/db/settings.ts";
@@ -95,7 +95,7 @@ describe("admin audit listing", () => {
       seeded.push(
         event({
           ts: T0 + i * 60,
-          type: i % 3 === 0 ? "session.revoked" : "token.issued",
+          type: i % 3 === 0 ? "session.revoked" : "consent.granted",
           outcome: i % 4 === 0 ? "failure" : "success",
           user_id: i % 2 === 0 ? alice.profile.id : bob.profile.id,
           client_id: i < 6 ? "web" : "mobile",
@@ -103,10 +103,7 @@ describe("admin audit listing", () => {
             kind: i === 11 ? "admin" : "user",
             id: i === 11 ? operator.user.profile.id : null,
           },
-          data:
-            i % 3 === 0
-              ? { clients: ["web"] }
-              : { grant_type: "refresh_token", scopes: ["openid"] },
+          data: i % 3 === 0 ? { clients: ["web"] } : { scopes: ["openid"] },
         }),
       );
     }
@@ -128,12 +125,12 @@ describe("admin audit listing", () => {
       T0 + 420,
     ]);
     expect(first.body.items[0]).toMatchObject({
-      type: "token.issued",
+      type: "consent.granted",
       actor: { kind: "admin", id: operator.user.profile.id },
       country: "BR",
       ua_family: "Chrome/128",
       request_id: "r",
-      data: { grant_type: "refresh_token", scopes: ["openid"] },
+      data: { scopes: ["openid"] },
     });
     expect(first.body.next_cursor).not.toBeNull();
     const second = await list(`?limit=5&${SEEDED}&cursor=${first.body.next_cursor}`);
@@ -214,18 +211,31 @@ describe("admin audit listing", () => {
         },
       };
     };
-    const seededKey = archiveKey(seeded[0] as AuditEvent);
+    // A key is the event's hour, its id and a part unique to the write (TIO-DATA-025).
+    const keyOf = (e: AuditEvent) => {
+      const at = new Date(e.ts * 1000);
+      return `${archiveDayPrefix(at.toISOString().slice(0, 10))}hour=${String(at.getUTCHours()).padStart(2, "0")}/${e.id}-`;
+    };
+    const keysAre = (keys: string[], events: AuditEvent[]) => {
+      expect(keys).toHaveLength(events.length);
+      for (const [i, e] of events.entries()) {
+        expect(keys[i]).toMatch(new RegExp(`^${keyOf(e)}[0-9a-f-]{36}\\.ndjson\\.gz$`));
+      }
+    };
+    const seededEvent = seeded[0] as AuditEvent;
     const one = await list("?from=2027-01-05");
     expect(one.status).toBe(200);
     expect(one.body).toMatchObject({ from: "2027-01-05", to: "2027-01-05" });
-    expect(one.body.items.map((o) => o.key)).toEqual([seededKey, archiveKey(day)]);
+    keysAre(
+      one.body.items.map((o) => o.key),
+      [seededEvent, day],
+    );
     expect(one.body.items[0]?.size).toBeGreaterThan(20);
     const range = await list("?from=2027-01-05&to=2027-01-06");
-    expect(range.body.items.map((o) => o.key)).toEqual([
-      seededKey,
-      archiveKey(day),
-      archiveKey(nextDay),
-    ]);
+    keysAre(
+      range.body.items.map((o) => o.key),
+      [seededEvent, day, nextDay],
+    );
     expect((await list("?from=2027-01-07&to=2027-01-10")).body.items).toEqual([]);
     for (const query of [
       "",
@@ -256,8 +266,9 @@ describe("admin audit listing", () => {
     const walked = await admin(h, token, "audit/archive?from=2027-01-05&to=2027-01-06", {
       env: paged,
     });
-    expect(((await walked.json()) as { items: { key: string }[] }).items.map((o) => o.key)).toEqual(
-      [seededKey, archiveKey(day), archiveKey(nextDay)],
+    keysAre(
+      ((await walked.json()) as { items: { key: string }[] }).items.map((o) => o.key),
+      [seededEvent, day, nextDay],
     );
     const down = {
       ...env,
@@ -340,13 +351,13 @@ describe("a person's events", () => {
     expect(wider.items.some((e) => e.id === stale.id)).toBe(true);
     await writeSettings(db, { "audit.hot_retention_days": null }, "test", clock.now());
     clock.advance(61);
-    // The default window (7 days, P7-12) leaves the ten-day-old seeded events out.
+    // The default window (14 days, ADR 0022) keeps the ten-day-old seeded events and not the stale one.
     const byDefault = (await (
       await admin(h, token, `users/${alice.profile.id}/events?limit=200`)
     ).json()) as Page<{ id: string; ts: number }>;
     expect(byDefault.items.some((e) => e.id === fresh.id)).toBe(true);
-    expect(byDefault.items.every((e) => e.ts >= clock.now() - 7 * 86_400)).toBe(true);
-    expect(byDefault.items.length).toBeLessThan(wider.items.length);
+    expect(byDefault.items.every((e) => e.ts >= clock.now() - 14 * 86_400)).toBe(true);
+    expect(byDefault.items.some((e) => e.id === stale.id)).toBe(false);
     // Storage trouble on the events and on the settings.
     expect(
       (

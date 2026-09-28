@@ -5,11 +5,13 @@ import { check } from "k6";
 import {
   arrival,
   codeOf,
+  d1WriteBaseline,
   exchange,
   maxVusOf,
   ownedByThisVu,
   pkce,
   record,
+  recordD1WriteRate,
   SUMMARY_TREND_STATS,
   sessionHit,
   summary,
@@ -21,8 +23,20 @@ const RATE = Number(__ENV.TIO_PERF_RATE || 200);
 export const options = {
   summaryTrendStats: SUMMARY_TREND_STATS,
   scenarios: { token_code_exchange: arrival("tokenCodeExchange", RATE) },
-  thresholds: thresholds("token_code_exchange"),
+  thresholds: {
+    ...thresholds("token_code_exchange"),
+    // TIO-TEST-051: D1 under 5 rows a second, the queue consumer's writes included (review H2).
+    "d1_rows_per_s{scenario:token_code_exchange}": ["max<5"],
+  },
 };
+
+export function setup() {
+  return d1WriteBaseline();
+}
+
+export function teardown(baseline) {
+  recordD1WriteRate(baseline, "token_code_exchange");
+}
 
 const STRIDE = maxVusOf(options);
 let mine = null;

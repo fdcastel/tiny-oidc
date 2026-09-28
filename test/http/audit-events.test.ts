@@ -1,5 +1,6 @@
 import { decodeJwt } from "jose";
 import { describe, expect, it } from "vitest";
+import { FLOW_EVENTS } from "../../src/audit/capacity.ts";
 import { AUDIT_CATALOG } from "../../src/audit/catalog.ts";
 import type { AuditEvent } from "../../src/audit/events.ts";
 import { Db } from "../../src/db/db.ts";
@@ -108,7 +109,7 @@ async function login(
 }
 
 describe("login, session and token events", () => {
-  it("[TIO-AUDIT-001] a passkey login emits interaction.created, passkey.auth_succeeded, session.created, authz.code_issued, interaction.completed and token.issued; a session hit and a re-authentication add authz.code_issued and session.rotated; refresh, reuse and replay have theirs", async () => {
+  it("[TIO-AUDIT-001] [TIO-PERF-003] a passkey login emits interaction.created, passkey.auth_succeeded, session.created, authz.code_issued, interaction.completed and token.issued; a session hit and a re-authentication add authz.code_issued and session.rotated; refresh, reuse and replay have theirs", async () => {
     await adminSettings(h);
     web = (
       await createTestClient(db, clock, {
@@ -119,7 +120,12 @@ describe("login, session and token events", () => {
       })
     ).client;
     const alice = await userWithPasskey(clock, { email: "alice@example.com" });
+    const beforeLogin = events().length;
     const first = await login(alice, web, { scope: "openid email offline_access" });
+    // The flow table of the capacity model (TIO-PERF-003) is what a login emits, from that many requests.
+    const loginEvents = events().slice(beforeLogin);
+    expect(loginEvents.map((e) => e.type).sort()).toEqual([...FLOW_EVENTS.login.events].sort());
+    expect(new Set(loginEvents.map((e) => e.request_id)).size).toBe(FLOW_EVENTS.login.requests);
     const uid = alice.profile.id;
     // An offline family carries no sid in its tokens (TIO-TOKEN-014); the session event names it.
     const sid = last("session.created").sid as string;
@@ -191,12 +197,16 @@ describe("login, session and token events", () => {
       sid,
     });
     // Refresh, then reuse of the consumed token, then a replayed code.
+    const beforeRefresh = events().length;
     const refreshed = await form({
       grant_type: "refresh_token",
       client_id: web.client_id,
       refresh_token: first.tokens.refresh_token as string,
     });
     expect(refreshed.status).toBe(200);
+    const refreshEvents = events().slice(beforeRefresh);
+    expect(refreshEvents.map((e) => e.type)).toEqual([...FLOW_EVENTS.refresh.events]);
+    expect(new Set(refreshEvents.map((e) => e.request_id)).size).toBe(FLOW_EVENTS.refresh.requests);
     expectEvent(last("token.refreshed"), {
       outcome: "success",
       actor: { kind: "user", id: uid },

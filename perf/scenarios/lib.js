@@ -3,7 +3,7 @@
 // and the thresholds built from perf/scenarios/budgets.js. k6 runs this file;
 // nothing here is Node.
 
-import { check } from "k6";
+import { check, sleep } from "k6";
 import crypto from "k6/crypto";
 import { SharedArray } from "k6/data";
 import encoding from "k6/encoding";
@@ -217,6 +217,63 @@ export function adminToken() {
   );
   check(res, { "admin token issued": (r) => r.status === 200 });
   return res.json("access_token");
+}
+
+/**
+ * D1 rows written per second during a scenario, the queue consumer's included
+ * (TIO-TEST-051, review H2): the per-response `d1w` count sees only the
+ * request path, while every event a request emits may become an `audit_hot`
+ * row a few seconds later. `/admin/stats` gives the table's rows before and
+ * after; the rows the cron purged in between are added back from its
+ * `system.cron_run` events, or a purge inside the window would hide writes.
+ */
+export const d1RowsPerSecond = new Trend("d1_rows_per_s");
+/** How long the consumer may take to write the last requests' events (queue batches wait up to 5 s). */
+const CONSUMER_SETTLE_SECONDS = 15;
+
+function auditHotRows(token) {
+  const res = http.get(`${ISSUER}/api/v1/admin/stats`, {
+    headers: { authorization: `Bearer ${token}` },
+    tags: { scenario: "setup" },
+  });
+  check(res, { "stats answered": (r) => r.status === 200 });
+  return res.json("audit_hot_rows");
+}
+
+function purgedSince(token, since) {
+  let purged = 0;
+  let cursor = null;
+  do {
+    const query = `type=system.cron_run&since=${since}&limit=200${cursor ? `&cursor=${cursor}` : ""}`;
+    const res = http.get(`${ISSUER}/api/v1/admin/audit?${query}`, {
+      headers: { authorization: `Bearer ${token}` },
+      tags: { scenario: "setup" },
+    });
+    check(res, { "cron runs listed": (r) => r.status === 200 });
+    for (const event of res.json("items") || []) purged += event.data?.audit_rows_purged || 0;
+    cursor = res.json("next_cursor");
+  } while (cursor);
+  return purged;
+}
+
+/** The `setup()` half of the D1 write-rate check: the table's rows and the start. */
+export function d1WriteBaseline() {
+  const token = adminToken();
+  return { rows: auditHotRows(token), since: Math.floor(Date.now() / 1000) };
+}
+
+/** The `teardown()` half: rows written per second over the run, recorded for the threshold. */
+export function recordD1WriteRate(baseline, scenario) {
+  sleep(CONSUMER_SETTLE_SECONDS);
+  const token = adminToken();
+  const rows = auditHotRows(token);
+  const purged = purgedSince(token, baseline.since);
+  const seconds = Math.floor(Date.now() / 1000) - baseline.since - CONSUMER_SETTLE_SECONDS;
+  const rate = (rows - baseline.rows + purged) / Math.max(1, seconds);
+  d1RowsPerSecond.add(rate, { scenario });
+  console.log(
+    `d1 write rate ${scenario}: ${rate.toFixed(2)} rows/s (audit_hot ${baseline.rows} -> ${rows}, ${purged} purged, ${seconds} s)`,
+  );
 }
 
 /** `GET /authorize` for a session holder: a code straight back to the relying party (§2.5). */

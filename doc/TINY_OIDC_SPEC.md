@@ -46,7 +46,7 @@ The initial draft (`tmp/INITIAL_TINY_OIDC_SPEC.md`) was a good statement of valu
 1. The OP is headless. There is no login page, consent page, or template engine in the OP. The login app is a separate application, and the OP exposes an Interaction API for it (§7).
 2. Hot-path state (sessions, authorization codes, refresh-token families, passkeys, consent grants) lives in one Durable Object per user, not in D1. D1 holds the directory and global configuration. Login and refresh do zero D1 writes (§2.3).
 3. Signing keys live in an encrypted key store in D1 and rotate through the admin API, not through a Worker secret and a redeploy (§10).
-4. Audit events flow through a Queue to an R2 archive and a hot table of recent days (7 by default). At 1,000,000 users an unbounded audit table in D1 would exceed the 10 GB database limit within a year (§11).
+4. Audit events flow through a Queue to an R2 archive (every event) and a hot table in D1 (the hot types, 14 days by default). At 1,000,000 users every event in D1 would fill the 10 GB database in about three days (§2.7, §11).
 5. Modern extensions are in: PAR, `iss` in the authorization response, RFC 9068 JWT access tokens, resource indicators, back-channel logout, revocation, `client_credentials` with `private_key_jwt`, groups, a self-service API, bulk import. DPoP and Apple Sign-in are deferred by decision (§1.5).
 
 ### 0.4 Document map
@@ -119,7 +119,7 @@ Each principle is a decision filter. When a proposal conflicts with one, the pro
 - Consent with per-client persistent grants; first-party clients may skip consent.
 - Registration policy (`closed`, `invite`, `open`), invitations, admin-driven recovery.
 - Interaction API for the login app; Self-service API for end users; Admin API with bootstrap, bulk NDJSON import, settings, key rotation, audit query.
-- Audit pipeline (hot table of recent days, R2 archive, per-user views of the hot table), structured logs, optional metrics.
+- Audit pipeline (hot table of the hot types, R2 archive, per-user views of the hot table), structured logs, optional metrics.
 - Rate limiting, cron maintenance, D1 and Durable Object schema migrations, OpenAPI 3.1 document.
 - Deploy-to-Cloudflare button for one-click evaluation, with an optional bundled reference login app served as static assets on the OP origin (§7.9, §12.3).
 
@@ -176,7 +176,7 @@ authentik is the feature reference. Appendix A maps every authentik capability t
  │ SQLite each     │   │ signing_keys     │        │         │ every 5 min    │
  │                 │   │ invitations      │        ▼         └────────────────┘
  │                 │   │ settings         │  ┌────────────┐
- │                 │   │ audit_hot (7 d)  │  │ R2 archive │
+ │                 │   │ audit_hot (14 d) │  │ R2 archive │
  └─────────────────┘   └──────────────────┘  │ audit/…    │
                                              └────────────┘
                         ▲
@@ -225,7 +225,7 @@ The rule: **a user's Durable Object is the source of truth for everything about 
 | PAR request | `InteractionDO` (same object becomes the interaction) | One-minute lifetime. |
 | Clients, upstreams, groups, settings, invitations | D1 | Global configuration. Low write rate. Isolate-cached reads. |
 | Signing keys (public + encrypted private) | D1 | Global. Cached in isolates for 60 seconds. |
-| Audit events | `TASKS` queue → D1 `audit_hot` (7 days by default) + R2 archive (indefinite) | Volume is unbounded; D1 cannot hold it. |
+| Audit events | `TASKS` queue → R2 archive (every event) + D1 `audit_hot` (hot types, 14 days by default) | Volume is unbounded; D1 holds only what the views read back (TIO-AUDIT-013). |
 
 **[TIO-ARCH-004]** The authorization-code exchange, refresh-token rotation, passkey assertion verification and session validation paths SHALL perform no D1 write. Component tests wrap the D1 binding in a spy and assert zero write statements.
 
@@ -424,23 +424,25 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 
 **[TIO-PERF-002]** (V: ci) Worker CPU time per request SHALL stay below 30 ms at p99 in the load test; the uncompressed bundle SHALL stay below 1.5 MB. CI fails on bundle growth beyond the budget.
 
+**[TIO-PERF-003]** (V: ci) The capacity table and the cost line of this section SHALL be what `test/scripts/audit-capacity.test.ts` computes from the rates below, the audit events each flow emits (`src/audit/capacity.ts`, asserted against the code by `test/http/audit-events.test.ts`) and row sizes measured by loading the migrations into SQLite; and at those rates the hot audit table and the directory SHALL stay within half of D1's 10 GB cap, the hot rows per day within a quarter of the purge capacity of TIO-CFG-010, and the alarm threshold of TIO-OBS-005 within the same half.
+
 **Capacity model at 1,000,000 users (100,000 DAU)**
 
 | Store | Rows / objects | Size estimate | Limit | Headroom |
 |---|---|---|---|---|
 | `UserDO` objects | 1,000,000 | ≤ 40 KB each typical (profile 1 KB, 2 passkeys 1.2 KB, sessions 2 KB, refresh rows ≤ 30 KB at 24 h retention) → ≤ 40 GB total | 10 GB per object; unlimited total | Enormous |
 | `InteractionDO` objects | ~300,000 created per day, deleted after ≤ 15 min | negligible | — | — |
-| D1 `users` | 1,000,000 | ~200 MB | | |
-| D1 `passkey_index` | 2,000,000 | ~300 MB | | |
-| D1 `identity_index` | 1,000,000 | ~200 MB | | |
-| D1 `group_members` | 2,000,000 | ~200 MB | | |
-| D1 `audit_hot` (30 days) | ~4,000,000 | ~2 GB | | |
-| D1 total | | **~3 GB** | 10 GB | 3× |
-| Queue | ~1–3 M messages/day (35/s avg, 300/s peak) | | 5,000/s | 15× |
+| D1 `users` | 1,000,000 | ~304 MB | | |
+| D1 `passkey_index` | 2,000,000 | ~380 MB | | |
+| D1 `identity_index` | 1,000,000 | ~203 MB | | |
+| D1 `group_members` | 2,000,000 | ~426 MB | | |
+| D1 `audit_hot` (hot types, 14 days) | ~3,500,000 | ~2.3 GB | | |
+| D1 total | | **~3.6 GB** | 10 GB | 2.8× |
+| Queue | ~5,850,000 messages/day (68/s average, ~360/s at the peaks below) | | 5,000/s | 14× |
 
-Request rates at 100,000 DAU: ~200,000 interactive logins/day (peak 50/s), ~5,000,000 refreshes/day (peak 150/s), ~10,000,000 Worker requests/day. Per-user DO load is ~50 requests/day, far below the 1,000 req/s per-object soft limit. Order-of-magnitude monthly cost at published 2026 prices: DO requests ~$25, DO storage ~$20, Worker requests ~$90, Queues ~$40, D1 < $10. Verify against current pricing before budgeting.
+Request rates at 100,000 DAU: ~200,000 interactive logins/day (peak 50/s), ~5,000,000 refreshes/day (peak 150/s), ~10,000,000 Worker requests/day. Per-user DO load is ~50 requests/day, far below the 1,000 req/s per-object soft limit. Order-of-magnitude monthly cost at the prices published on 2026-09-26: Worker requests ~$92, Durable Object requests ~$30–45, Durable Object rows written ~$560–1,320 (a refresh writes four rows), Durable Object storage ~$40, Queues ~$213 (every request that emits events ships one message, three operations each), R2 audit writes ~$3.5 (one object per consumer batch), D1 < $10, Workers Logs ~$280 (a line per request and per event), Analytics Engine ~$120 once billed. Verify against current pricing before budgeting.
 
-The D1 directory is the first ceiling. Its size is dominated by `audit_hot` retention, which is a setting. Beyond roughly 5,000,000 users the directory would need sharding by user-id prefix; the design permits it (all D1 access goes through repositories keyed by user id) but v1 does not implement it.
+The D1 directory is the first ceiling. `audit_hot` holds the hot types only (TIO-AUDIT-013), so it grows with logins, failures and administration, not with refreshes or session hits; its retention is a setting. Beyond roughly 5,000,000 users the directory would need sharding by user-id prefix; the design permits it (all D1 access goes through repositories keyed by user id) but v1 does not implement it.
 
 ### 2.8 Caching and staleness
 
@@ -923,9 +925,9 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
 { "kind": "backchannel_logout", "client_id": "…", "uri": "…", "token": "…", "attempt": 1, "sid": "…", "uid": "…" }
 ```
 
-R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSON object per line, gzip-compressed, immutable.
+R2 object key: `audit/year=<yyyy>/month=<mm>/day=<dd>/hour=<hh>/<first_event_id>-<write_id>.ndjson.gz` — Hive-style time segments from the first event, and a `write_id` fresh for every write —, one JSON object per line, gzip-compressed, never rewritten.
 
-**[TIO-DATA-025]** The queue consumer SHALL be idempotent: `audit_hot` inserts use `INSERT OR IGNORE` on the event id, and the R2 key is derived from the batch's first event id so a redelivered batch overwrites an identical object.
+**[TIO-DATA-025]** The queue consumer SHALL be idempotent: `audit_hot` inserts use `INSERT OR IGNORE` on the event id, and every archive write takes a new key, so a redelivered or regrouped batch overwrites nothing (a bucket lock would refuse the rewrite, and a regrouped batch would replace other events); the archive may then hold an event twice, and its readers deduplicate by event `id`.
 
 ### 4.6 Consistency between D1 and Durable Objects
 
@@ -950,7 +952,7 @@ R2 object key: `audit/<yyyy>/<mm>/<dd>/<hh>/<first_event_id>.ndjson.gz`, one JSO
 | Authorization codes | 60 s + lazy purge | `UserDO` purge |
 | Consumed refresh tokens | `refresh_reuse_window` (24 h) | `UserDO` purge |
 | Expired/revoked families and sessions | 24 h after expiry | `UserDO` purge |
-| `audit_hot` | `audit.hot_retention_days` (7) | Cron, 1,000 rows per run per iteration, bounded to 10 iterations |
+| `audit_hot` | `audit.hot_retention_days` (14) | Cron, 1,000 rows per run per iteration, bounded to 10 iterations |
 | R2 archive | The operator's choice; recommended 365 days for `audit/` and 90 days for `backups/` (runbook §12) | Bucket lifecycle rules |
 | Invitations | Deleted 30 days after expiry or use | Cron |
 | Retired signing keys | Row kept 90 days with `private_jwk_enc = NULL`, then deleted | Cron |
@@ -1775,7 +1777,7 @@ The token is returned once at creation as `token` and `url` (`login_url?invitati
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/audit` | filters: `type`, `user_id`, `client_id`, `actor_id`, `outcome`, `since`, `until`; from `audit_hot` |
+| GET | `/audit` | filters: `type`, `user_id`, `client_id`, `actor_id`, `outcome`, `since`, `until`; from `audit_hot`, the hot types (TIO-AUDIT-013); the full stream is in the archive |
 | GET | `/audit/archive` | Lists R2 objects by day range (keys only); the operator downloads with R2 tooling |
 
 **Import**
@@ -1924,11 +1926,13 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 ### 11.3 Sinks
 
-**[TIO-AUDIT-010]** Every event SHALL be delivered to: (1) the `TASKS` queue (batched per request, sent in `waitUntil`); (2) a structured log line at level `info`. Per-user views (`GET /api/v1/me/events`, `GET /api/v1/admin/users/{id}/events`) read `audit_hot` by `user_id` and are therefore eventually consistent (seconds) and bounded by `audit.hot_retention_days`.
+**[TIO-AUDIT-010]** Every event SHALL be delivered to: (1) the `TASKS` queue (batched per request, sent in `waitUntil`); (2) a structured log line at level `info`. Per-user views (`GET /api/v1/me/events`, `GET /api/v1/admin/users/{id}/events`) read `audit_hot` by `user_id` and are therefore eventually consistent (seconds), bounded by `audit.hot_retention_days`, and made of the hot types (TIO-AUDIT-013).
 
-**[TIO-AUDIT-011]** The queue consumer SHALL write each batch to `audit_hot` (`INSERT OR IGNORE`, ≤ 9 rows per statement, `db.batch()`) and to R2 as one gzip NDJSON object, and SHALL acknowledge the batch only after both succeed; a failure retries the whole batch (idempotent by design).
+**[TIO-AUDIT-011]** The queue consumer SHALL write the audit messages of a queue batch together, in groups of at most 1,000 events: the hot events of a group to `audit_hot` (`INSERT OR IGNORE`, ≤ 9 rows per statement, one `db.batch()`) and all of its events to R2 as one gzip NDJSON object (§4.5). It SHALL acknowledge a group's messages only after both writes succeed and retry them otherwise, and SHALL retry, not write, the groups that would take an invocation beyond 800 `audit_hot` statements (Workers allow 1,000 D1 queries per invocation).
 
 **[TIO-AUDIT-012]** Queue send failures SHALL be logged and SHALL NOT fail the user-facing request.
+
+**[TIO-AUDIT-013]** Every catalog type SHALL be hot or archive-only. The archive-only types are `interaction.created`, `interaction.completed`, `authz.code_issued`, `token.issued`, `token.refreshed`, `passkey.auth_succeeded`, `identity.login_succeeded`, `session.expired` and `ratelimit.exceeded`: the steps every successful protocol request takes, and the rate limiter's refusals, one per refused request. Events of every type SHALL be archived to R2; only hot events SHALL be written to `audit_hot`. A login's hot record is its `session.created` or `session.rotated` (method and upstream in `amr` and `upstream`; the passkey that signed in is in the archived `passkey.auth_succeeded`).
 
 ### 11.4 Logs and metrics
 
@@ -1940,7 +1944,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line — `d1r` counting the reads the request issued and the cache loads of §2.8 it waited for another request to finish, since its latency carries them —, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
 
-**[TIO-OBS-005]** Every cron run SHALL estimate the `audit_hot` row count from the table's rowid range (two index reads, not `COUNT(*)`), report it as `audit_hot_rows` in its report and in `system.cron_run`, and log at `error` when it exceeds 6,000,000 rows — about 3.4 GB at the ~560 bytes a row measured on staging, which with the directory of §2.7 keeps D1 under half its 10 GB cap. A scheduled workflow (`.github/workflows/watch.yml`, every six hours) SHALL fail, and so notify the repository owner, when an environment's `GET /api/v1/admin/stats` reports more rows than that or a `last_cron_run` older than 30 minutes.
+**[TIO-OBS-005]** Every cron run SHALL estimate the `audit_hot` row count from the table's rowid range (two index reads, not `COUNT(*)`), report it as `audit_hot_rows` in its report and in `system.cron_run`, and log at `error` when it exceeds 5,500,000 rows — about 3.6 GB at the ~660 bytes a hot row measures (TIO-PERF-003), which with the directory of §2.7 keeps D1 under half its 10 GB cap. A scheduled workflow (`.github/workflows/watch.yml`, every six hours) SHALL fail, and so notify the repository owner, when an environment's `GET /api/v1/admin/stats` reports more rows than that or a `last_cron_run` older than 30 minutes.
 
 ### 11.5 Privacy
 
@@ -2037,7 +2041,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 | `session.idle_ttl`, `session.absolute_ttl` | `86400`, `2592000` | |
 | `tokens.access_ttl`, `tokens.id_ttl`, `tokens.refresh_idle_ttl`, `tokens.refresh_absolute_ttl`, `tokens.refresh_reuse_window` | `600`, `600`, `1209600`, `2592000`, `86400` | |
 | `keys.rotation_days`, `keys.prepublish_seconds`, `keys.retire_after_seconds` | `90`, `86400`, `604800` | |
-| `audit.hot_retention_days` | `7` | 1–365 |
+| `audit.hot_retention_days` | `14` | 1–365 |
 | `me.allow_email_change` | `false` | |
 | `me.passkey_add_max_auth_age` | `900` | |
 | `bootstrapped_at` | unset | System-managed |
@@ -2195,7 +2199,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-TEST-050]** (V: load) `perf/seed.ts` SHALL create 1,000,000 synthetic users on staging through `/api/v1/admin/import/users` (8 parallel clients), then obtain 100,000 refresh tokens by driving the federated code flow against the fake upstream over HTTP only (no browser). Timings are recorded as the import benchmark ([TIO-ADMIN-021]).
 
-**[TIO-TEST-051]** (V: load) `perf/scenarios/` SHALL contain k6 scenarios with thresholds equal to §2.7: `discovery`, `sso_authorize` (session cookies harvested at seed time), `login_federated` (50/s), `token_code_exchange`, `token_refresh` (150/s sustained, 500/s burst for 60 s — the burst, a spike of more than three times the steady rate onto the same objects, is budgeted at one and a half times the row's p99), `userinfo`, `admin_list`. Each scenario also asserts `http_req_failed < 0.1%` and, through the health endpoint, that D1 write rate stays under 5/s during token scenarios (read from `/api/v1/admin/stats` deltas).
+**[TIO-TEST-051]** (V: load) `perf/scenarios/` SHALL contain k6 scenarios with thresholds equal to §2.7: `discovery`, `sso_authorize` (session cookies harvested at seed time), `login_federated` (50/s), `token_code_exchange`, `token_refresh` (150/s sustained, 500/s burst for 60 s — the burst, a spike of more than three times the steady rate onto the same objects, is budgeted at one and a half times the row's p99), `userinfo`, `admin_list`. Each scenario also asserts `http_req_failed < 0.1%` and that D1's write rate stays under 5 rows a second during the token scenarios: the request path's writes from each response's `d1w` count (TIO-OBS-004), the queue consumer's from `/api/v1/admin/stats` deltas of `audit_hot_rows` with the rows the cron purged in the window added back.
 
 **[TIO-TEST-052]** (V: load) A soak scenario SHALL run the refresh scenario for 2 hours at 100/s and assert no growth in p99 and no growth in per-user Durable Object storage beyond the retention bounds (sampled via `GET /api/v1/admin/users/{id}/export` size).
 
@@ -2401,6 +2405,8 @@ Each entry: what the draft said → what this spec does → why.
 
 39. **Per-user point-in-time restore endpoint** → removed from v1 (2026-09-27, ADR 0021). *Why:* the bookmark replaces the object's storage, so everything withdrawn since the bookmark came back live, and the local runtime cannot run a restore, so no fix could be proven there; a safe restore needs a snapshot kept outside the object and a staging test.
 
+40. **Every audit event in `audit_hot`** → hot and archive-only types (TIO-AUDIT-013), the archive written per consumer batch under keys unique to each write, 14-day hot retention, the capacity model as a CI check (TIO-PERF-003) (2026-09-28, ADR 0022). *Why:* at the §2.7 rates every event in D1 meant 6.2 M rows a day, a full D1 in about three days and a purge that could not keep up, while §2.7 budgeted ~4 M rows for 30 days; and an archive key reused on redelivery collides with a bucket lock.
+
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 
 **Operator decisions (made 2026-09-22, plan row OP-05):** no Durable Object jurisdiction (the operator's users are in Brazil, for which no jurisdiction exists and whose law does not require one; TIO-CFG-006 makes the choice real for operators who need `eu`); `registration.mode` `invite` on staging and production, with `federation.auto_create` off; `METRICS` enabled; R2 lifecycle rules on the audit bucket expiring `backups/` after 90 days and `audit/` after 365.
@@ -2460,7 +2466,7 @@ Identifiers are numbered per area; gaps are intentional to leave room. The trace
 | **Directory** | The D1 database: existence, uniqueness, configuration. |
 | **UserDO / InteractionDO** | The two Durable Object classes. |
 | **Related Origin Requests** | WebAuthn mechanism letting origins outside the RP ID's domain use its passkeys via `/.well-known/webauthn`. |
-| **Hot table** | `audit_hot`, the recent audit events in D1 (`audit.hot_retention_days`, 7 by default). |
+| **Hot table** | `audit_hot`, the recent events of the hot types in D1 (`audit.hot_retention_days`, 14 by default; TIO-AUDIT-013). |
 | **Reindex** | Rebuilding a user's D1 mirror and index rows from `UserDO`. |
 
 ---

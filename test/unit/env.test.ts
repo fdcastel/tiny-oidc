@@ -208,7 +208,7 @@ describe("resolveSettings", () => {
     expect(s["keys.rotation_days"]).toBe(90);
     expect(s["keys.prepublish_seconds"]).toBe(86_400);
     expect(s["keys.retire_after_seconds"]).toBe(604_800);
-    expect(s["audit.hot_retention_days"]).toBe(7);
+    expect(s["audit.hot_retention_days"]).toBe(14);
     expect(s["me.allow_email_change"]).toBe(false);
     expect(s["me.passkey_add_max_auth_age"]).toBe(900);
     expect(s.bootstrapped_at).toBeNull();

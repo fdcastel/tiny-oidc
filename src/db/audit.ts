@@ -8,7 +8,7 @@ import type { Db, Statement } from "./db.ts";
 // redelivered batch is harmless, TIO-DATA-025) and purged in bounded batches
 // by the cron (TIO-CFG-010).
 
-export const PURGE_BATCH_ROWS = 1_000;
+export { PURGE_BATCH_ROWS, PURGE_MAX_BATCHES } from "../audit/capacity.ts";
 
 const COLUMNS =
   "id, ts, type, outcome, actor_kind, actor_id, user_id, client_id, upstream, ip_hash, data, sid, interaction_id, country, ua_family, request_id, reason";

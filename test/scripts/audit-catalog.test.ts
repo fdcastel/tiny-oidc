@@ -1,7 +1,12 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AUDIT_CATALOG, AUDIT_TYPES } from "../../src/audit/catalog.ts";
+import {
+  ARCHIVE_ONLY_TYPES,
+  AUDIT_CATALOG,
+  AUDIT_TYPES,
+  isHotType,
+} from "../../src/audit/catalog.ts";
 
 // The catalog against the code and the tests (TIO-AUDIT-001): every type in
 // the spec's table is in the catalog, every catalogued type has an emitter in
@@ -52,5 +57,23 @@ describe("audit catalog", () => {
     for (const [type, keys] of Object.entries(AUDIT_CATALOG)) {
       expect(new Set(keys).size, type).toBe(keys.length);
     }
+  });
+
+  it("[TIO-AUDIT-013] the archive-only types are the ones TIO-AUDIT-013 lists, all catalogued; every other type is hot", () => {
+    const spec = readFileSync("doc/TINY_OIDC_SPEC.md", "utf8");
+    const start = spec.indexOf("**[TIO-AUDIT-013]**");
+    const paragraph = spec.slice(start, spec.indexOf(String.fromCharCode(10), start));
+    const listed = paragraph.slice(
+      paragraph.indexOf("The archive-only types are"),
+      paragraph.indexOf(": the steps"),
+    );
+    const fromSpec = [...listed.matchAll(/`([a-z]+\.[a-z_]+)`/g)].map((m) => m[1] as string);
+    expect(fromSpec.sort()).toEqual([...ARCHIVE_ONLY_TYPES].sort());
+    for (const type of ARCHIVE_ONLY_TYPES) expect(AUDIT_TYPES, type).toContain(type);
+    expect(AUDIT_TYPES.filter((t) => isHotType(t))).toHaveLength(
+      AUDIT_TYPES.length - ARCHIVE_ONLY_TYPES.size,
+    );
+    expect(isHotType("session.created")).toBe(true);
+    expect(isHotType("token.refreshed")).toBe(false);
   });
 });

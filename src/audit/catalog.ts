@@ -107,6 +107,32 @@ export const AUDIT_CATALOG = {
 
 export type AuditType = keyof typeof AUDIT_CATALOG;
 
+/**
+ * The archive class (TIO-AUDIT-013, ADR 0022): types that go to the R2
+ * archive only, never to `audit_hot`. They are the steps every successful
+ * protocol request takes — an interaction opened and completed, a code or
+ * token issued, a refresh, the method that authenticated a login (the login
+ * itself is the hot `session.created`) — and the rate limiter's refusals,
+ * one per refused request. Every other type is hot. At the §2.7 rates the
+ * archive class is ~6 M events a day and the hot class ~250,000.
+ */
+export const ARCHIVE_ONLY_TYPES: ReadonlySet<AuditType> = new Set<AuditType>([
+  "interaction.created",
+  "interaction.completed",
+  "authz.code_issued",
+  "token.issued",
+  "token.refreshed",
+  "passkey.auth_succeeded",
+  "identity.login_succeeded",
+  "session.expired",
+  "ratelimit.exceeded",
+]);
+
+/** Whether events of `type` are written to `audit_hot` (TIO-AUDIT-013). */
+export function isHotType(type: string): boolean {
+  return !ARCHIVE_ONLY_TYPES.has(type as AuditType);
+}
+
 export const AUDIT_TYPES = Object.keys(AUDIT_CATALOG) as AuditType[];
 
 export function isAuditType(type: string): type is AuditType {
