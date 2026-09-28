@@ -162,7 +162,7 @@ Current phase: 7. Requirements: 289 (ci: 20, conformance: 2, covered: 245, load:
 | TIO-PK-041 | §6.1.6 | test | 2 | covered | test/http/me.test.ts<br>test/http/register.test.ts |
 | TIO-SESS-001 | §6.2 | test | 2 | covered | test/http/complete.test.ts<br>test/unit/cookies.test.ts |
 | TIO-SESS-002 | §6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/complete.test.ts<br>test/http/passkey-interaction.test.ts |
-| TIO-SESS-003 | §6.2 | test | 2 | covered | test/http/authorize.test.ts |
+| TIO-SESS-003 | §6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/authorize.test.ts |
 | TIO-SESS-004 | §6.2 | test | 2 | covered | test/component/user-do.test.ts<br>test/http/authorize.test.ts |
 | TIO-SESS-005 | §6.2 | test | 2 | covered | test/http/complete.test.ts |
 | TIO-SESS-006 | §6.2 | test | 2 | covered | test/component/user-do.test.ts |

@@ -44,6 +44,13 @@ export const PURGE_GRACE_SECONDS = 86_400;
 
 /** Authorization codes live 60 s (§5.7.4). */
 export const CODE_TTL_SECONDS = 60;
+/**
+ * A session's idle expiry is extended at most this often (TIO-SESS-003): a use
+ * within this long of the last extension writes nothing, so a session may idle
+ * out up to this much early, never late (review M1: every /authorize hit and
+ * refresh wrote the session row).
+ */
+export const SESSION_TOUCH_INTERVAL_SECONDS = 60;
 
 export type UserDoError =
   | "user_not_initialized"
@@ -713,8 +720,12 @@ export class UserDO extends DurableObject<Env> {
     return row;
   }
 
-  /** Extends idle expiry to now + idle_ttl, never beyond the absolute expiry (TIO-SESS-003). */
+  /**
+   * Extends idle expiry to now + idle_ttl, never beyond the absolute expiry, at most once
+   * per SESSION_TOUCH_INTERVAL_SECONDS (TIO-SESS-003).
+   */
   private touchSession(row: SessionRow, now: number, idleTtl: number): void {
+    if (now - row.last_seen_at < SESSION_TOUCH_INTERVAL_SECONDS) return;
     const idle = Math.min(now + idleTtl, row.absolute_expires_at);
     this.ctx.storage.sql.exec(
       "UPDATE sessions SET last_seen_at = ?, idle_expires_at = ? WHERE sid = ?",

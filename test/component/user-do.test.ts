@@ -405,7 +405,7 @@ describe("UserDO authorization with a session (§2.5.2)", () => {
       ...overrides,
     });
 
-  it("[TIO-AUTHZ-014] [TIO-AUTHZ-022] [TIO-AUTHZ-023] a usable session with consent satisfied issues a code bound to the request, records the client and touches the session", async () => {
+  it("[TIO-AUTHZ-014] [TIO-AUTHZ-022] [TIO-AUTHZ-023] [TIO-SESS-003] a usable session with consent satisfied issues a code bound to the request, records the client and touches the session at most once a minute", async () => {
     const { stub } = await newUser();
     const s = await sessionInput();
     const t0 = clock.now();
@@ -452,6 +452,19 @@ describe("UserDO authorization with a session (§2.5.2)", () => {
     expect((await exchange(stub, late.secretHash, v2)).result).toEqual({
       ok: false,
       error: "invalid_grant",
+    });
+    // Touched at most once a minute (TIO-SESS-003): last extended at t0 + 100, a use 30 s
+    // later writes nothing, one 61 s later extends.
+    const touchAt = async (at: number) => {
+      clock.set(at);
+      const next = await codeInput((await pkce()).challenge);
+      return evaluate(stub, s.input.sid, s.secretHash, { code: next.code });
+    };
+    expect(await touchAt(t0 + 130)).toMatchObject({
+      session: { last_seen_at: t0 + 100, idle_expires_at: t0 + 100 + IDLE },
+    });
+    expect(await touchAt(t0 + 161)).toMatchObject({
+      session: { last_seen_at: t0 + 161, idle_expires_at: t0 + 161 + IDLE },
     });
     clock.set(t0);
   });

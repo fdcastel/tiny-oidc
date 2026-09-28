@@ -1390,7 +1390,7 @@ Passkeys are the only local credential. A passkey with user verification is inhe
 
 **[TIO-SESS-002]** A session SHALL be created only at `/interactions/{id}/complete` (or the equivalent finalization in `/federation/callback`) after a successful authentication, with `auth_time = now`, `amr`, `acr`, `upstream`, `ip_hash`, `ua_family`, `country`, `idle_expires_at = now + session_idle_ttl`, `absolute_expires_at = now + session_absolute_ttl`. A re-authentication in a browser that already has a valid session for the **same** user SHALL rotate the secret and update `auth_time`, `amr`, `acr`, keeping `sid`. A re-authentication as a **different** user SHALL revoke the old session and create a new one.
 
-**[TIO-SESS-003]** Every use of a session (`/authorize` hit, code issuance, refresh of a session-bound family) SHALL extend `idle_expires_at` to `now + session_idle_ttl`, never beyond `absolute_expires_at`. Expiry checks use both fields on every read.
+**[TIO-SESS-003]** Every use of a session (`/authorize` hit, code issuance, refresh of a session-bound family) SHALL extend `idle_expires_at` to `now + session_idle_ttl`, never beyond `absolute_expires_at` — at most once a minute: a use within 60 s of the last extension (`last_seen_at`) writes nothing, so a session may idle out up to 60 s early, never late. Expiry checks use both fields on every read.
 
 **[TIO-SESS-004]** A session cookie that fails decryption, refers to an unknown, revoked or expired session, or to a disabled user SHALL be treated as absent and cleared (`Max-Age=0`) on browser-navigation responses.
 
