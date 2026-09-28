@@ -221,17 +221,34 @@ export function patchSettingsHandler(clock: Clock): Handler<AppEnv> {
 
 // --- stats -------------------------------------------------------------------------
 
+/**
+ * When the newest D1 export under `backups/` was written (TIO-DEPLOY-003), or null
+ * when there is none or the bucket does not answer: the watch workflow fails on a
+ * missing or stale backup where one is required (review M7). The exports are weekly
+ * and expire after 90 days, so one page of the listing holds them all.
+ */
+async function lastBackupAt(bucket: R2Bucket): Promise<number | null> {
+  try {
+    const listed = await bucket.list({ prefix: "backups/" });
+    const newest = Math.max(0, ...listed.objects.map((o) => o.uploaded.getTime()));
+    return newest === 0 ? null : Math.floor(newest / 1000);
+  } catch {
+    return null;
+  }
+}
+
 export function statsHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
     const db = c.get("db");
     try {
-      const [users, clients, upstreams, keyRows, auditRows, stored] = await Promise.all([
+      const [users, clients, upstreams, keyRows, auditRows, stored, backup] = await Promise.all([
         countUsersByStatus(db),
         countClients(db),
         countUpstreams(db),
         listSigningKeys(db),
         countAuditRows(db),
         readAllSettings(db),
+        lastBackupAt(c.env.AUDIT_BUCKET),
       ]);
       const roles = [...rolesByKid(keyRows, clock.now()).values()];
       const count = (role: KeyRole) => roles.filter((r) => r === role).length;
@@ -248,6 +265,7 @@ export function statsHandler(clock: Clock): Handler<AppEnv> {
         },
         audit_hot_rows: auditRows,
         last_cron_run: typeof lastRun === "number" ? lastRun : null,
+        last_backup_at: backup,
       });
     } catch {
       return unavailable(c);

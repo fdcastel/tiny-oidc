@@ -533,6 +533,10 @@ export const UserCountsSchema = z
     sessions: z.int(),
     refresh_families: z.int(),
     grants: z.int(),
+    storage_bytes: z
+      .int()
+      .optional()
+      .openapi({ description: "The user object's SQLite size (TIO-RT-011); absent on creation" }),
   })
   .openapi("UserCounts");
 
@@ -1859,6 +1863,10 @@ export const StatsSchema = z
     keys: z.object({ signing: z.int(), next: z.int(), verifying: z.int(), retired: z.int() }),
     audit_hot_rows: z.int(),
     last_cron_run: z.int().nullable(),
+    last_backup_at: z
+      .int()
+      .nullable()
+      .openapi({ description: "The newest D1 export under backups/ (TIO-DEPLOY-003)" }),
   })
   .openapi("Stats");
 

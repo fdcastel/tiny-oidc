@@ -91,6 +91,33 @@ export function databaseName(configText: string, profile: "staging" | "productio
   return name;
 }
 
+/** The environment's audit bucket from wrangler.jsonc. */
+export function auditBucket(configText: string, profile: "staging" | "production"): string {
+  const config = parse(configText) as {
+    env?: Record<string, { r2_buckets?: { bucket_name?: string }[] }>;
+  };
+  const name = config.env?.[profile]?.r2_buckets?.[0]?.bucket_name;
+  if (!name) throw new Error(`wrangler.jsonc env.${profile} has no r2 bucket_name`);
+  return name;
+}
+
+/** The prefixes of the audit bucket that must expire (§4.7, runbook §12, review M7). */
+export const REQUIRED_EXPIRY_PREFIXES = ["audit/", "backups/"] as const;
+
+/**
+ * The required prefixes that `wrangler r2 bucket lifecycle list`'s output gives no
+ * expiry rule. Without them the archive and the D1 exports (emails, profiles) are
+ * kept forever, and an erased person outlives the erasure in every old export.
+ */
+export function missingLifecycleRules(listed: string): string[] {
+  const expiring = new Set<string>();
+  for (const block of listed.split(/\n(?=name:)/)) {
+    const prefix = /prefix:\s+(\S+)/.exec(block)?.[1];
+    if (prefix !== undefined && /Expire objects after \d+ days/.test(block)) expiring.add(prefix);
+  }
+  return REQUIRED_EXPIRY_PREFIXES.filter((p) => !expiring.has(p));
+}
+
 /** The environment's Worker name from wrangler.jsonc (the version-override header names it). */
 export function workerName(configText: string, profile: "staging" | "production"): string {
   const config = parse(configText) as { env?: Record<string, { name?: string }> };
@@ -226,6 +253,24 @@ export async function deploy(env: DeployEnv, io: DeployIO): Promise<DeployResult
     await run(["d1", "migrations", "apply", "DB", "--remote"]);
     await run(["deploy", ...vars]);
     return { profile, commands };
+  }
+
+  // The audit bucket's retention (TIO-DEPLOY-003, review M7): refused without its expiry
+  // rules; a credential that cannot read them (Workers Builds' token) only warns.
+  const bucket = auditBucket(configText, profile);
+  let lifecycle: string | null = null;
+  try {
+    lifecycle = await run(["r2", "bucket", "lifecycle", "list", bucket]);
+  } catch (error) {
+    io.log(
+      `warning: the lifecycle rules of ${bucket} could not be read (${String(error)}); check them by hand (runbook §12)`,
+    );
+  }
+  const missing = lifecycle === null ? [] : missingLifecycleRules(lifecycle);
+  if (missing.length > 0) {
+    throw new Error(
+      `the audit bucket ${bucket} has no expiry rule for ${missing.join(" and ")} (runbook §12)`,
+    );
   }
 
   // Resolve the D1 id by name so no account-specific id lives in the repository (TIO-DEPLOY-005).

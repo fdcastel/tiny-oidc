@@ -1108,6 +1108,10 @@
           },
           "grants": {
             "type": "integer"
+          },
+          "storage_bytes": {
+            "type": "integer",
+            "description": "The user object's SQLite size (TIO-RT-011); absent on creation"
           }
         },
         "required": [
@@ -2518,6 +2522,13 @@
               "integer",
               "null"
             ]
+          },
+          "last_backup_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The newest D1 export under backups/ (TIO-DEPLOY-003)"
           }
         },
         "required": [
@@ -2526,7 +2537,8 @@
           "upstreams",
           "keys",
           "audit_hot_rows",
-          "last_cron_run"
+          "last_cron_run",
+          "last_backup_at"
         ]
       },
       "MaintenanceReport": {

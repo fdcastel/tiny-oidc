@@ -26,7 +26,7 @@ const RATE = Number(__ENV.TIO_PERF_RATE || 100);
 const DURATION = __ENV.TIO_PERF_SOAK_DURATION || "2h";
 const WINDOW = __ENV.TIO_PERF_SOAK_WINDOW || "10m";
 const SAMPLE = Number(__ENV.TIO_PERF_SOAK_SAMPLE || 20);
-/** How much a sampled export may grow over the run (bytes after / bytes before). */
+/** How much a sampled object may grow over the run (bytes after / bytes before). */
 const MAX_GROWTH = Number(__ENV.TIO_PERF_SOAK_MAX_GROWTH || 3);
 
 const durationMs = (text) => {
@@ -62,8 +62,12 @@ function sampledIds() {
   return ids;
 }
 
-/** Bytes of each sampled user's export, by upstream subject (the seed's email is derived from it). */
-function exportSizes(token, subs) {
+/**
+ * Bytes of each sampled user's object (`counts.storage_bytes`, TIO-RT-011), by upstream
+ * subject (the seed's email is derived from it). The object's own size, not its export:
+ * the export leaves out the refresh tokens, codes and challenges the purge bounds (review M2).
+ */
+function storageSizes(token, subs) {
   const sizes = {};
   for (const sub of subs) {
     const email = `${sub.replace(/^sub-/, "user-")}@example.com`;
@@ -76,18 +80,19 @@ function exportSizes(token, subs) {
     );
     const id = found.status === 200 && found.json("items.0.id");
     if (!id) continue;
-    const exported = http.get(`${ISSUER}/api/v1/admin/users/${id}/export`, {
+    const detail = http.get(`${ISSUER}/api/v1/admin/users/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
       tags: { phase: "sample" },
     });
-    if (exported.status === 200) sizes[sub] = exported.body.length;
+    const bytes = detail.status === 200 && detail.json("counts.storage_bytes");
+    if (bytes) sizes[sub] = bytes;
   }
   return sizes;
 }
 
 export function setup() {
   const token = adminToken();
-  return { token, before: exportSizes(token, sampledIds()), startedAt: Date.now() };
+  return { token, before: storageSizes(token, sampledIds()), startedAt: Date.now() };
 }
 
 export function soakRefresh(data) {
@@ -108,13 +113,13 @@ export function soakRefresh(data) {
 
 export function teardown(data) {
   const token = adminToken();
-  const after = exportSizes(token, Object.keys(data.before));
+  const after = storageSizes(token, Object.keys(data.before));
   for (const [sub, before] of Object.entries(data.before)) {
     const now = after[sub];
     check(
       now,
       {
-        [`export of ${sub} within retention bounds`]: (bytes) =>
+        [`storage of ${sub} within bounds`]: (bytes) =>
           bytes !== undefined && bytes <= before * MAX_GROWTH,
       },
       { phase: "teardown" },

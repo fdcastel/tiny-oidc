@@ -51,6 +51,12 @@ export const CODE_TTL_SECONDS = 60;
  * refresh wrote the session row).
  */
 export const SESSION_TOUCH_INTERVAL_SECONDS = 60;
+/**
+ * Live refresh families one user may hold per client (TIO-RT-011): issuing one
+ * more revokes the oldest beyond it, so repeated logins cannot grow an object
+ * without bound (review M2). One family per device or browser, generously.
+ */
+export const MAX_REFRESH_FAMILIES_PER_CLIENT = 20;
 
 export type UserDoError =
   | "user_not_initialized"
@@ -430,6 +436,11 @@ export interface UserCounts {
   sessions: number;
   refresh_families: number;
   grants: number;
+  /**
+   * The object's SQLite size, pages included (review M2: the schema alone is ~164 KB);
+   * absent from the creation response, whose counts are known without the object.
+   */
+  storage_bytes?: number;
 }
 
 /** The data-portability export (TIO-PRIV-002). */
@@ -1194,6 +1205,15 @@ export class UserDO extends DurableObject<Env> {
           r.family_id,
           input.now,
         );
+        // TIO-RT-011: the newest MAX_REFRESH_FAMILIES_PER_CLIENT live families of this client stay.
+        sql.exec(
+          "UPDATE refresh_families SET revoked_at = ?, revoke_reason = 'family_limit' WHERE id IN (SELECT id FROM refresh_families WHERE client_id = ? AND revoked_at IS NULL AND idle_expires_at > ? AND absolute_expires_at > ? ORDER BY created_at DESC, id DESC LIMIT -1 OFFSET ?)",
+          input.now,
+          input.client.client_id,
+          input.now,
+          input.now,
+          MAX_REFRESH_FAMILIES_PER_CLIENT,
+        );
       }
       const grant = UserDO.grantContext(
         user,
@@ -1796,6 +1816,7 @@ export class UserDO extends DurableObject<Env> {
           now,
         ),
         grants: count("SELECT COUNT(*) AS n FROM grants"),
+        storage_bytes: sql.databaseSize,
       },
     };
   }

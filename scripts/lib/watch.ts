@@ -3,11 +3,16 @@
 // owner — when the hot audit table is above its alarm threshold or the cron
 // has stopped running (the purge would then never catch up).
 
-import { AUDIT_HOT_ALARM_ROWS, CRON_STALE_AFTER_SECONDS } from "../../src/audit/capacity.ts";
+import {
+  AUDIT_HOT_ALARM_ROWS,
+  BACKUP_STALE_AFTER_SECONDS,
+  CRON_STALE_AFTER_SECONDS,
+} from "../../src/audit/capacity.ts";
 
 export interface WatchStats {
   audit_hot_rows: number;
   last_cron_run: number | null;
+  last_backup_at: number | null;
 }
 
 /** The problems in `stats` at `now` (Unix seconds); empty when all is well. */
@@ -15,6 +20,7 @@ export function verdict(
   stats: WatchStats,
   now: number,
   threshold = AUDIT_HOT_ALARM_ROWS,
+  requireBackup = false,
 ): string[] {
   const problems: string[] = [];
   if (stats.audit_hot_rows > threshold) {
@@ -25,6 +31,11 @@ export function verdict(
   if (stats.last_cron_run === null) problems.push("the cron has never run");
   else if (now - stats.last_cron_run > CRON_STALE_AFTER_SECONDS) {
     problems.push(`the cron last ran ${now - stats.last_cron_run} s ago`);
+  }
+  // The weekly D1 export (TIO-DEPLOY-003), where the environment requires one.
+  if (requireBackup && stats.last_backup_at === null) problems.push("no D1 export under backups/");
+  else if (requireBackup && now - (stats.last_backup_at as number) > BACKUP_STALE_AFTER_SECONDS) {
+    problems.push(`the newest D1 export is ${now - (stats.last_backup_at as number)} s old`);
   }
   return problems;
 }

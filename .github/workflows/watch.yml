@@ -36,6 +36,8 @@ jobs:
         run: node scripts/watch.ts
         env:
           TIO_WATCH_NAME: production
+          # Production must hold a D1 export under backups/ younger than 8 days (TIO-DEPLOY-003).
+          TIO_WATCH_REQUIRE_BACKUP: "true"
           TIO_WATCH_ISSUER: ${{ secrets.TIO_PRODUCTION_ISSUER }}
           TIO_WATCH_CLIENT_ID: ${{ secrets.TIO_PRODUCTION_CLIENT_ID }}
           TIO_WATCH_CLIENT_SECRET: ${{ secrets.TIO_PRODUCTION_CLIENT_SECRET }}

@@ -94,7 +94,7 @@ async function tokensFor(user: PasskeyUser, scope = "openid offline_access"): Pr
 }
 
 describe("POST /api/v1/admin/users and GET /users/{id}", () => {
-  it("[TIO-ADMIN-002] [TIO-DATA-008] creates a user in the §4.6 order with groups and identities, audits it, and refuses duplicates, bad emails and unknown groups", async () => {
+  it("[TIO-ADMIN-002] [TIO-DATA-008] [TIO-RT-011] creates a user in the §4.6 order with groups and identities, audits it, and refuses duplicates, bad emails and unknown groups", async () => {
     await adminSettings(h);
     const root = await adminUser(h);
     token = root.access_token;
@@ -151,7 +151,14 @@ describe("POST /api/v1/admin/users and GET /users/{id}", () => {
     expect((await lookupIdentity(db, "https://idp.example.com", "abc"))?.user_id).toBe(detail.id);
     const fetched = await call("GET", `users/${detail.id}`);
     expect(fetched.status).toBe(200);
-    expect(await fetched.json()).toEqual(detail);
+    // The object reports its size; the creation response, built without it, does not (TIO-RT-011).
+    const shown = (await fetched.json()) as Detail;
+    expect(shown).toEqual({
+      ...detail,
+      counts: { ...detail.counts, storage_bytes: expect.any(Number) },
+    });
+    expect(shown.counts["storage_bytes"]).toBeGreaterThan(0);
+    expect(detail.counts).not.toHaveProperty("storage_bytes");
 
     const duplicate = await call("POST", "users", {
       email: "new@example.com",

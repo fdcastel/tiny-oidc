@@ -15,9 +15,14 @@ const stats = await readStats({
   clientId: process.env["TIO_WATCH_CLIENT_ID"] ?? "",
   clientSecret: process.env["TIO_WATCH_CLIENT_SECRET"] ?? "",
 });
-const problems = verdict(stats, Math.floor(Date.now() / 1000));
+const problems = verdict(
+  stats,
+  Math.floor(Date.now() / 1000),
+  undefined,
+  process.env["TIO_WATCH_REQUIRE_BACKUP"] === "true",
+);
 console.log(
-  `watch: ${name}: audit_hot ${stats.audit_hot_rows} rows, last cron run ${stats.last_cron_run}`,
+  `watch: ${name}: audit_hot ${stats.audit_hot_rows} rows, last cron run ${stats.last_cron_run}, last backup ${stats.last_backup_at}`,
 );
 for (const p of problems) console.error(`watch: ${name}: ${p}`);
 if (problems.length > 0) process.exit(1);

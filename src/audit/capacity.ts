@@ -15,6 +15,9 @@ export const PURGE_BATCH_ROWS = 1_000;
 /** Purge batches per cron run: with PURGE_BATCH_ROWS, what one run can delete (TIO-CFG-010). */
 export const PURGE_MAX_BATCHES = 10;
 
+/** A newest D1 export older than this misses the weekly backup (TIO-DEPLOY-003, review M7). */
+export const BACKUP_STALE_AFTER_SECONDS = 8 * 86_400;
+
 /** A last cron run older than this means the purge is not running (TIO-OBS-005). */
 export const CRON_STALE_AFTER_SECONDS = 30 * 60;
 

@@ -357,6 +357,25 @@ describe("stats and maintenance", () => {
       last_cron_run: null,
     });
     expect(statsBefore["audit_hot_rows"]).toBeGreaterThanOrEqual(3);
+    // The newest D1 export under backups/ (TIO-DEPLOY-003): none yet, then one, and null when
+    // the bucket does not answer.
+    expect(statsBefore["last_backup_at"]).toBeNull();
+    await env.AUDIT_BUCKET.put("backups/tiny-oidc-2027-01-05.sql", "-- export");
+    const withBackup = (await (await call("GET", "stats")).json()) as Record<string, unknown>;
+    expect(withBackup["last_backup_at"]).toEqual(expect.any(Number));
+    const noBucket = (await (
+      await call("GET", "stats", undefined, {
+        env: {
+          ...env,
+          AUDIT_BUCKET: {
+            list: async () => {
+              throw new Error("bucket down");
+            },
+          },
+        } as unknown as Env,
+      })
+    ).json()) as Record<string, unknown>;
+    expect(noBucket["last_backup_at"]).toBeNull();
     expect(statsBefore["clients"]).toBeGreaterThan(0);
 
     const purged = await call("POST", "maintenance/purge");

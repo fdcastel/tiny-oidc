@@ -1189,6 +1189,8 @@ Parameters: `refresh_token`, `client_id` (public), optional `scope` (subset).
 
 #### 5.7.3 Refresh token
 
+**[TIO-RT-011]** A user SHALL hold at most 20 live refresh families per client: issuing one more revokes the oldest beyond the newest 20 (`revoke_reason = 'family_limit'`), so repeated logins cannot grow the user's object without bound. `GET /api/v1/admin/users/{id}` reports the object's size as `counts.storage_bytes`.
+
 **[TIO-RT-010]** Refresh tokens SHALL be `tio_rt` handles. Family lifetimes: `session` kind → `absolute_expires_at = session.absolute_expires_at`, `idle_expires_at = min(now + refresh_idle_ttl, absolute)`; `offline` kind → `absolute = now + refresh_token_ttl` (default 30 d, max 90 d), `idle = now + refresh_idle_ttl` (default 14 d).
 
 #### 5.7.4 Lifetimes
@@ -2074,7 +2076,7 @@ Runtime settings (D1 `settings`, editable via Admin API, cached 60 s):
 
 **[TIO-DEPLOY-011]** (V: ci) Changes reach `main` by direct commits from the implementing agent; the full gate set (§13.1) runs on every push, and a red `main` blocks the staging deploy until it is fixed forward. Pull requests are used only when the repository owner asks for a review point.
 
-**[TIO-DEPLOY-003]** (V: review) D1 SHALL be backed up weekly by `wrangler d1 export` to `AUDIT_BUCKET/backups/`, and D1 Time Travel (30 days) is the point-in-time recovery mechanism. Durable Object point-in-time recovery is not exposed in v1 (ADR 0021): restoring one user's object to a bookmark would bring back what was withdrawn since — revoked sessions and refresh families, consumed tokens and codes, removed passkeys, unlinked identities, revoked consent, removed group memberships — and roll passkey counters back. A restore that re-grants nothing is deferred (plan B-08).
+**[TIO-DEPLOY-003]** D1 SHALL be backed up weekly by `wrangler d1 export` to `AUDIT_BUCKET/backups/`, and D1 Time Travel (30 days) is the point-in-time recovery mechanism. `GET /api/v1/admin/stats` reports the newest export as `last_backup_at`; the watch workflow fails when production's is missing or older than 8 days. The deploy script refuses a staging or production deploy whose audit bucket has no expiry rule for `audit/` or `backups/` (§4.7); a credential that cannot read the rules logs a warning instead. Durable Object point-in-time recovery is not exposed in v1 (ADR 0021): restoring one user's object to a bookmark would bring back what was withdrawn since — revoked sessions and refresh families, consumed tokens and codes, removed passkeys, unlinked identities, revoked consent, removed group memberships — and roll passkey counters back. A restore that re-grants nothing is deferred (plan B-08).
 
 **[TIO-DEPLOY-004]** (V: review) A `doc/RUNBOOK.md` SHALL document: bootstrap, key rotation, master-key rotation, emergency key retirement, client-secret rotation, user recovery, D1 restore, reindex, and what to do when `MASTER_KEYS` is lost (re-key everything; all sessions and refresh tokens invalid; upstream secrets and signing keys must be regenerated).
 

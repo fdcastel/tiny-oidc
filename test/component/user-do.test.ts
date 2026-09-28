@@ -8,6 +8,7 @@ import {
   CODE_TTL_SECONDS,
   type CodeInput,
   type ExchangeCodeInput,
+  MAX_REFRESH_FAMILIES_PER_CLIENT,
   type NewSession,
   type UserDO,
 } from "../../src/do/UserDO.ts";
@@ -667,6 +668,67 @@ describe("UserDO code exchange (§2.5.3)", () => {
       ok: false,
       error: "invalid_grant",
     });
+  });
+});
+
+describe("UserDO storage bounds (review M2)", () => {
+  const rowsOf = async (stub: DurableObjectStub<UserDO>, table: string, where = "1") =>
+    runInDurableObject(
+      stub,
+      (_instance: UserDO, state) =>
+        (
+          state.storage.sql
+            .exec<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`)
+            .toArray()[0] as { n: number }
+        ).n,
+    );
+
+  it("[TIO-RT-011] a user holds at most 20 live refresh families per client: the 21st and 22nd revoke the oldest, marked family_limit", async () => {
+    const { stub } = await newUser();
+    for (let i = 0; i < MAX_REFRESH_FAMILIES_PER_CLIENT + 2; i++) {
+      clock.advance(1);
+      const session = await sessionInput();
+      const { verifier, challenge } = await pkce();
+      const { code, secretHash } = await codeInput(challenge);
+      const login = await stub.finalizeLogin({
+        now: clock.now(),
+        session: { create: session.input },
+        code,
+        client: client(),
+        session_idle_ttl: IDLE,
+      });
+      expect(login.ok).toBe(true);
+      expect((await exchange(stub, secretHash, verifier)).result.ok).toBe(true);
+    }
+    const counts = await stub.counts(clock.now());
+    expect(counts.ok && counts.counts.refresh_families).toBe(MAX_REFRESH_FAMILIES_PER_CLIENT);
+    expect(await rowsOf(stub, "refresh_families", "revoke_reason = 'family_limit'")).toBe(2);
+    expect(counts.ok && counts.counts.storage_bytes).toBeGreaterThan(0);
+  });
+
+  it("[TIO-DATA-019] [TIO-TEST-052] 48 hours of rotation every 10 minutes keep the object bounded: consumed tokens go after the reuse window and the second day adds no storage", async () => {
+    const user = await loggedIn({ scope: ["openid", "offline_access"] });
+    const first = await exchange(user.stub, user.codeHash, user.verifier);
+    expect(first.result.ok).toBe(true);
+    let current = first.refreshHash;
+    let sizeAfterDayOne = 0;
+    for (let i = 1; i <= 288; i++) {
+      clock.advance(600);
+      const { result, next } = await rotate(user.stub, first.familyId, current);
+      expect(result.ok, `rotation ${i}`).toBe(true);
+      current = next;
+      if (i === 144) {
+        const counts = await user.stub.counts(clock.now());
+        sizeAfterDayOne = counts.ok ? (counts.counts.storage_bytes as number) : 0;
+      }
+    }
+    // Consumed tokens stay for the reuse window (24 h) and are purged after it (TIO-DATA-019).
+    const tokens = await rowsOf(user.stub, "refresh_tokens");
+    expect(tokens).toBeLessThanOrEqual(REUSE_WINDOW / 600 + 10);
+    const counts = await user.stub.counts(clock.now());
+    const size = counts.ok ? (counts.counts.storage_bytes as number) : Number.POSITIVE_INFINITY;
+    expect(sizeAfterDayOne).toBeGreaterThan(0);
+    expect(size).toBeLessThanOrEqual(sizeAfterDayOne * 1.1);
   });
 });
 

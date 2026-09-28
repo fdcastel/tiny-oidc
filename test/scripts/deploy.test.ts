@@ -4,13 +4,16 @@ import { describe, expect, it } from "vitest";
 import {
   assertDeployable,
   assertDeployVars,
+  auditBucket,
   type DeployIO,
   databaseName,
   deploy,
   deployFakeUpstream,
   FAKE_UPSTREAM_CONFIG,
   liveVersion,
+  missingLifecycleRules,
   profileOf,
+  REQUIRED_EXPIRY_PREFIXES,
   resolveDatabaseId,
   VERSION_OVERRIDE_HEADER,
   varArgs,
@@ -66,21 +69,48 @@ interface SmokeCall {
   version: string;
 }
 
-/** A fake wrangler that records calls and answers with canned output. */
+/** `wrangler r2 bucket lifecycle list` of a bucket with the rules of §4.7. */
+const LIFECYCLE = [
+  "name:     audit-365d",
+  "enabled:  Yes",
+  "prefix:   audit/",
+  "action:   Expire objects after 365 days",
+  "name:     audit-ia-120d",
+  "enabled:  Yes",
+  "prefix:   audit/",
+  "action:   Transition to Infrequent Access after 120 days",
+  "name:     backups-90d",
+  "enabled:  Yes",
+  "prefix:   backups/",
+  "action:   Expire objects after 90 days",
+].join("\n");
+
+/**
+ * A fake wrangler that records calls and answers with canned output. The audit bucket's
+ * lifecycle read is kept apart (`lifecycle`), so the rollout sequences stay what they test.
+ */
 function fakeIo(
   options: {
     smokeFails?: boolean;
     uploadOutput?: string;
     status?: string | Error;
     restoreFails?: boolean;
+    lifecycle?: string | Error;
   } = {},
 ) {
   const calls: string[][] = [];
+  const lifecycle: string[][] = [];
   const written: string[] = [];
   const logs: string[] = [];
   const smokes: SmokeCall[] = [];
   const io: DeployIO = {
     wrangler: async (args) => {
+      if (args[0] === "r2" && args[2] === "lifecycle") {
+        lifecycle.push(args);
+        const listed = options.lifecycle ?? LIFECYCLE;
+        if (listed instanceof Error) throw listed;
+        return listed;
+      }
       calls.push(args);
       if (args[0] === "d1" && args[1] === "list") return D1_LIST;
       if (args[0] === "deployments" && args[1] === "status") {
@@ -107,7 +137,7 @@ function fakeIo(
     },
     log: (m) => logs.push(m),
   };
-  return { io, calls, written, logs, smokes };
+  return { io, calls, written, logs, smokes, lifecycle };
 }
 
 const scoped = (profile: string) => ["--config", "wrangler.generated.jsonc", "--env", profile];
@@ -247,6 +277,43 @@ describe("deploy script (TIO-DEPLOY-007)", () => {
       realConfig.replace('"database_name": "tiny-oidc-staging"', '"database_name": "other"');
     await expect(deploy(STAGING, unknownDb.io)).rejects.toThrow('D1 database "other" not found');
     expect(() => profileOf({ TIO_ENV: "dev" })).toThrow("TIO_ENV must be empty");
+  });
+
+  it("[TIO-DEPLOY-003] staging and production read the audit bucket's lifecycle first and refuse a bucket without expiry rules for audit/ and backups/; a credential that cannot read them only warns", async () => {
+    const ok = fakeIo();
+    await deploy(STAGING, ok.io);
+    expect(ok.lifecycle).toEqual([
+      ["r2", "bucket", "lifecycle", "list", "tiny-oidc-staging-audit"],
+    ]);
+    const production = fakeIo();
+    await deploy(PRODUCTION, production.io);
+    expect(production.lifecycle).toEqual([
+      ["r2", "bucket", "lifecycle", "list", "tiny-oidc-production-audit"],
+    ]);
+    const bare = fakeIo({
+      lifecycle:
+        "name:     audit-ia-120d\nenabled:  Yes\nprefix:   audit/\naction:   Transition to Infrequent Access after 120 days",
+    });
+    await expect(deploy(STAGING, bare.io)).rejects.toThrow(
+      "the audit bucket tiny-oidc-staging-audit has no expiry rule for audit/ and backups/ (runbook §12)",
+    );
+    expect(bare.calls).toEqual([]);
+    const blind = fakeIo({ lifecycle: new Error("Authentication error [code: 10000]") });
+    await deploy(STAGING, blind.io);
+    expect(
+      blind.logs.some((l) =>
+        l.startsWith("warning: the lifecycle rules of tiny-oidc-staging-audit could not be read"),
+      ),
+    ).toBe(true);
+    // The button profile deploys to someone else's account and does not read them.
+    const button = fakeIo();
+    await deploy({}, button.io);
+    expect(button.lifecycle).toEqual([]);
+    expect(missingLifecycleRules("")).toEqual([...REQUIRED_EXPIRY_PREFIXES]);
+    expect(missingLifecycleRules(LIFECYCLE)).toEqual([]);
+    expect(() => auditBucket("{}", "staging")).toThrow(
+      "wrangler.jsonc env.staging has no r2 bucket_name",
+    );
   });
 
   it("[TIO-DEPLOY-007] TIO_DIRECT_DEPLOY deploys straight to 100% for a first deployment or a Durable Object migration, and says so", async () => {
