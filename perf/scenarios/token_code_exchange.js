@@ -6,6 +6,7 @@ import {
   arrival,
   codeOf,
   d1WriteBaseline,
+  EXCHANGE_CLIENT,
   exchange,
   maxVusOf,
   ownedByThisVu,
@@ -43,7 +44,8 @@ let mine = null;
 
 export function tokenCodeExchange() {
   if (mine === null) mine = ownedByThisVu(STRIDE, { share: true });
-  const entry = mine[__ITER % mine.length];
+  // At a client of its own, so its families do not push the harvested ones out (TIO-RT-011).
+  const entry = { ...mine[__ITER % mine.length], client_id: EXCHANGE_CLIENT };
   const { verifier, challenge } = pkce();
   const hit = sessionHit(entry, { challenge }, { scenario: "token_code_exchange_steps" });
   const code = codeOf(hit.headers.Location);

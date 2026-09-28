@@ -29,6 +29,27 @@ export const DURATION = __ENV.TIO_PERF_DURATION || "5m";
 export const TOKENS_FILE = __ENV.TIO_PERF_TOKENS || "../data/tokens.ndjson";
 export const RP_REDIRECT = "https://perf-rp.invalid/callback";
 
+/**
+ * The relying party the code-exchange scenario signs the harvested users in at. A user
+ * holds at most 20 live refresh families per client (TIO-RT-011): exchanging at the
+ * harvest's own client made ~60 families per user in five minutes, the cap revoked the
+ * harvested ones, and token_refresh found them dead (the nightly of 2026-09-28).
+ */
+export const EXCHANGE_CLIENT = "perf-rp-exchange";
+
+/** Logs the first `limit` failures of a step with their status, colo and body, then stays quiet. */
+export function logFirstFailures(limit) {
+  let logged = 0;
+  return (step, res) => {
+    if (logged >= limit) return;
+    logged += 1;
+    const ray = String(res.headers["Cf-Ray"] || "");
+    console.warn(
+      `${step} failed: status ${res.status} colo ${ray.split("-").pop()} ${res.error || ""} ${String(res.body || "").slice(0, 200)}`,
+    );
+  };
+}
+
 /** The measurements of TIO-OBS-004, one custom metric each, tagged by scenario. */
 export const serverMs = new Trend("server_ms", true);
 /** The same duration split by whether the request read D1 (§2.7: the budget is on the warm ones). */

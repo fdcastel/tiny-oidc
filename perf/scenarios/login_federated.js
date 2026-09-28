@@ -11,6 +11,7 @@ import {
   exchange,
   ISSUER,
   LOGIN_ORIGIN,
+  logFirstFailures,
   pkce,
   RP_REDIRECT,
   record,
@@ -30,6 +31,7 @@ export const options = {
 };
 
 const tags = { scenario: "login_federated" };
+const failed = logFirstFailures(20);
 const other = { scenario: "login_federated_steps" };
 
 function cookieNamed(res, prefix) {
@@ -80,10 +82,17 @@ export function loginFederated() {
     return;
   const callback = http.get(back, { redirects: 0, headers: { Cookie: binding }, tags });
   const complete = callback.headers.Location || "";
-  check(callback, {
-    "callback signs in": (r) =>
-      r.status === 303 && complete.endsWith(`/interactions/${id}/complete`),
-  });
+  // A failed callback ends the iteration: following its missing Location only added a
+  // request that could not be sent, counted as a second failure.
+  if (
+    !check(callback, {
+      "callback signs in": (r) =>
+        r.status === 303 && complete.endsWith(`/interactions/${id}/complete`),
+    })
+  ) {
+    failed("callback", callback);
+    return;
+  }
   const timing = record(callback);
   check(timing, {
     // The index is the callback's one read of its own; a cold isolate's cache loads add

@@ -160,6 +160,7 @@ class Admin {
 const admin = () => new Admin(need("issuer"), need("client-id"), need("client-secret"));
 const rpIds = (count: number) => Array.from({ length: count }, (_, i) => `perf-rp-${i + 1}`);
 const RP_REDIRECT = "https://perf-rp.invalid/callback";
+const EXCHANGE_RP = "perf-rp-exchange";
 /** How often an idempotent admin call is repeated after a transport error (a reset connection). */
 const TRANSPORT_RETRIES = 2;
 /** How often a delete retries a 503 (an object restarting under a deploy). */
@@ -213,7 +214,9 @@ async function prepare(): Promise<void> {
     log(`upstream ${alias}: created`);
   } else if (upstream.status === 200) log(`upstream ${alias}: exists`);
   else throw new Error(`upstream: ${upstream.status} ${await upstream.text()}`);
-  for (const rp of rpIds(int("rps"))) {
+  // The harvest's relying parties, and the code-exchange scenario's own (TIO-RT-011 caps
+  // live families per user and client; perf/scenarios/lib.js EXCHANGE_CLIENT).
+  for (const rp of [...rpIds(int("rps")), EXCHANGE_RP]) {
     const existing = await a.call("GET", `clients/${rp}`);
     if (existing.status === 200) {
       log(`client ${rp}: exists`);
