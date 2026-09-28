@@ -109,6 +109,18 @@ jobs:
           mkdir -p conformance/results
           docker compose -f conformance/docker-compose.yml logs --no-color server > conformance/results/server.log 2>&1 || true
           docker compose -f conformance/docker-compose.yml down -v || true
+      # The artifacts of a public repository are public, and every log here records the
+      # staging hostnames: the plan exports are unpacked and every text file redacted.
+      - name: Redact the results
+        if: always()
+        run: |
+          for z in conformance/results/export/*.zip; do
+            [ -e "$z" ] || continue
+            unzip -q -o "$z" -d "${z%.zip}" && rm "$z"
+          done
+          node scripts/redact-artifacts.ts conformance/results
+        env:
+          TIO_REDACT_URLS: ${{ secrets.TIO_STAGING_ISSUER }} ${{ secrets.TIO_STAGING_LOGIN_URL }} ${{ secrets.TIO_STAGING_FAKE_ISSUER }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -208,6 +220,12 @@ jobs:
       - name: Load summary
         if: always()
         run: node scripts/load-summary.ts perf/data >> "$GITHUB_STEP_SUMMARY"
+      # The artifacts of a public repository are public: no staging hostname in them.
+      - name: Redact the reports
+        if: always()
+        run: node scripts/redact-artifacts.ts perf/data
+        env:
+          TIO_REDACT_URLS: ${{ secrets.TIO_STAGING_ISSUER }} ${{ secrets.TIO_STAGING_LOGIN_URL }} ${{ secrets.TIO_STAGING_FAKE_ISSUER }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -275,6 +293,12 @@ jobs:
       - name: Load summary
         if: always()
         run: node scripts/load-summary.ts perf/data >> "$GITHUB_STEP_SUMMARY"
+      # The artifacts of a public repository are public: no staging hostname in them.
+      - name: Redact the reports
+        if: always()
+        run: node scripts/redact-artifacts.ts perf/data
+        env:
+          TIO_REDACT_URLS: ${{ secrets.TIO_STAGING_ISSUER }} ${{ secrets.TIO_STAGING_LOGIN_URL }} ${{ secrets.TIO_STAGING_FAKE_ISSUER }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
