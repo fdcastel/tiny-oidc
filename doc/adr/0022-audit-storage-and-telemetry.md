@@ -88,6 +88,13 @@ report success and still lose events) and made this work v2.
 - **The review's second-round document fixes** are in the review itself
   (§5–§7).
 
+## Addendum (2026-09-28, P8-09)
+
+The two indexes that serve the `actor_id` and `outcome` filters (review M5,
+migration 0010) make a hot row ~729 bytes. TIO-PERF-003 then found the alarm
+threshold of 5,500,000 rows past its budget (5.32 GB with the directory) and
+it is 5,000,000. §2.7 reads 2.6 GB for `audit_hot` and 3.9 GB for D1.
+
 ## Requirements and evidence
 
 TIO-AUDIT-010, TIO-AUDIT-011, TIO-AUDIT-013 (new), TIO-DATA-025, TIO-PERF-003

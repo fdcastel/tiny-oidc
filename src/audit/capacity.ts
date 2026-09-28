@@ -3,12 +3,12 @@
 // scripts and tests import the same numbers the Worker uses.
 
 /**
- * Rows above which the hot table is out of budget: about 3.6 GB at the ~660
- * bytes a hot row measures, which with the directory of §2.7 (~1.3 GB at
+ * Rows above which the hot table is out of budget: about 3.6 GB at the ~730
+ * bytes a hot row measures with its six indexes, which with the directory of §2.7 (~1.3 GB at
  * 1,000,000 users) keeps D1 under half of its 10 GB cap. TIO-PERF-003
  * checks it against the sizes it measures.
  */
-export const AUDIT_HOT_ALARM_ROWS = 5_500_000;
+export const AUDIT_HOT_ALARM_ROWS = 5_000_000;
 
 /** Rows one purge batch deletes (TIO-CFG-010). */
 export const PURGE_BATCH_ROWS = 1_000;

@@ -436,8 +436,8 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 | D1 `passkey_index` | 2,000,000 | ~380 MB | | |
 | D1 `identity_index` | 1,000,000 | ~203 MB | | |
 | D1 `group_members` | 2,000,000 | ~426 MB | | |
-| D1 `audit_hot` (hot types, 14 days) | ~3,500,000 | ~2.3 GB | | |
-| D1 total | | **~3.6 GB** | 10 GB | 2.8× |
+| D1 `audit_hot` (hot types, 14 days) | ~3,500,000 | ~2.6 GB | | |
+| D1 total | | **~3.9 GB** | 10 GB | 2.6× |
 | Queue | ~5,850,000 messages/day (68/s average, ~360/s at the peaks below) | | 5,000/s | 14× |
 
 Request rates at 100,000 DAU: ~200,000 interactive logins/day (peak 50/s), ~5,000,000 refreshes/day (peak 150/s), ~10,000,000 Worker requests/day. Per-user DO load is ~50 requests/day, far below the 1,000 req/s per-object soft limit. Order-of-magnitude monthly cost at the prices published on 2026-09-26: Worker requests ~$92, Durable Object requests ~$30–45, Durable Object rows written ~$560–1,320 (a refresh writes four rows), Durable Object storage ~$40, Queues ~$213 (every request that emits events ships one message, three operations each), R2 audit writes ~$3.5 (one object per consumer batch), D1 < $10, Workers Logs ~$6 (a line per request, production keeping a 10 % head sample; audit lines are `debug`), Analytics Engine ~$75 once billed (a point per request and per hot event type). Verify against current pricing before budgeting.
@@ -733,6 +733,8 @@ CREATE INDEX audit_hot_ts     ON audit_hot(ts, id);
 CREATE INDEX audit_hot_user   ON audit_hot(user_id, ts);
 CREATE INDEX audit_hot_client ON audit_hot(client_id, ts);
 CREATE INDEX audit_hot_type   ON audit_hot(type, ts);
+CREATE INDEX audit_hot_actor  ON audit_hot(actor_id, ts);
+CREATE INDEX audit_hot_outcome ON audit_hot(outcome, ts);
 ```
 
 **[TIO-DATA-015]** Every D1 access SHALL go through a repository module under `src/db/` with typed parameters. No SQL string is built by concatenation with request data. Tests grep for `prepare(` outside `src/db/` and fail on any hit (also enforced by a lint rule).
@@ -1944,7 +1946,7 @@ Keys carry no status column. A key's role is derived from two timestamps and the
 
 **[TIO-OBS-004]** Every response SHALL carry a `Server-Timing` header with the request's server-side measurements: `app;dur=<duration_ms>` and the counts `do`, `d1r` and `d1w` (as `desc` values) of the log line — `d1r` counting the reads the request issued and the cache loads of §2.8 it waited for another request to finish, since its latency carries them —, so the k6 suite can enforce the budgets of §2.7 and the D1-write assertion of §13.10 from the responses themselves rather than from logs. The counts reveal nothing a response time does not: enumeration-sensitive endpoints do the same work for unknown and invalid input (§13.7), and the security suite asserts equal counts there.
 
-**[TIO-OBS-005]** Every cron run SHALL estimate the `audit_hot` row count from the table's rowid range (two index reads, not `COUNT(*)`), report it as `audit_hot_rows` in its report and in `system.cron_run`, and log at `error` when it exceeds 5,500,000 rows — about 3.6 GB at the ~660 bytes a hot row measures (TIO-PERF-003), which with the directory of §2.7 keeps D1 under half its 10 GB cap. A scheduled workflow (`.github/workflows/watch.yml`, every six hours) SHALL fail, and so notify the repository owner, when an environment's `GET /api/v1/admin/stats` reports more rows than that or a `last_cron_run` older than 30 minutes.
+**[TIO-OBS-005]** Every cron run SHALL estimate the `audit_hot` row count from the table's rowid range (two index reads, not `COUNT(*)`), report it as `audit_hot_rows` in its report and in `system.cron_run`, and log at `error` when it exceeds 5,000,000 rows — about 3.6 GB at the ~730 bytes a hot row measures with its indexes (TIO-PERF-003), which with the directory of §2.7 keeps D1 under half its 10 GB cap. A scheduled workflow (`.github/workflows/watch.yml`, every six hours) SHALL fail, and so notify the repository owner, when an environment's `GET /api/v1/admin/stats` reports more rows than that or a `last_cron_run` older than 30 minutes.
 
 ### 11.5 Privacy
 

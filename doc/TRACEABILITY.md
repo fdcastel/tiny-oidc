@@ -222,7 +222,7 @@ Current phase: 7. Requirements: 289 (ci: 20, conformance: 2, covered: 245, load:
 | TIO-ADMIN-001 | §9.1 | test | 3 | covered | test/http/admin-auth.test.ts<br>test/security/tokens.test.ts |
 | TIO-ADMIN-002 | §9.1 | test | 3 | covered | test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
 | TIO-ADMIN-003 | §9.1 | test | 3 | covered | test/http/admin-clients.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/admin-users.test.ts<br>test/unit/audit.test.ts |
-| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-clients.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-invitations.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/admin-users-list.test.ts<br>test/security/enumeration.test.ts |
+| TIO-ADMIN-004 | §9.2 | test | 3 | covered | test/component/admin-pagination.test.ts<br>test/http/admin-clients.test.ts<br>test/http/admin-groups.test.ts<br>test/http/admin-invitations.test.ts<br>test/http/admin-upstreams.test.ts<br>test/http/admin-users-list.test.ts<br>test/http/audit-endpoints.test.ts<br>test/security/enumeration.test.ts |
 | TIO-ADMIN-010 | §9.3 | test | 2 | covered | test/concurrency/creation.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-011 | §9.3 | test | 2 | covered | test/http/admin-auth.test.ts<br>test/http/bootstrap.test.ts |
 | TIO-ADMIN-020 | §9.4 | test | 3 | covered | test/http/admin-import.test.ts |

@@ -59,6 +59,24 @@ export function serverTiming(header) {
 }
 
 /** Records the response's server-side measurements under the current scenario. */
+const MAX_SLOW_LOGS_PER_VU = 5;
+let slowLogs = 0;
+
+/**
+ * A warm request over its budget, logged with the colo that served it (`cf-ray` ends in
+ * the colo code) and its Server-Timing: the 2026-09-27/28 runs from east-coast runners
+ * showed a ~300 ms warm p99 that west and central runners did not, and the log says
+ * where those requests ran. At most MAX_SLOW_LOGS_PER_VU per VU.
+ */
+function logSlow(res, scenario, timing, budget) {
+  if (slowLogs >= MAX_SLOW_LOGS_PER_VU || timing.d1r > 0 || timing.app <= budget.p99) return;
+  slowLogs++;
+  const ray = String(res.headers["Cf-Ray"] || "");
+  console.warn(
+    `slow ${scenario}: ${timing.app} ms (budget ${budget.p99}) colo ${ray.split("-").pop()} do=${timing.do} server-timing=${res.headers["Server-Timing"]}`,
+  );
+}
+
 export function record(res, scenario = exec.scenario.name) {
   const timing = serverTiming(res.headers["Server-Timing"]);
   const tags = { scenario };
@@ -67,7 +85,10 @@ export function record(res, scenario = exec.scenario.name) {
   if (timing.app !== null) {
     serverMs.add(timing.app, tags);
     (timing.d1r > 0 ? serverMsD1 : serverMsWarm).add(timing.app, tags);
-    if (budget) withinBudget.add(timing.app <= budget.p99, tags);
+    if (budget) {
+      withinBudget.add(timing.app <= budget.p99, tags);
+      logSlow(res, scenario, timing, budget);
+    }
   }
   doCalls.add(timing.do, tags);
   d1Reads.add(timing.d1r, tags);

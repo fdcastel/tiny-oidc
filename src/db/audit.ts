@@ -123,12 +123,17 @@ function rowToEvent(row: AuditRow): AuditEvent {
  * Newest first, keyset on (ts, id): the rows strictly before `after`, at most
  * `limit`, under the filters of §9.4.
  */
-export async function listAuditPage(
-  db: Db,
+/**
+ * The SQL of one listing page: equality filters, the time bounds, the keyset,
+ * newest first. Every filter has an index (`migrations/0010`, review M5);
+ * `test/http/audit-endpoints.test.ts` checks each plan with
+ * `EXPLAIN QUERY PLAN`.
+ */
+export function auditPageQuery(
   filters: AuditFilters,
   after: AuditKeyset | null,
   limit: number,
-): Promise<AuditEvent[]> {
+): { sql: string; binds: unknown[] } {
   const clauses: string[] = [];
   const binds: unknown[] = [];
   const equal = (column: string, value: string | undefined) => {
@@ -154,13 +159,12 @@ export async function listAuditPage(
     binds.push(after.ts, after.ts, after.id);
   }
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const rows = await db
-    .prepare(
-      ["SELECT", COLUMNS, "FROM audit_hot", where, "ORDER BY ts DESC, id DESC LIMIT ?"].join(" "),
-    )
-    .bind(...binds, limit)
-    .all<AuditRow>();
-  return rows.results.map(rowToEvent);
+  return {
+    sql: ["SELECT", COLUMNS, "FROM audit_hot", where, "ORDER BY ts DESC, id DESC LIMIT ?"].join(
+      " ",
+    ),
+    binds: [...binds, limit],
+  };
 }
 
 /**
@@ -181,4 +185,19 @@ export async function estimateAuditRows(db: Db): Promise<number> {
 export async function countAuditRows(db: Db): Promise<number> {
   const row = await db.prepare("SELECT COUNT(*) AS n FROM audit_hot").first<{ n: number }>();
   return (row as { n: number }).n;
+}
+
+/** One page of the hot table, newest first (§9.4). */
+export async function listAuditPage(
+  db: Db,
+  filters: AuditFilters,
+  after: AuditKeyset | null,
+  limit: number,
+): Promise<AuditEvent[]> {
+  const { sql, binds } = auditPageQuery(filters, after, limit);
+  const rows = await db
+    .prepare(sql)
+    .bind(...binds)
+    .all<AuditRow>();
+  return rows.results.map(rowToEvent);
 }

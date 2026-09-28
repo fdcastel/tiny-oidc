@@ -20,6 +20,7 @@ import { openCursor, page, parseLimit, sealCursor } from "./pagination.ts";
 
 const AUDIT_LISTING = "audit";
 const EVENTS_LISTING = "events";
+const ARCHIVE_LISTING = "archive";
 const TIMESTAMP = /^\d{1,12}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** Days of archive keys one listing may span. */
@@ -43,7 +44,14 @@ const EventsQuery = z
   .object({ limit: z.string().optional(), cursor: z.string().optional() })
   .strict();
 
-const ArchiveQuery = z.object({ from: z.string(), to: z.string().optional() }).strict();
+const ArchiveQuery = z
+  .object({
+    from: z.string(),
+    to: z.string().optional(),
+    limit: z.string().optional(),
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 /** The events a person sees of themselves (§8): never ids of others, never the request. */
 export function personalEvent(event: AuditEvent) {
@@ -143,8 +151,12 @@ export function listAuditHandler(clock: Clock): Handler<AppEnv> {
   };
 }
 
-/** `GET /admin/audit/archive?from=YYYY-MM-DD[&to=YYYY-MM-DD]`: the archive's keys, day by day. */
-export function listArchiveHandler(): Handler<AppEnv> {
+/**
+ * `GET /admin/audit/archive?from=YYYY-MM-DD[&to=YYYY-MM-DD][&limit][&cursor]`: the
+ * archive's keys, day by day, a page at a time (review M4: a day holds ~60,000
+ * objects at the §2.7 rates, which one response cannot carry).
+ */
+export function listArchiveHandler(clock: Clock): Handler<AppEnv> {
   return async (c) => {
     const params = uniqueParams(new URL(c.req.url).searchParams);
     if (!params.ok) return errorResponse(c, 400, "invalid_request", params.reason);
@@ -172,13 +184,34 @@ export function listArchiveHandler(): Handler<AppEnv> {
         `at most ${ARCHIVE_MAX_DAYS} days per listing`,
       );
     }
+    const limit = parseLimit(query.data.limit);
+    if (limit === null) return errorResponse(c, 400, "invalid_request", "limit must be 1–200");
+    const now = clock.now();
+    // The cursor is the last key returned (sealed like every listing's, §9.2): it names its
+    // day, so the next page resumes there, after it (review M4).
+    let after: string | null = null;
+    if (query.data.cursor !== undefined) {
+      const opened = await openCursor(
+        c.get("config").keys,
+        ARCHIVE_LISTING,
+        query.data.cursor,
+        now,
+      );
+      if (opened === null) return errorResponse(c, 400, "invalid_request", "invalid cursor");
+      after = opened.id;
+    }
     const items: { key: string; size: number; uploaded: number }[] = [];
     try {
       for (const day of days) {
+        const prefix = archiveDayPrefix(day);
+        // Days wholly before the cursor's key are done.
+        if (after !== null && after >= prefix && !after.startsWith(prefix)) continue;
         let listCursor: string | undefined;
         do {
           const listed = await c.env.AUDIT_BUCKET.list({
-            prefix: archiveDayPrefix(day),
+            prefix,
+            limit: limit + 1 - items.length,
+            ...(after !== null && after.startsWith(prefix) ? { startAfter: after } : {}),
             ...(listCursor === undefined ? {} : { cursor: listCursor }),
           });
           for (const object of listed.objects) {
@@ -189,12 +222,25 @@ export function listArchiveHandler(): Handler<AppEnv> {
             });
           }
           listCursor = listed.truncated ? listed.cursor : undefined;
-        } while (listCursor !== undefined);
+        } while (listCursor !== undefined && items.length <= limit);
+        if (items.length > limit) break;
       }
     } catch {
       return errorResponse(c, 503, "temporarily_unavailable", "archive unavailable");
     }
-    return c.json({ items, from: days[0], to: days[days.length - 1] });
+    const more = items.length > limit;
+    const shown = items.slice(0, limit);
+    const lastShown = shown.at(-1);
+    const next =
+      more && lastShown !== undefined
+        ? await sealCursor(
+            c.get("config").keys,
+            ARCHIVE_LISTING,
+            { created_at: 0, id: lastShown.key },
+            now,
+          )
+        : null;
+    return c.json({ items: shown, next_cursor: next, from: days[0], to: days[days.length - 1] });
   };
 }
 

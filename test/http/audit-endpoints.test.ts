@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { type AuditEvent, Auditor } from "../../src/audit/events.ts";
 import { archiveDayPrefix } from "../../src/audit/sink.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
+import { auditPageQuery } from "../../src/db/audit.ts";
 import { Db } from "../../src/db/db.ts";
 import { writeSettings } from "../../src/db/settings.ts";
 import { setUserStatus } from "../../src/db/users.ts";
@@ -195,6 +196,59 @@ describe("admin audit listing", () => {
     expect((await list(`?until=${T0}`)).body.items[0]?.data).toEqual({});
   });
 
+  it("[TIO-AUDIT-010] pages the archive's keys with a limit and a sealed cursor across days, a redelivered batch's second object included; bad limits and foreign cursors are refused", async () => {
+    // Two days of the archive, each day's batch delivered twice (two objects each, M8); a
+    // cursor inside the second day makes the next page skip the first.
+    const dayOne = event({ ts: T0 + 20 * 86_400 + 3_600, type: "session.revoked" });
+    const dayTwo = event({ ts: T0 + 21 * 86_400 + 3_600, type: "session.revoked" });
+    await ingest([dayOne]);
+    await ingest([dayOne]);
+    await ingest([dayTwo]);
+    await ingest([dayTwo]);
+    const from = new Date((T0 + 20 * 86_400) * 1000).toISOString().slice(0, 10);
+    const to = new Date((T0 + 21 * 86_400) * 1000).toISOString().slice(0, 10);
+    const get = async (query: string) => {
+      const res = await admin(h, token, `audit/archive?from=${from}&to=${to}${query}`);
+      return {
+        status: res.status,
+        body: (await res.json()) as { items: { key: string }[]; next_cursor: string | null },
+      };
+    };
+    const whole = await get("");
+    expect(whole.body.items).toHaveLength(4);
+    expect(whole.body.next_cursor).toBeNull();
+    // One key a page: every key once, in order, then no cursor.
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const pageOf = await get(
+        `&limit=1${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
+      );
+      expect(pageOf.status).toBe(200);
+      expect(pageOf.body.items.length).toBeLessThanOrEqual(1);
+      walked.push(...pageOf.body.items.map((o) => o.key));
+      cursor = pageOf.body.next_cursor;
+    } while (cursor !== null);
+    expect(walked).toEqual(whole.body.items.map((o) => o.key));
+    // A page of two stops inside the first day and resumes after its last key.
+    const two = await get("&limit=2");
+    expect(two.body.items.map((o) => o.key)).toEqual(walked.slice(0, 2));
+    const rest = await get(`&limit=2&cursor=${encodeURIComponent(two.body.next_cursor as string)}`);
+    expect(rest.body.items.map((o) => o.key)).toEqual(walked.slice(2));
+    expect(rest.body.next_cursor).toBeNull();
+    for (const bad of ["&limit=0", "&limit=201", "&limit=x", "&cursor=forged.cursor.value"]) {
+      expect((await get(bad)).status, bad).toBe(400);
+    }
+    // A cursor of another listing (the hot table's) does not open here.
+    const hot = (await (await admin(h, token, "audit?limit=1")).json()) as {
+      next_cursor: string | null;
+    };
+    expect(hot.next_cursor).not.toBeNull();
+    expect((await get(`&cursor=${encodeURIComponent(hot.next_cursor as string)}`)).status).toBe(
+      400,
+    );
+  });
+
   it("[TIO-AUDIT-010] lists the archive's keys for a range of days in UTC, at most 31 days, walking R2's own pages", async () => {
     const day = event({ ts: T0 + 3_661, type: "session.revoked" }); // 2027-01-05 09:01:01 UTC
     const nextDay = event({ ts: T0 + 90_061, type: "session.revoked" }); // 2027-01-06
@@ -281,6 +335,32 @@ describe("admin audit listing", () => {
     expect((await admin(h, token, "audit/archive?from=2027-01-05", { env: down })).status).toBe(
       503,
     );
+  });
+});
+
+describe("audit listing plans (§9.2)", () => {
+  it("[TIO-ADMIN-004] every /admin/audit filter is served by an index: each equality filter searches its own index, the unfiltered listing walks the time index", async () => {
+    const plan = async (filters: Parameters<typeof auditPageQuery>[0]) => {
+      const { sql, binds } = auditPageQuery(filters, { ts: 1, id: "x" }, 50);
+      const rows = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...binds)
+        .all<{ detail: string }>();
+      return rows.results.map((r) => r.detail).join(" | ");
+    };
+    const cases: [Parameters<typeof auditPageQuery>[0], RegExp][] = [
+      [{ type: "session.created" }, /USING INDEX audit_hot_type \(type=\?/],
+      [{ user_id: "u" }, /USING INDEX audit_hot_user \(user_id=\?/],
+      [{ client_id: "c" }, /USING INDEX audit_hot_client \(client_id=\?/],
+      [{ actor_id: "a" }, /USING INDEX audit_hot_actor \(actor_id=\?/],
+      [{ outcome: "failure" }, /USING INDEX audit_hot_outcome \(outcome=\?/],
+      [{}, /USING INDEX audit_hot_ts/],
+      [{ since: 1, until: 2 }, /USING INDEX audit_hot_ts/],
+    ];
+    for (const [filters, expected] of cases) {
+      const detail = await plan(filters);
+      expect(detail, JSON.stringify(filters)).toMatch(expected);
+      expect(detail, JSON.stringify(filters)).not.toMatch(/SCAN audit_hot(?! USING)/);
+    }
   });
 });
 

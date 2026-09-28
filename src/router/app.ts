@@ -397,7 +397,7 @@ export function createApp(deps: AppDeps) {
   app.post("/api/v1/admin/maintenance/reindex", reindexAllHandler(deps.clock));
   app.post("/api/v1/admin/import/users", importUsersHandler(deps.clock));
   app.get("/api/v1/admin/audit", listAuditHandler(deps.clock));
-  app.get("/api/v1/admin/audit/archive", listArchiveHandler());
+  app.get("/api/v1/admin/audit/archive", listArchiveHandler(deps.clock));
   app.get("/login/*", loginAppHandler);
   registerApi(app);
 

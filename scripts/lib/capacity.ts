@@ -139,7 +139,7 @@ function schemaOf(migrations: string[], tables: string[]): string[] {
   const concerns = (s: string) =>
     tables.some((t) =>
       new RegExp(
-        `^(CREATE TABLE ${t} |CREATE (UNIQUE )?INDEX \\w+ +ON ${t}\\(|ALTER TABLE ${t} )`,
+        `^(CREATE TABLE ${t} |CREATE (UNIQUE )?INDEX (IF NOT EXISTS )?\\w+ +ON ${t}\\(|ALTER TABLE ${t} )`,
       ).test(s),
     );
   return statements.filter(concerns).map((s) =>

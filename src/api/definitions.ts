@@ -2422,16 +2422,23 @@ export const adminAuditArchiveRoute = createRoute({
       .object({
         from: z.string().openapi({ description: "YYYY-MM-DD (UTC)" }),
         to: z.string().optional().openapi({ description: "YYYY-MM-DD (UTC), defaults to from" }),
+        limit: z.string().optional().openapi({ description: "1–200, default 50" }),
+        cursor: z.string().optional().openapi({ description: "next_cursor of the previous page" }),
       })
       .strict(),
   },
   responses: {
     200: {
-      description: "Keys only; the operator downloads with R2 tooling",
+      description: "Keys only, a page at a time; the operator downloads with R2 tooling",
       content: {
         "application/json": {
           schema: z
-            .object({ items: z.array(ArchiveObjectSchema), from: z.string(), to: z.string() })
+            .object({
+              items: z.array(ArchiveObjectSchema),
+              next_cursor: z.string().nullable(),
+              from: z.string(),
+              to: z.string(),
+            })
             .openapi("ArchiveListing"),
         },
       },

@@ -424,7 +424,7 @@ cover both endpoints.
 - **Capacity alarm** (TIO-OBS-005). Every cron run estimates the hot audit
   table's rows (`audit_hot_rows` in the `cron` log line and in
   `system.cron_run`) and logs `audit_hot above its alarm threshold` at `error`
-  above 6,000,000. The `watch` workflow checks every environment's stats every
+  above 5,000,000. The `watch` workflow checks every environment's stats every
   six hours and fails (you get GitHub's mail) above the same threshold or when
   the cron has not run for 30 minutes. It needs `TIO_<ENV>_ISSUER`,
   `_CLIENT_ID` and `_CLIENT_SECRET` secrets for each environment; production

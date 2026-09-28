@@ -2873,6 +2873,12 @@
               "$ref": "#/components/schemas/ArchiveObject"
             }
           },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "from": {
             "type": "string"
           },
@@ -2882,6 +2888,7 @@
         },
         "required": [
           "items",
+          "next_cursor",
           "from",
           "to"
         ]
@@ -10848,11 +10855,31 @@
             "description": "YYYY-MM-DD (UTC), defaults to from",
             "name": "to",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "1–200, default 50"
+            },
+            "required": false,
+            "description": "1–200, default 50",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "next_cursor of the previous page"
+            },
+            "required": false,
+            "description": "next_cursor of the previous page",
+            "name": "cursor",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Keys only; the operator downloads with R2 tooling",
+            "description": "Keys only, a page at a time; the operator downloads with R2 tooling",
             "content": {
               "application/json": {
                 "schema": {
