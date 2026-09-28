@@ -278,6 +278,8 @@ async function importUsers(): Promise<void> {
   const conflicts: Record<string, number> = {};
   const errors: string[] = [];
   const durations: number[] = [];
+  /** Population indexes whose object could not be initialized; the cron finishes them. */
+  const unfinished: number[] = [];
   let done = 0;
   const startedAt = Date.now();
   log(
@@ -304,7 +306,9 @@ async function importUsers(): Promise<void> {
           const reason = line.error ?? "unknown";
           conflicts[reason] = (conflicts[reason] ?? 0) + 1;
         }
-        if (line.status === "error" && errors.length < 20)
+        if (line.status === "error" && line.error === "temporarily_unavailable")
+          unfinished.push(batch.from + line.line - 1);
+        else if (line.status === "error" && errors.length < 20)
           errors.push(`line ${batch.from + line.line - 1}: ${line.error}`);
       }
     }
@@ -315,6 +319,29 @@ async function importUsers(): Promise<void> {
     }
   });
   const durationS = (Date.now() - startedAt) / 1000;
+  // A user whose object could not be initialized keeps its D1 claim in `creating`, and the
+  // cron repairs it a minute later (TIO-CFG-010): about one import in a thousand on staging.
+  // Waiting for the repair is what an operator does; only a user it does not finish fails.
+  const repaired: number[] = [];
+  const stuck: number[] = [];
+  for (const n of unfinished) {
+    const deadline = Date.now() + 8 * 60_000;
+    let active = false;
+    while (!active && Date.now() < deadline) {
+      const found = await a.json<{ items: { status: string }[] }>(
+        "GET",
+        `users?email=${encodeURIComponent(emailOf(population, n))}`,
+      );
+      active = found.body.items?.[0]?.status === "active";
+      if (!active) await new Promise((resolve) => setTimeout(resolve, 15_000));
+    }
+    (active ? repaired : stuck).push(n);
+    log(`import: line ${n} ${active ? "finished by the cron" : "not finished by the cron"}`);
+  }
+  statuses["error"] = (statuses["error"] ?? 0) - repaired.length;
+  if (statuses["error"] === 0) delete statuses["error"];
+  if (repaired.length > 0) statuses["repaired_by_cron"] = repaired.length;
+  for (const n of stuck) errors.push(`line ${n}: temporarily_unavailable, not repaired`);
   // Verification (TIO-ADMIN-021): the count, then a sampled deep comparison.
   const stats = await a.json<{ users: Record<string, number> }>("GET", "stats");
   const sample = int("sample");
@@ -369,7 +396,6 @@ async function importUsers(): Promise<void> {
   });
   const report = {
     kind: "import_benchmark",
-    issuer: a.issuer,
     users,
     from,
     batch: int("batch"),
@@ -609,7 +635,6 @@ async function harvest(): Promise<void> {
     log(`harvest: the first ${HARVEST_FAIL_FAST} logins all failed; stopping (${failures[0]})`);
   const report = {
     kind: "seed_harvest",
-    issuer,
     count,
     from,
     rate: int("rate"),
