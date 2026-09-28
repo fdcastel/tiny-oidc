@@ -37,15 +37,28 @@ export const RP_REDIRECT = "https://perf-rp.invalid/callback";
  */
 export const EXCHANGE_CLIENT = "perf-rp-exchange";
 
-/** Logs the first `limit` failures of a step with their status, colo and body, then stays quiet. */
+/**
+ * Where a redirect went, without its host or secrets: the path, the query's parameter
+ * names and its `error` value (the Actions logs of a public repository are public).
+ */
+export function redirectShape(location) {
+  const m = /^(?:[a-z]+:\/\/[^/?#]*)?([^?#]*)(?:\?([^#]*))?/.exec(location || "") || [];
+  const params = (m[2] || "").split("&").filter((p) => p.length > 0);
+  const names = params.map((p) => p.split("=")[0]).join(",");
+  const error = params.find((p) => p.startsWith("error="));
+  return `${m[1] || "(none)"} ?${names}${error ? ` ${decodeURIComponent(error)}` : ""}`;
+}
+
+/** Logs the first `limit` failures of a step with their status, colo, redirect and body. */
 export function logFirstFailures(limit) {
   let logged = 0;
   return (step, res) => {
     if (logged >= limit) return;
     logged += 1;
     const ray = String(res.headers["Cf-Ray"] || "");
+    const location = res.headers.Location ? ` to ${redirectShape(res.headers.Location)}` : "";
     console.warn(
-      `${step} failed: status ${res.status} colo ${ray.split("-").pop()} ${res.error || ""} ${String(res.body || "").slice(0, 200)}`,
+      `${step} failed: status ${res.status}${location} colo ${ray.split("-").pop()} ${res.error || ""} ${String(res.body || "").slice(0, 200)}`,
     );
   };
 }

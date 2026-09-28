@@ -8,6 +8,7 @@ import {
   d1WriteBaseline,
   EXCHANGE_CLIENT,
   exchange,
+  logFirstFailures,
   maxVusOf,
   ownedByThisVu,
   pkce,
@@ -40,6 +41,7 @@ export function teardown(baseline) {
 }
 
 const STRIDE = maxVusOf(options);
+const failed = logFirstFailures(20);
 let mine = null;
 
 export function tokenCodeExchange() {
@@ -49,7 +51,10 @@ export function tokenCodeExchange() {
   const { verifier, challenge } = pkce();
   const hit = sessionHit(entry, { challenge }, { scenario: "token_code_exchange_steps" });
   const code = codeOf(hit.headers.Location);
-  if (!check(hit, { "a code to exchange": () => hit.status === 303 && code !== null })) return;
+  if (!check(hit, { "a code to exchange": () => hit.status === 303 && code !== null })) {
+    failed("session hit", hit);
+    return;
+  }
   const res = exchange(entry, code, verifier, { scenario: "token_code_exchange" });
   check(res, {
     "exchange 200 with tokens": (r) =>
