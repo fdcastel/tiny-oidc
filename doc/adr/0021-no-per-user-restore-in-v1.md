@@ -61,3 +61,14 @@ counters, a resumable second step, and a staging test.
 TIO-DEPLOY-003: `test/http/admin-users.test.ts` asserts that
 `POST /users/{id}/restore` answers 404 `not_found`. `doc/openapi.json` and
 `test/scripts/threat-surface.json` were regenerated without the route.
+
+## Addendum (2026-09-28): not in v2 either
+
+Plan row P8-11 was to build B-08 in v2. Designing it showed the conflict: to
+re-grant nothing, the step after the restart must revoke every session,
+refresh family, code and challenge and drop every passkey, identity, consent
+and membership withdrawn after the restore point, and raise the passkey
+counters back. That removes exactly what an administrator restores a user to
+get back. What survives is the profile, which `PATCH /admin/users/{id}`
+already edits. The owner decided to leave the restore out of v2; B-08 keeps
+the design for a recovery need the remaining tools do not meet.
