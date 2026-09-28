@@ -175,6 +175,54 @@ describe("UserDO", () => {
           .value,
       ).toBe(String(USER_SCHEMA_VERSION));
     });
+    // An object at version 3 (refresh_tokens with a rowid, consumed_at and a family index):
+    // the version 4 rebuild copies every token and leaves the table without a rowid or index.
+    await runInDurableObject(stub, (_instance: UserDO, state) => {
+      const sql = state.storage.sql;
+      sql.exec("DROP TABLE refresh_tokens");
+      sql.exec(
+        "CREATE TABLE refresh_tokens (secret_hash BLOB PRIMARY KEY, family_id TEXT NOT NULL REFERENCES refresh_families(id) ON DELETE CASCADE, serial INTEGER NOT NULL, created_at INTEGER NOT NULL, consumed_at INTEGER)",
+      );
+      sql.exec("CREATE INDEX refresh_tokens_family ON refresh_tokens(family_id, serial)");
+      sql.exec(
+        "INSERT INTO refresh_families (id, client_id, client_created_at, kind, scope, auth_time, amr, acr, created_at, absolute_expires_at, idle_expires_at, current_serial) VALUES ('fam-v3', 'c', 0, 'offline', 'openid', 0, '[]', 'a', 0, ?, ?, 2)",
+        FAKE_EPOCH + 1000,
+        FAKE_EPOCH + 1000,
+      );
+      sql.exec(
+        "INSERT INTO refresh_tokens VALUES (?, 'fam-v3', 1, 1, 2), (?, 'fam-v3', 2, 2, NULL)",
+        new Uint8Array([1]),
+        new Uint8Array([2]),
+      );
+      sql.exec("UPDATE meta SET value = '3' WHERE key = 'schema_version'");
+    });
+    await evictDurableObject(stub);
+    expect(await stub.putChallenge("k3", "v", FAKE_EPOCH + 100)).toEqual({ ok: true });
+    await runInDurableObject(stub, (_instance: UserDO, state) => {
+      const sql = state.storage.sql;
+      expect(
+        sql
+          .exec<{ serial: number; created_at: number }>(
+            "SELECT serial, created_at FROM refresh_tokens ORDER BY serial",
+          )
+          .toArray(),
+      ).toEqual([
+        { serial: 1, created_at: 1 },
+        { serial: 2, created_at: 2 },
+      ]);
+      const table = sql
+        .exec<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'refresh_tokens'")
+        .one().sql;
+      expect(table).toContain("WITHOUT ROWID");
+      expect(table).not.toContain("consumed_at");
+      expect(
+        sql
+          .exec(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'refresh_tokens' AND sql IS NOT NULL",
+          )
+          .toArray(),
+      ).toEqual([]);
+    });
   });
 
   it("[TIO-DATA-019] purges expired codes, consumed tokens past the reuse window, and stale families and sessions on write, at most once per 60 s (rows inserted directly to construct the state)", async () => {
@@ -206,16 +254,18 @@ describe("UserDO", () => {
       family("fam-absolute-old", null, now - PURGE_GRACE_SECONDS - 1, now + 1000);
       family("fam-idle-old", null, now + 1000, now - PURGE_GRACE_SECONDS - 1);
       family("fam-live", null, now + 1000, now + 1000);
-      const token = (hash: string, familyId: string, consumed: number | null) =>
+      // A token is consumed when its successor is created (schema version 4).
+      const token = (hash: string, familyId: string, serial: number, created: number) =>
         sql.exec(
-          "INSERT INTO refresh_tokens (secret_hash, family_id, serial, created_at, consumed_at) VALUES (?, ?, 1, 0, ?)",
+          "INSERT INTO refresh_tokens (secret_hash, family_id, serial, created_at) VALUES (?, ?, ?, ?)",
           new TextEncoder().encode(hash),
           familyId,
-          consumed,
+          serial,
+          created,
         );
-      token("tok-consumed-old", "fam-live", now - reuseWindow - 1);
-      token("tok-consumed-recent", "fam-live", now - 10);
-      token("tok-current", "fam-live", null);
+      token("tok-consumed-old", "fam-live", 1, 0);
+      token("tok-consumed-recent", "fam-live", 2, now - reuseWindow - 1);
+      token("tok-current", "fam-live", 3, now - 10);
       const session = (sid: string, revoked: number | null, absolute: number, idle: number) =>
         sql.exec(
           "INSERT INTO sessions (sid, secret_hash, created_at, last_seen_at, idle_expires_at, absolute_expires_at, auth_time, amr, acr, revoked_at) VALUES (?, ?, 0, 0, ?, ?, 0, '[]', 'a', ?)",

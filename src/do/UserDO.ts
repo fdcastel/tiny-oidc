@@ -151,12 +151,12 @@ interface FamilyRow extends Record<string, SqlStorageValue> {
   revoke_reason: string | null;
 }
 
+/** A refresh token; it is consumed once its family holds a later serial (schema version 4). */
 interface TokenRow extends Record<string, SqlStorageValue> {
-  secret_hash: ArrayBuffer;
   family_id: string;
+  secret_hash: ArrayBuffer;
   serial: number;
   created_at: number;
-  consumed_at: number | null;
 }
 
 interface GrantRow extends Record<string, SqlStorageValue> {
@@ -658,8 +658,9 @@ export class UserDO extends DurableObject<Env> {
     const sql = this.ctx.storage.sql;
     const grace = now - PURGE_GRACE_SECONDS;
     sql.exec("DELETE FROM auth_codes WHERE expires_at < ?", now);
+    // A token was consumed when its successor was created.
     sql.exec(
-      "DELETE FROM refresh_tokens WHERE consumed_at IS NOT NULL AND consumed_at < ?",
+      "DELETE FROM refresh_tokens WHERE EXISTS (SELECT 1 FROM refresh_tokens AS later WHERE later.family_id = refresh_tokens.family_id AND later.serial = refresh_tokens.serial + 1 AND later.created_at < ?)",
       now - reuseWindow,
     );
     sql.exec(
@@ -1253,13 +1254,14 @@ export class UserDO extends DurableObject<Env> {
       }
       const token = sql
         .exec<TokenRow>(
-          "SELECT * FROM refresh_tokens WHERE secret_hash = ? AND family_id = ?",
-          input.secret_hash,
+          "SELECT * FROM refresh_tokens WHERE family_id = ? AND secret_hash = ?",
           family.id,
+          input.secret_hash,
         )
         .toArray()[0];
       if (!token) return fail("invalid_grant");
-      if (token.consumed_at !== null) {
+      // Consumed: the family moved past it (TIO-RT-003).
+      if (token.serial < family.current_serial) {
         // Reuse detected: the family dies, and its session when session-bound.
         this.revokeFamily(family.id, input.now, "reuse");
         const failure: RotateOutcome = { ok: false, error: "invalid_grant", reuse_detected: true };
@@ -1273,6 +1275,7 @@ export class UserDO extends DurableObject<Env> {
         }
         return failure;
       }
+      // A serial ahead of its family is not one the OP issued.
       if (token.serial !== family.current_serial) return fail("invalid_grant");
       if (user.disabled_at !== null) return fail("invalid_grant");
       if (!UserDO.allowed(user, input.client)) return fail("invalid_grant");
@@ -1300,11 +1303,8 @@ export class UserDO extends DurableObject<Env> {
       if (!UserDO.adminAllowed(user, scope)) return fail("invalid_grant");
       const serial = family.current_serial + 1;
       const idle = Math.min(input.now + input.idle_ttl, family.absolute_expires_at);
-      sql.exec(
-        "UPDATE refresh_tokens SET consumed_at = ? WHERE secret_hash = ?",
-        input.now,
-        input.secret_hash,
-      );
+      // Two rows (review M1): the new token, and the family's serial and idle expiry, which
+      // consume the presented token.
       sql.exec(
         "INSERT INTO refresh_tokens (secret_hash, family_id, serial, created_at) VALUES (?, ?, ?, ?)",
         input.new_secret_hash,

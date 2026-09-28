@@ -440,7 +440,7 @@ Budgets are server-side, measured inside the Worker from request receipt to resp
 | D1 total | | **~3.9 GB** | 10 GB | 2.6× |
 | Queue | ~5,850,000 messages/day (68/s average, ~360/s at the peaks below) | | 5,000/s | 14× |
 
-Request rates at 100,000 DAU: ~200,000 interactive logins/day (peak 50/s), ~5,000,000 refreshes/day (peak 150/s), ~10,000,000 Worker requests/day. Per-user DO load is ~50 requests/day, far below the 1,000 req/s per-object soft limit. Order-of-magnitude monthly cost at the prices published on 2026-09-26: Worker requests ~$92, Durable Object requests ~$30–45, Durable Object rows written ~$560–1,320 (a refresh writes four rows), Durable Object storage ~$40, Queues ~$213 (every request that emits events ships one message, three operations each), R2 audit writes ~$3.5 (one object per consumer batch), D1 < $10, Workers Logs ~$6 (a line per request, production keeping a 10 % head sample; audit lines are `debug`), Analytics Engine ~$75 once billed (a point per request and per hot event type). Verify against current pricing before budgeting.
+Request rates at 100,000 DAU: ~200,000 interactive logins/day (peak 50/s), ~5,000,000 refreshes/day (peak 150/s), ~10,000,000 Worker requests/day. Per-user DO load is ~50 requests/day, far below the 1,000 req/s per-object soft limit. Order-of-magnitude monthly cost at the prices published on 2026-09-26: Worker requests ~$92, Durable Object requests ~$30–45, Durable Object rows written ~$400–550 (a rotation writes two rows, the new token and the family, and a session-bound one a third for the session at most once a minute; the purge deletes the consumed token later: 3–4 rows a refresh, index entries included, against 8–9 before schema version 4), Durable Object storage ~$40, Queues ~$213 (every request that emits events ships one message, three operations each), R2 audit writes ~$3.5 (one object per consumer batch), D1 < $10, Workers Logs ~$6 (a line per request, production keeping a 10 % head sample; audit lines are `debug`), Analytics Engine ~$75 once billed (a point per request and per hot event type). Verify against current pricing before budgeting.
 
 The D1 directory is the first ceiling. `audit_hot` holds the hot types only (TIO-AUDIT-013), so it grows with logins, failures and administration, not with refreshes or session hits; its retention is a setting. Beyond roughly 5,000,000 users the directory would need sharding by user-id prefix; the design permits it (all D1 access goes through repositories keyed by user id) but v1 does not implement it.
 
@@ -857,14 +857,15 @@ CREATE INDEX refresh_families_client ON refresh_families(client_id);
 CREATE INDEX refresh_families_sid    ON refresh_families(sid);
 CREATE INDEX refresh_families_code   ON refresh_families(code_secret_hash);
 
+-- A token is consumed once its family holds a later serial; no rowid and no index, so a
+-- rotation writes two rows: this one and the family's (review M1, schema version 4).
 CREATE TABLE refresh_tokens (
-  secret_hash  BLOB PRIMARY KEY,
   family_id    TEXT NOT NULL REFERENCES refresh_families(id) ON DELETE CASCADE,
+  secret_hash  BLOB NOT NULL,
   serial       INTEGER NOT NULL,
   created_at   INTEGER NOT NULL,
-  consumed_at  INTEGER
-);
-CREATE INDEX refresh_tokens_family ON refresh_tokens(family_id, serial);
+  PRIMARY KEY (family_id, secret_hash)
+) WITHOUT ROWID;
 
 CREATE TABLE grants (
   client_id         TEXT PRIMARY KEY,
@@ -877,7 +878,7 @@ CREATE TABLE grants (
 
 **[TIO-DATA-018]** (withdrawn) The per-user `events` ring was removed on 2026-09-19 (Appendix B #31); per-user activity is read from `audit_hot` (TIO-AUDIT-010).
 
-**[TIO-DATA-019]** `UserDO` SHALL purge, on any write and at most once per 60 seconds: expired `auth_codes`; `refresh_tokens` rows consumed more than `refresh_reuse_window` (default 24 h) ago; families expired or revoked more than 24 h ago; sessions expired or revoked more than 24 h ago. Purge never runs on dormant objects (no alarms); logical expiry is always checked on read.
+**[TIO-DATA-019]** `UserDO` SHALL purge, on any write and at most once per 60 seconds: expired `auth_codes`; `refresh_tokens` rows consumed more than `refresh_reuse_window` (default 24 h) ago, a token being consumed when its successor is created; families expired or revoked more than 24 h ago; sessions expired or revoked more than 24 h ago. Purge never runs on dormant objects (no alarms); logical expiry is always checked on read.
 
 **[TIO-DATA-020]** Every `UserDO` method that changes state SHALL run inside one `transactionSync` (or a single synchronous `sql.exec` sequence with no `await` between statements) so that partial application is impossible. Concurrency tests (§13.6) issue parallel calls and assert exactly-once semantics.
 
@@ -2414,6 +2415,8 @@ Each entry: what the draft said → what this spec does → why.
 40. **Every audit event in `audit_hot`** → hot and archive-only types (TIO-AUDIT-013), the archive written per consumer batch under keys unique to each write, 14-day hot retention, the capacity model as a CI check (TIO-PERF-003) (2026-09-28, ADR 0022). *Why:* at the §2.7 rates every event in D1 meant 6.2 M rows a day, a full D1 in about three days and a purge that could not keep up, while §2.7 budgeted ~4 M rows for 30 days; and an archive key reused on redelivery collides with a bucket lock.
 
 41. **The review's low items** → hash comparisons in constant time with a lint rule behind them (TIO-CRYPTO-003, a synchronous form where a Durable Object transaction cannot await); a deletion the cron finishes emits `user.deleted` and sends back-channel logout (TIO-DATA-010); §6.7 states the limits in force beside the targets (ADR 0001); the production Worker is `tiny-oidc-production`, not the button profile's `tiny-oidc` (TIO-DEPLOY-001); TIO-ARCH-001, TIO-DEPLOY-001, TIO-DEPLOY-004 and TIO-DEPLOY-006 verified by tests instead of review (2026-09-28, review 2026-09-26 §4). *Why:* each was a gap between what the spec said and what the code or configuration did, found by the review; the tests keep them from reopening.
+
+42. **Refresh tokens consumed by an update, in a rowid table with two indexes** → keyed by `(family_id, secret_hash)` without a rowid, consumed once a later serial exists (2026-09-28, review M1). *Why:* a rotation wrote five rows with index entries (consume, insert with two index entries, family) and the purge three more per token; Durable Objects bill every row written, which at 5 M refreshes a day was the largest cost line left. A rotation now writes two, measured by a component test from the cursors' `rowsWritten`.
 
 **Declined or deferred with the user's decision (2026-09-19):** DPoP (deferred; re-evaluate when public-client sender-constraining is required by a resource server); Apple Sign-in (deferred; needs a JWT client secret rotated every six months and a cross-site `form_post` callback that `SameSite=Lax` binding cookies block). Also deferred by the author: EdDSA signing (client library support is still uneven), pairwise subjects, device grant, token exchange, webhooks, SCIM.
 

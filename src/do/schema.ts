@@ -1,7 +1,7 @@
 // UserDO SQLite schema (spec §4.2), versioned for lazy migration. Each entry
 // is one idempotent step; `migrate()` applies the steps above the stored version.
 
-export const USER_SCHEMA_VERSION = 3;
+export const USER_SCHEMA_VERSION = 4;
 
 export const USER_SCHEMA_STEPS: readonly string[] = [
   `
@@ -154,5 +154,21 @@ INSERT INTO auth_codes_v3 SELECT secret_hash, client_id, redirect_uri, scope, no
 DROP TABLE auth_codes;
 ALTER TABLE auth_codes_v3 RENAME TO auth_codes;
 CREATE INDEX IF NOT EXISTS auth_codes_expires ON auth_codes(expires_at);
+`,
+  // Version 4: a rotation writes two rows, the new token and the family (review M1, §2.7).
+  // Tokens are keyed by (family_id, secret_hash) without a rowid, so a new token is one row
+  // and no index entry, and a token is consumed once a later serial exists in its family
+  // instead of by an update. Every live token is copied; consumed ones keep their serial.
+  `
+CREATE TABLE refresh_tokens_v4 (
+  family_id    TEXT NOT NULL REFERENCES refresh_families(id) ON DELETE CASCADE,
+  secret_hash  BLOB NOT NULL,
+  serial       INTEGER NOT NULL,
+  created_at   INTEGER NOT NULL,
+  PRIMARY KEY (family_id, secret_hash)
+) WITHOUT ROWID;
+INSERT INTO refresh_tokens_v4 (family_id, secret_hash, serial, created_at) SELECT family_id, secret_hash, serial, created_at FROM refresh_tokens;
+DROP TABLE refresh_tokens;
+ALTER TABLE refresh_tokens_v4 RENAME TO refresh_tokens;
 `,
 ];

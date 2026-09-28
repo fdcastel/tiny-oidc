@@ -732,7 +732,64 @@ describe("UserDO storage bounds (review M2)", () => {
   });
 });
 
+/**
+ * The rows `work` writes in `stub`'s SQLite, index entries included, as the
+ * platform bills them: every statement's cursor reports `rowsWritten`.
+ */
+async function rowsWritten(
+  stub: DurableObjectStub<UserDO>,
+  work: (instance: UserDO) => unknown,
+): Promise<number> {
+  return runInDurableObject(stub, async (instance: UserDO, state) => {
+    const sql = state.storage.sql;
+    const exec = sql.exec.bind(sql);
+    const cursors: { rowsWritten: number }[] = [];
+    sql.exec = ((query: string, ...bindings: unknown[]) => {
+      const cursor = exec(query, ...bindings);
+      cursors.push(cursor);
+      return cursor;
+    }) as typeof sql.exec;
+    try {
+      await work(instance);
+    } finally {
+      sql.exec = exec;
+    }
+    return cursors.reduce((sum, c) => sum + c.rowsWritten, 0);
+  });
+}
+
 describe("UserDO refresh rotation (§2.5.4)", () => {
+  it("[TIO-RT-002] a rotation writes two rows, index entries included: the new token and the family (review M1; six before schema version 4)", async () => {
+    const user = await loggedIn();
+    const first = await exchange(user.stub, user.codeHash, user.verifier);
+    // Warm: the purge has run and the session was touched less than a minute ago (a touch
+    // is a third row, at most once a minute, TIO-SESS-003).
+    clock.advance(20);
+    const { result, next: current } = await rotate(user.stub, first.familyId, first.refreshHash);
+    expect(result.ok).toBe(true);
+    clock.advance(20);
+    const input = {
+      family_id: first.familyId,
+      secret_hash: current,
+      client: client(),
+      now: clock.now(),
+      requested_scope: null,
+      new_secret_hash: await sha256(newSecret()),
+      idle_ttl: REFRESH_IDLE,
+      session_idle_ttl: IDLE,
+      reuse_window: REUSE_WINDOW,
+    };
+    let outcome: unknown;
+    const written = await rowsWritten(user.stub, (instance) => {
+      outcome = instance.rotateRefreshToken(input);
+    });
+    expect(outcome).toMatchObject({ ok: true, serial: 3 });
+    expect(written).toBe(2);
+    // The consumed token is still recognised as consumed (TIO-RT-003).
+    const reuse = await rotate(user.stub, first.familyId, current);
+    expect(reuse.result).toMatchObject({ ok: false, error: "invalid_grant", reuse_detected: true });
+  });
+
   it("[TIO-RT-002] [TIO-RT-005] rotates exactly once per token, extends idle expiry, touches the bound session and returns the family's claims", async () => {
     const user = await loggedIn();
     const t0 = clock.now();
@@ -1327,17 +1384,20 @@ describe("UserDO disabled users and constructed inconsistencies", () => {
     ).toEqual({ ok: false, error: "user_disabled" });
   });
 
-  it("[TIO-RT-002] an unconsumed token with a stale serial and a session-bound family whose session row is gone (rows edited directly) are invalid_grant", async () => {
+  it("[TIO-RT-002] a token whose serial is ahead of its family and a session-bound family whose session row is gone (rows edited directly) are invalid_grant", async () => {
     const user = await loggedIn();
     const { refreshHash, familyId } = await exchange(user.stub, user.codeHash, user.verifier);
     const first = await rotate(user.stub, familyId, refreshHash);
     expect(first.result.ok).toBe(true);
     await runInDurableObject(user.stub, (_instance: UserDO, state) => {
-      state.storage.sql.exec("UPDATE refresh_tokens SET consumed_at = NULL WHERE serial = 1");
+      state.storage.sql.exec("UPDATE refresh_families SET current_serial = 1");
     });
-    expect((await rotate(user.stub, familyId, refreshHash)).result).toEqual({
+    expect((await rotate(user.stub, familyId, first.next)).result).toEqual({
       ok: false,
       error: "invalid_grant",
+    });
+    await runInDurableObject(user.stub, (_instance: UserDO, state) => {
+      state.storage.sql.exec("UPDATE refresh_families SET current_serial = 2");
     });
     await runInDurableObject(user.stub, (_instance: UserDO, state) => {
       state.storage.sql.exec("DELETE FROM session_clients");
