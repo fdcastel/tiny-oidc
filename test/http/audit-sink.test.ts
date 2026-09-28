@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { isHotType } from "../../src/audit/catalog.ts";
 import { type AuditEvent, Auditor } from "../../src/audit/events.ts";
 import {
+  AUDIT_BATCH_BYTES,
   AUDIT_BATCH_SIZE,
   AUDIT_ROWS_PER_STATEMENT,
   archiveDayPrefix,
+  auditBatches,
   shipAuditEvents,
 } from "../../src/audit/sink.ts";
 import { UuidV7 } from "../../src/crypto/uuid.ts";
@@ -93,6 +95,27 @@ async function gunzip(bytes: ArrayBuffer): Promise<string> {
 }
 
 describe("the producer", () => {
+  it("[TIO-AUDIT-012] bounds every queue message by bytes as well as by count: fifty events with 4 KB of data each travel in messages under 120,000 bytes, none lost or split", async () => {
+    const big = synthetic(50).map((e) => ({ ...e, data: { pad: "x".repeat(4000) } }));
+    const batches = auditBatches(big);
+    expect(batches.length).toBeGreaterThan(1);
+    for (const batch of batches) {
+      expect(batch.length).toBeLessThanOrEqual(AUDIT_BATCH_SIZE);
+      expect(new TextEncoder().encode(JSON.stringify(batch)).length).toBeLessThan(
+        AUDIT_BATCH_BYTES,
+      );
+    }
+    expect(batches.flat()).toEqual(big);
+    expect(auditBatches([])).toEqual([]);
+    // Shipped: every message a queue would accept.
+    const sent: Sent[] = [];
+    await shipAuditEvents(recordingEnv(sent), sink().logger, big);
+    expect(sent.map((s) => (s.body as { events: unknown[] }).events.length)).toEqual(
+      batches.map((b) => b.length),
+    );
+    expect(AUDIT_BATCH_BYTES).toBeLessThan(128_000 - 1_000);
+  });
+
   it("[TIO-AUDIT-010] [TIO-AUDIT-012] ships a request's events to the queue after the response in batches of 50, and a queue that refuses them is logged while the request succeeds", async () => {
     const h = harness(clock);
     const sent: Sent[] = [];
@@ -176,7 +199,8 @@ describe("the consumer", () => {
     // Only the hot types reach the table (token.refreshed is archive-only).
     expect(rows.results.map((r) => r["id"]).sort()).toEqual(hot.map((e) => e.id).sort());
     expect(rows.results.some((r) => r["type"] === "token.refreshed")).toBe(false);
-    expect(rows.results[0]).toMatchObject({
+    // Two generators under a frozen clock: ids do not sort by creation, so the row is looked up.
+    expect(rows.results.find((r) => r["id"] === first[0]?.id)).toMatchObject({
       id: first[0]?.id,
       type: "session.created",
       user_id: "u0",

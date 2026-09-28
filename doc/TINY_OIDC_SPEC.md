@@ -920,8 +920,8 @@ A single JSON document in the SQLite-backed key-value storage, plus an alarm set
 ### 4.5 Queue messages and the R2 archive
 
 ```jsonc
-// TASKS queue message (JSON, ≤ 128 KB)
-{ "kind": "audit", "events": [ { …AuditEvent } ] }                   // producer batches up to 50 events per message
+// TASKS queue message (JSON, under Queues' 128 KB limit)
+{ "kind": "audit", "events": [ { …AuditEvent } ] }                   // producer batches up to 50 events and 120,000 serialized bytes per message
 { "kind": "backchannel_logout", "client_id": "…", "uri": "…", "token": "…", "attempt": 1, "sid": "…", "uid": "…" }
 ```
 

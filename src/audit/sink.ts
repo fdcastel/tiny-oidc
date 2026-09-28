@@ -17,6 +17,12 @@ import type { AuditEvent } from "./events.ts";
 
 /** Events per queue message (§4.5). */
 export const AUDIT_BATCH_SIZE = 50;
+/**
+ * Serialized bytes per queue message: under Queues' 128 KB limit (1 KB = 1,000
+ * bytes, about 100 of them the queue's own metadata), with margin. Fifty
+ * events of 4 KB each would not fit (review M9).
+ */
+export const AUDIT_BATCH_BYTES = 120_000;
 /** Rows per INSERT statement inside a D1 batch: at most 9 (TIO-AUDIT-011), and 17 columns × 5 stays under D1's 100 bound variables. */
 export const AUDIT_ROWS_PER_STATEMENT = 5;
 
@@ -57,8 +63,7 @@ export async function shipAuditEvents(
   logger: Logger,
   events: readonly AuditEvent[],
 ): Promise<void> {
-  for (let start = 0; start < events.length; start += AUDIT_BATCH_SIZE) {
-    const batch = events.slice(start, start + AUDIT_BATCH_SIZE);
+  for (const batch of auditBatches(events)) {
     try {
       await env.TASKS.send({ kind: "audit", events: batch } satisfies AuditTask);
     } catch (error) {
@@ -69,6 +74,33 @@ export async function shipAuditEvents(
       });
     }
   }
+}
+
+/**
+ * `events` in queue-message batches of at most AUDIT_BATCH_SIZE events and
+ * AUDIT_BATCH_BYTES serialized bytes (TIO-AUDIT-012, §4.5). An event is never
+ * split; one event is far below the byte bound (its data is capped at 4 KB).
+ */
+export function auditBatches(events: readonly AuditEvent[]): AuditEvent[][] {
+  const encoder = new TextEncoder();
+  const batches: AuditEvent[][] = [];
+  let current: AuditEvent[] = [];
+  let bytes = 0;
+  for (const event of events) {
+    const size = encoder.encode(JSON.stringify(event)).length + 1;
+    if (
+      current.length === AUDIT_BATCH_SIZE ||
+      (current.length > 0 && bytes + size > AUDIT_BATCH_BYTES)
+    ) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(event);
+    bytes += size;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
 }
 
 /**
