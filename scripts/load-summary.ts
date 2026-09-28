@@ -1,13 +1,19 @@
 // Prints the load job's summary as Markdown (spec §13.10):
 // `node scripts/load-summary.ts perf/data` reads every `*.summary.json` k6
-// wrote and every seed report there.
+// wrote, every seed report there and the runner's location (runner.json).
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { type K6Summary, renderLoadMarkdown, type SeedReport } from "./lib/load-summary.ts";
+import {
+  type K6Summary,
+  type RunnerReport,
+  renderLoadMarkdown,
+  type SeedReport,
+} from "./lib/load-summary.ts";
 
 const dir = process.argv[2] ?? "perf/data";
 const seeds: SeedReport[] = [];
 const summaries: { scenario: string; summary: K6Summary }[] = [];
+let runner: RunnerReport | null = null;
 if (existsSync(dir)) {
   for (const file of readdirSync(dir).sort()) {
     if (!file.endsWith(".json")) continue;
@@ -19,7 +25,9 @@ if (existsSync(dir)) {
       });
     } else if (parsed["kind"] === "import_benchmark" || parsed["kind"] === "seed_harvest") {
       seeds.push(parsed as unknown as SeedReport);
+    } else if (parsed["kind"] === "runner") {
+      runner = parsed as unknown as RunnerReport;
     }
   }
 }
-process.stdout.write(renderLoadMarkdown(seeds, summaries));
+process.stdout.write(renderLoadMarkdown(seeds, summaries, runner));

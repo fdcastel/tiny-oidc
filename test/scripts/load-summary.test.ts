@@ -108,6 +108,10 @@ describe("load summary", () => {
       "| token_refresh | `server_ms_warm{scenario:token_refresh}` | 97 | 31 | 88.4 |",
     );
     expect(renderLoadMarkdown([], [])).toContain("No k6 summaries found.");
+    // The runner's location heads the block when the job recorded it.
+    const located = renderLoadMarkdown([], [], { kind: "runner", region: "eastus", colo: "IAD" });
+    expect(located).toContain("- **Runner:** Azure region `eastus`, entering Cloudflare at `IAD`");
+    expect(renderLoadMarkdown([], [])).not.toContain("Runner");
     expect(
       renderLoadMarkdown(
         [
@@ -130,6 +134,10 @@ describe("load summary", () => {
     expect(readFileSync("scripts/load-summary.ts", "utf8")).toContain("renderLoadMarkdown");
     const nightly = readFileSync(".github/workflows/nightly.yml", "utf8");
     expect(nightly).toContain("scripts/load-summary.ts perf/data");
+    expect(nightly).toContain("perf/data/runner.json");
+    expect(readFileSync("scripts/load-summary.ts", "utf8")).toContain(
+      'parsed["kind"] === "runner"',
+    );
     // The harvested tokens are credentials: never an artifact.
     expect(nightly).toContain("!perf/data/tokens.ndjson");
   });

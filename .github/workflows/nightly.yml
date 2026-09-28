@@ -163,6 +163,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: grafana/setup-k6-action@v1
+      # Where the load comes from: the runner's Azure region (instance metadata) and the
+      # Cloudflare data centre its requests enter. The warm tail of 2026-09-27/28 followed
+      # east-coast runners; the summary names both so a run can be read against its origin.
+      - name: Runner location
+        run: |
+          region=$(curl -fsS --max-time 3 -H Metadata:true "http://169.254.169.254/metadata/instance/compute/location?api-version=2021-02-01&format=text" || true)
+          colo=$(curl -fsS --max-time 5 "$TIO_PERF_ISSUER/cdn-cgi/trace" | sed -n 's/^colo=//p' || true)
+          mkdir -p perf/data
+          printf '{"kind":"runner","region":"%s","colo":"%s"}\n' "${region:-unknown}" "${colo:-unknown}" > perf/data/runner.json
+          cat perf/data/runner.json
       - name: Prepare staging (settings, group, fake upstream, relying parties)
         run: node perf/seed.ts prepare --groups staff
       # The population is re-created every night from this runner: a Durable Object lives where
@@ -242,6 +252,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: grafana/setup-k6-action@v1
+      # The runner location, as in the load job.
+      - name: Runner location
+        run: |
+          region=$(curl -fsS --max-time 3 -H Metadata:true "http://169.254.169.254/metadata/instance/compute/location?api-version=2021-02-01&format=text" || true)
+          colo=$(curl -fsS --max-time 5 "$TIO_PERF_ISSUER/cdn-cgi/trace" | sed -n 's/^colo=//p' || true)
+          mkdir -p perf/data
+          printf '{"kind":"runner","region":"%s","colo":"%s"}\n' "${region:-unknown}" "${colo:-unknown}" > perf/data/runner.json
+          cat perf/data/runner.json
       # The population is re-created from this runner, as the load job does: the nightly's
       # runner may sit in another region, and objects it created put a cross-colo round trip
       # into every refresh this run measures (the fourth soak run, 2026-09-22: p50 94 ms

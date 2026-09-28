@@ -79,12 +79,29 @@ export interface SeedReport {
   [key: string]: unknown;
 }
 
+/**
+ * Where the load came from: the runner's Azure region and the Cloudflare data centre its
+ * requests entered. The warm tail of 2026-09-27/28 followed east-coast runners, so every
+ * run says where it was measured.
+ */
+export interface RunnerReport {
+  kind: "runner";
+  region: string;
+  colo: string;
+}
+
 /** A Markdown block for the seed reports and the k6 summaries of one run. */
 export function renderLoadMarkdown(
   seeds: SeedReport[],
   summaries: { scenario: string; summary: K6Summary }[],
+  runner: RunnerReport | null = null,
 ): string {
   const lines = ["## Load (staging)", ""];
+  if (runner !== null) {
+    lines.push(
+      `- **Runner:** Azure region \`${runner.region}\`, entering Cloudflare at \`${runner.colo}\``,
+    );
+  }
   for (const report of seeds) {
     if (report.kind === "import_benchmark") {
       const v = report["verification"] as {
@@ -102,7 +119,7 @@ export function renderLoadMarkdown(
       );
     }
   }
-  if (seeds.length > 0) lines.push("");
+  if (seeds.length > 0 || runner !== null) lines.push("");
   const rows = summaries.flatMap((s) => thresholdRows(s.scenario, s.summary));
   if (rows.length > 0) {
     lines.push("| Scenario | Threshold | Measured | Result |", "|---|---|---|---|");
